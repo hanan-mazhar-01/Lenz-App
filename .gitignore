@@ -60,10 +60,6 @@ functions/node_modules/
 node_modules/
 
 # Secrets
-.env
-.env.*
-*.pem
-*.key
 
 # Local logs and backups
 git-push-error.log
