@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    // Top-level users collection
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+
+      // Allow user creation if client initializes defaults, but prevent setting premium/extra scans
+      allow create: if isOwner(uid)
+                    && (!request.resource.data.keys().hasAny(['isPremium', 'scansRemaining'])
+                        || (request.resource.data.isPremium == false && request.resource.data.scansRemaining <= 5));
+
+      // Client can update name, email, avatar, etc., but CANNOT modify isPremium or scansRemaining
+      allow update: if isOwner(uid)
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isPremium', 'scansRemaining']);
+
+      allow delete: if isOwner(uid);
+
+      // Reports subcollection
+      match /reports/{reportId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      // Collection (vault) subcollection
+      match /collection/{itemId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      // Custom categories subcollection
+      match /categories/{categoryId} {
+        allow read, write: if isOwner(uid);
+      }
+
+      // App feedback - submit-only (no update/delete) so feedback can't be
+      // tampered with after it's sent.
+      match /feedback/{feedbackId} {
+        allow read, create: if isOwner(uid);
+      }
+    }
+  }
+}
+

@@ -1,0 +1,90 @@
+{
+  "project_info": {
+    "project_number": "157772513866",
+    "project_id": "lenz-ade22",
+    "storage_bucket": "lenz-ade22.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:157772513866:android:5dc9ed3818de75e00a5cb3",
+        "android_client_info": {
+          "package_name": "com.veradostudio.lenz"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "157772513866-v1ilp8trg71vc6788h965259nmgdpnpm.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.veradostudio.lenz",
+            "certificate_hash": "1549a871fcae2e02ef4f9828087253191994d360"
+          }
+        },
+        {
+          "client_id": "157772513866-b5am0063tsp8q94u57adv4mh65g2qf25.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD0Qn5Ulb76u3giXcqN791rzHvjdCKofTE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "157772513866-b5am0063tsp8q94u57adv4mh65g2qf25.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "157772513866-g880scvsdb8jbmvpsvo4s1eatl84kugk.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.veradostudio.replicaDetector"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:157772513866:android:bd92ad9847db8e080a5cb3",
+        "android_client_info": {
+          "package_name": "com.veradostudio.replica_detector"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "157772513866-b5am0063tsp8q94u57adv4mh65g2qf25.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD0Qn5Ulb76u3giXcqN791rzHvjdCKofTE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "157772513866-b5am0063tsp8q94u57adv4mh65g2qf25.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "157772513866-g880scvsdb8jbmvpsvo4s1eatl84kugk.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.veradostudio.replicaDetector"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
