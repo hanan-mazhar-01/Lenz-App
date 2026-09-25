@@ -2,6 +2,19 @@
 
 A new Flutter project.
 
+## Setup after cloning
+
+`lib/core/config/env_secrets.dart` is gitignored and won't exist on a fresh
+clone, which breaks the build (`Target of URI doesn't exist: 'env_secrets.dart'`).
+Fix it once with:
+
+```bash
+cp lib/core/config/env_secrets.example.dart lib/core/config/env_secrets.dart
+```
+
+No real key is required in it - Gemini calls go through a Cloud Function that
+holds the real key server-side (see `functions/index.js`).
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.
