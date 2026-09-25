@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
+import '../../core/responsive/responsive.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/animations/bounce_button.dart';
 import '../../widgets/animations/fade_slide_transition.dart';
@@ -134,28 +135,32 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Widget _buildForm(BuildContext context, AuthService authService, bool busy) {
-    return Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 8),
+    final isShort = context.isShortScreen;
+    final hPadding = context.isSmallPhone ? 18.0 : 24.0;
+    final vPadding = isShort ? 14.0 : 24.0;
 
-                  // Mascot
-                  const FadeSlideTransition(
-                    child: Center(
-                      child: DetectiveMascotWidget(
-                        state: MascotState.curious,
-                        size: 104,
-                        showHalo: true,
-                        triggerGlance: true,
-                      ),
-                    ),
+    return Center(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.symmetric(horizontal: hPadding, vertical: vPadding),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(height: isShort ? 4 : 8),
+
+              // Mascot
+              FadeSlideTransition(
+                child: Center(
+                  child: DetectiveMascotWidget(
+                    state: MascotState.curious,
+                    size: isShort ? 78 : 104,
+                    showHalo: true,
+                    triggerGlance: true,
                   ),
-                  const SizedBox(height: 18),
+                ),
+              ),
+              SizedBox(height: isShort ? 12 : 18),
 
                   // Title (crossfades between Welcome Back / Create Account)
                   FadeSlideTransition(
@@ -626,10 +631,15 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final bottomPadding = bottomInset > 0
+        ? 16.0
+        : (MediaQuery.paddingOf(context).bottom + 20.0);
+
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(bottom: bottomInset),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(24, 14, 24, 32),
+        padding: EdgeInsets.fromLTRB(24, 14, 24, bottomPadding),
         decoration: BoxDecoration(
           color: AppColors.bg(context),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),

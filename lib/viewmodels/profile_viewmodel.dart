@@ -23,6 +23,7 @@ class ProfileViewModel extends ChangeNotifier {
   );
 
   UserProfile get user => _user;
+  bool get isPremium => _user.isPremium;
 
   ProfileViewModel() {
     _loadProfile();
@@ -56,29 +57,42 @@ class ProfileViewModel extends ChangeNotifier {
                 final currentAuthUser = FirebaseAuth.instance.currentUser;
                 final currentAuthName = currentAuthUser?.displayName?.trim();
 
+                final email = (data['email'] as String?) ?? currentAuthUser?.email ?? '';
+                final isPrivateRelay = email.toLowerCase().contains('privaterelay.appleid.com');
+                final emailPrefix = email.contains('@') ? email.split('@').first.trim().toLowerCase() : '';
+
                 String resolvedName;
                 if (firestoreName != null &&
                     firestoreName.isNotEmpty &&
                     firestoreName != 'Collector' &&
-                    firestoreName != 'Guest Collector') {
+                    firestoreName != 'Guest Collector' &&
+                    (!isPrivateRelay || firestoreName.toLowerCase() != emailPrefix)) {
                   resolvedName = firestoreName;
                 } else if (currentAuthName != null &&
                     currentAuthName.isNotEmpty &&
                     currentAuthName != 'Collector' &&
-                    currentAuthName != 'Guest Collector') {
+                    currentAuthName != 'Guest Collector' &&
+                    (!isPrivateRelay || currentAuthName.toLowerCase() != emailPrefix)) {
                   resolvedName = currentAuthName;
                   _syncFirestoreProfile({'name': currentAuthName});
                 } else if (currentAuthUser != null &&
                     !currentAuthUser.isAnonymous &&
                     currentAuthUser.email != null &&
-                    currentAuthUser.email!.contains('@')) {
+                    currentAuthUser.email!.contains('@') &&
+                    !isPrivateRelay) {
                   final prefix = currentAuthUser.email!.split('@').first.trim();
                   resolvedName = prefix.isNotEmpty
                       ? (prefix[0].toUpperCase() + prefix.substring(1))
                       : _user.name;
                   _syncFirestoreProfile({'name': resolvedName});
                 } else {
-                  resolvedName = user.isAnonymous ? 'Guest Collector' : 'Collector';
+                  final isApple = currentAuthUser?.providerData.any((p) => p.providerId == 'apple.com') == true;
+                  resolvedName = user.isAnonymous
+                      ? 'Guest Collector'
+                      : (isApple ? 'Apple User' : 'Collector');
+                  if (firestoreName != null && isPrivateRelay && firestoreName.toLowerCase() == emailPrefix) {
+                    _syncFirestoreProfile({'name': resolvedName});
+                  }
                 }
 
                 _user = _user.copyWith(

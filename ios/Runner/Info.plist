@@ -74,5 +74,18 @@
 	<string>Lenz requires microphone access if recording evidence video.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>GIDClientID</key>
+	<string>157772513866-59me5sse64tfenqg3ff6kmhacsqv7ssv.apps.googleusercontent.com</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.157772513866-59me5sse64tfenqg3ff6kmhacsqv7ssv</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

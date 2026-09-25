@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'revenue_cat_service.dart';
 
 class AuthService extends ChangeNotifier {
   final FirebaseAuth _auth;
@@ -42,6 +43,9 @@ class AuthService extends ChangeNotifier {
       _isInitialized = true;
       if (user != null) {
         await _ensureUserDocumentExists(user);
+        await RevenueCatService.logIn(user.uid);
+      } else {
+        await RevenueCatService.logOut();
       }
       notifyListeners();
     });
@@ -503,8 +507,6 @@ class AuthService extends ChangeNotifier {
         accessToken: appleCredential.authorizationCode,
       );
 
-      final result = await _linkOrSignIn(credential);
-
       // Apple hands over the user's name only on the very first-ever
       // authorization for this app - never again, and never through
       // providerData like Google's name does. Capture it here while we
@@ -513,6 +515,13 @@ class AuthService extends ChangeNotifier {
           .where((s) => s != null && s.trim().isNotEmpty)
           .join(' ')
           .trim();
+
+      final result = await _linkOrSignIn(
+        credential,
+        knownName: appleName.isNotEmpty ? appleName : null,
+        knownEmail: appleCredential.email,
+      );
+
       if (appleName.isNotEmpty && result.user != null) {
         await result.user!.updateDisplayName(appleName);
         await _firestore
@@ -577,6 +586,7 @@ class AuthService extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
+      await RevenueCatService.logOut();
       await _signOutOfGoogle();
       await _auth.signOut();
     } catch (e) {

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:showcaseview/showcaseview.dart';
 
 import '../../core/theme/app_colors.dart';
+import '../../core/responsive/responsive.dart';
 import '../../models/authentication_result.dart';
 import '../../models/category_item.dart';
 import '../../services/auth_service.dart';
@@ -25,6 +26,7 @@ class HomeScreen extends StatelessWidget {
   final VoidCallback onOpenGuides;
   final VoidCallback onOpenHistory;
   final VoidCallback? onOpenNotifications;
+  final VoidCallback? onOpenPremium;
 
   /// Home-tour coach-mark targets, in step order. Owned by
   /// `MainNavigationShell` (which also registers the `ShowcaseView` and
@@ -46,6 +48,7 @@ class HomeScreen extends StatelessWidget {
     required this.onOpenGuides,
     required this.onOpenHistory,
     this.onOpenNotifications,
+    this.onOpenPremium,
     required this.tourHeroKey,
     required this.tourBrowseKey,
     required this.tourRecentKey,
@@ -98,18 +101,25 @@ class HomeScreen extends StatelessWidget {
     final recent = homeVm.filteredReports;
     final hasFilteredReports = recent.isNotEmpty;
 
+    final hPad = Responsive.horizontalPadding(context);
+
     return Scaffold(
       backgroundColor: AppColors.warmIvory,
       body: SafeArea(
         bottom: false,
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 110),
+          padding: EdgeInsets.fromLTRB(hPad, 8, hPad, 110),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Top Bar: Greeting (Hello, {name} 👋) + Profile Button at top right
               _buildTopHeader(context, profileVm, authService),
+
+              if (!profileVm.user.isPremium) ...[
+                const SizedBox(height: 14),
+                _buildProBanner(context),
+              ],
 
               const SizedBox(height: 18),
 
@@ -188,6 +198,10 @@ class HomeScreen extends StatelessWidget {
     final isGuest = authService.isAnonymous;
     final user = profileVm.user;
     String displayName;
+    final email = authService.currentUser?.email ?? user.email;
+    final isPrivateRelay = email.toLowerCase().contains('privaterelay.appleid.com');
+    final emailPrefix = email.contains('@') ? email.split('@').first.trim().toLowerCase() : '';
+
     if (isGuest) {
       displayName =
           (user.name.isNotEmpty &&
@@ -198,19 +212,22 @@ class HomeScreen extends StatelessWidget {
     } else {
       if (user.name.isNotEmpty &&
           user.name != 'Collector' &&
-          user.name != 'Guest Collector') {
+          user.name != 'Guest Collector' &&
+          (!isPrivateRelay || user.name.toLowerCase() != emailPrefix)) {
         displayName = user.name;
       } else if (authService.currentUser?.displayName?.isNotEmpty == true &&
           authService.currentUser!.displayName != 'Collector' &&
-          authService.currentUser!.displayName != 'Guest Collector') {
+          authService.currentUser!.displayName != 'Guest Collector' &&
+          (!isPrivateRelay || authService.currentUser!.displayName!.toLowerCase() != emailPrefix)) {
         displayName = authService.currentUser!.displayName!;
-      } else if (authService.currentUser?.email?.contains('@') == true) {
+      } else if (authService.currentUser?.email?.contains('@') == true && !isPrivateRelay) {
         final prefix = authService.currentUser!.email!.split('@').first.trim();
         displayName = prefix.isNotEmpty
             ? (prefix[0].toUpperCase() + prefix.substring(1))
             : 'Collector';
       } else {
-        displayName = 'Collector';
+        final isApple = authService.currentUser?.providerData.any((p) => p.providerId == 'apple.com') == true;
+        displayName = isApple ? 'Apple User' : 'Collector';
       }
     }
 
@@ -230,16 +247,21 @@ class HomeScreen extends StatelessWidget {
                       child: Text(
                         'Hello, $displayName',
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: AppColors.nearBlack,
-                          fontSize: 27,
+                          fontSize: Responsive.fontSize(context, 27, minSize: 22, maxSize: 28),
                           fontWeight: FontWeight.w800,
                           letterSpacing: -0.5,
                         ),
                       ),
                     ),
                     const SizedBox(width: 6),
-                    const Text('👋', style: TextStyle(fontSize: 25)),
+                    Text(
+                      '👋',
+                      style: TextStyle(
+                        fontSize: Responsive.fontSize(context, 25, minSize: 20, maxSize: 26),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 4),
@@ -369,6 +391,116 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  /// Pro Membership Promotional Banner on Home Screen
+  Widget _buildProBanner(BuildContext context) {
+    return FadeSlideTransition(
+      delay: const Duration(milliseconds: 60),
+      child: BounceButton(
+        onTap: () {
+          Haptics.mediumImpact();
+          onOpenPremium?.call();
+        },
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [
+                Color(0xFF14241B),
+                Color(0xFF1D3528),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: const Color(0xFFD4AF37).withOpacity(0.35),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF14241B).withOpacity(0.18),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD4AF37).withOpacity(0.18),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  CupertinoIcons.sparkles,
+                  color: Color(0xFFD4AF37),
+                  size: 19,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Upgrade to Lenz Pro',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Unlock unlimited scans & instant AI authenticity',
+                      style: TextStyle(
+                        color: Color(0xFFC8D3CC),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD4AF37),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'PRO',
+                      style: TextStyle(
+                        color: Color(0xFF14241B),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    SizedBox(width: 3),
+                    Icon(
+                      CupertinoIcons.chevron_right,
+                      size: 11,
+                      color: Color(0xFF14241B),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 3. Hero Card: "Need me to check something?" with Lenz Mascot (User uploaded image)
   Widget _buildHeroCard(BuildContext context) {
     return FadeSlideTransition(
@@ -449,11 +581,11 @@ class HomeScreen extends StatelessWidget {
                         const SizedBox(height: 10),
 
                         // Headline
-                        const Text(
+                        Text(
                           'Need me to check\nsomething?',
                           style: TextStyle(
                             color: AppColors.nearBlack,
-                            fontSize: 20,
+                            fontSize: Responsive.fontSize(context, 20, minSize: 17, maxSize: 22),
                             fontWeight: FontWeight.w800,
                             height: 1.15,
                             letterSpacing: -0.3,
@@ -495,30 +627,34 @@ class HomeScreen extends StatelessWidget {
                                 ),
                               ],
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: const [
-                                Icon(
-                                  CupertinoIcons.camera,
-                                  color: Colors.white,
-                                  size: 16,
-                                ),
-                                SizedBox(width: 6),
-                                Text(
-                                  'Scan Anything',
-                                  style: TextStyle(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: const [
+                                  Icon(
+                                    CupertinoIcons.camera,
                                     color: Colors.white,
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w600,
+                                    size: 16,
                                   ),
-                                ),
-                                SizedBox(width: 5),
-                                Icon(
-                                  Icons.arrow_forward,
-                                  color: Colors.white,
-                                  size: 14,
-                                ),
-                              ],
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'Scan Anything',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  SizedBox(width: 5),
+                                  Icon(
+                                    Icons.arrow_forward,
+                                    color: Colors.white,
+                                    size: 14,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -533,7 +669,11 @@ class HomeScreen extends StatelessWidget {
                     flex: 9,
                     child: Image.asset(
                       'assets/images/home_mascot_lenz_user.png',
-                      height: 165,
+                      height: Responsive.clamp(
+                        MediaQuery.sizeOf(context).width * 0.38,
+                        115.0,
+                        165.0,
+                      ),
                       fit: BoxFit.contain,
                     ),
                   ),

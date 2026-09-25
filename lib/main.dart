@@ -19,6 +19,7 @@ import 'services/cloudinary_service.dart';
 import 'services/data_migration_service.dart';
 import 'services/gemini_service.dart';
 import 'services/haptics.dart';
+import 'services/revenue_cat_service.dart';
 import 'services/storage_service.dart';
 import 'viewmodels/favorites_viewmodel.dart';
 import 'viewmodels/history_viewmodel.dart';
@@ -68,6 +69,9 @@ void main() async {
   // re-reads afterward. Awaiting it here means StorageService starts
   // already hydrated.
   final prefs = await SharedPreferences.getInstance();
+
+  // Initialize RevenueCat In-App Purchases
+  await RevenueCatService.init();
 
   runApp(VeriCheckRoot(prefs: prefs));
 }
@@ -266,6 +270,19 @@ class _VeriCheckAppState extends State<VeriCheckApp> {
       // to light so the OS's dark-mode setting is never followed.
       themeMode: ThemeMode.light,
       home: homeWidget,
+      builder: (context, child) {
+        final mediaQuery = MediaQuery.of(context);
+        // Clamp system accessibility text scale between 0.85 and 1.20 so text
+        // remains legible on compact screens while preventing layout breakage.
+        final clampedScaler = mediaQuery.textScaler.clamp(
+          minScaleFactor: 0.85,
+          maxScaleFactor: 1.20,
+        );
+        return MediaQuery(
+          data: mediaQuery.copyWith(textScaler: clampedScaler),
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
     );
   }
 }

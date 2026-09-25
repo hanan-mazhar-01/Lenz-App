@@ -16,10 +16,15 @@ class IosBottomNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final hasHomeIndicator = bottomInset > 0;
+    final hPad = MediaQuery.sizeOf(context).width < 375 ? 12.0 : 20.0;
+    final bPad = hasHomeIndicator ? 8.0 : 16.0;
+
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+        padding: EdgeInsets.fromLTRB(hPad, 0, hPad, bPad),
         child: Container(
           height: 64,
           decoration: BoxDecoration(
@@ -103,6 +108,8 @@ class IosBottomNavBar extends StatelessWidget {
               const SizedBox(height: 3),
               Text(
                 label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: AppTypography.caption.copyWith(
                   fontSize: 10.5,
                   fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,

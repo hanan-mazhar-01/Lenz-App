@@ -631,15 +631,30 @@ class ProfileScreen extends StatelessWidget {
                                         ? (user.name.isNotEmpty && user.name != 'Collector' && user.name != 'Guest Collector'
                                             ? user.name
                                             : 'Guest Collector')
-                                        : (user.name.isNotEmpty && user.name != 'Collector' && user.name != 'Guest Collector'
+                                        : (user.name.isNotEmpty &&
+                                                user.name != 'Collector' &&
+                                                user.name != 'Guest Collector' &&
+                                                (!user.email.toLowerCase().contains('privaterelay.appleid.com') ||
+                                                    user.name.toLowerCase() != (user.email.contains('@') ? user.email.split('@').first.toLowerCase() : ''))
                                             ? user.name
-                                            : (authService.currentUser?.displayName?.isNotEmpty == true && authService.currentUser!.displayName != 'Collector'
+                                            : (authService.currentUser?.displayName?.isNotEmpty == true &&
+                                                    authService.currentUser!.displayName != 'Collector' &&
+                                                    authService.currentUser!.displayName != 'Guest Collector' &&
+                                                    (!((authService.currentUser?.email ?? '').toLowerCase().contains('privaterelay.appleid.com')) ||
+                                                        authService.currentUser!.displayName!.toLowerCase() !=
+                                                            ((authService.currentUser?.email ?? '').contains('@')
+                                                                ? (authService.currentUser?.email ?? '').split('@').first.toLowerCase()
+                                                                : ''))
                                                 ? authService.currentUser!.displayName!
-                                                : (authService.currentUser?.email?.contains('@') == true
+                                                : (authService.currentUser?.email?.contains('@') == true &&
+                                                        !authService.currentUser!.email!.toLowerCase().contains('privaterelay.appleid.com')
                                                     ? (authService.currentUser!.email!.split('@').first.isNotEmpty
-                                                        ? authService.currentUser!.email!.split('@').first[0].toUpperCase() + authService.currentUser!.email!.split('@').first.substring(1)
+                                                        ? authService.currentUser!.email!.split('@').first[0].toUpperCase() +
+                                                            authService.currentUser!.email!.split('@').first.substring(1)
                                                         : 'Collector')
-                                                    : 'Collector'))),
+                                                    : (authService.currentUser?.providerData.any((p) => p.providerId == 'apple.com') == true
+                                                        ? 'Apple User'
+                                                        : 'Collector')))),
                                     style: const TextStyle(
                                       color: AppColors.nearBlack,
                                       fontSize: 19.5,
@@ -906,6 +921,109 @@ class ProfileScreen extends StatelessWidget {
                 delay: const Duration(milliseconds: 120),
                 child: Column(
                   children: [
+                    // 0. Lenz Pro Membership Banner
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            Color(0xFF1E4636),
+                            AppColors.deepForestGreen,
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.deepForestGreen.withOpacity(0.25),
+                            blurRadius: 14,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: onOpenPremium,
+                          borderRadius: BorderRadius.circular(20),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.12),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.workspace_premium_rounded,
+                                    color: Color(0xFFE5C378),
+                                    size: 24,
+                                  ),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          const Text(
+                                            'Lenz Pro',
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w800,
+                                              letterSpacing: -0.2,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFE5C378),
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              user.isPremium ? 'PRO ACTIVE' : 'UNLIMITED',
+                                              style: const TextStyle(
+                                                color: Color(0xFF122F24),
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.w900,
+                                                letterSpacing: 0.4,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        user.isPremium
+                                            ? 'Active • All forensic features unlocked'
+                                            : 'Upgrade for unlimited scans & certificates',
+                                        style: TextStyle(
+                                          color: Colors.white.withOpacity(0.75),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w400,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: Colors.white.withOpacity(0.6),
+                                  size: 22,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
                     // 1. Scan History
                     _buildMenuCard(
                       icon: Icons.history_rounded,

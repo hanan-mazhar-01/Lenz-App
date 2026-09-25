@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
+import '../../core/responsive/responsive.dart';
 import '../../widgets/animations/bounce_button.dart';
 import '../../services/haptics.dart';
 
@@ -340,13 +341,15 @@ class _FirstScreenViewState extends State<FirstScreenView>
       _entryController.value = 1.0;
     }
 
+    final hPadding = Responsive.horizontalPadding(context);
+
     return Scaffold(
       backgroundColor: AppColors.warmIvory,
       body: SafeArea(
         bottom: false,
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 20),
+          padding: EdgeInsets.symmetric(horizontal: hPadding),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -534,7 +537,11 @@ class _FirstScreenViewState extends State<FirstScreenView>
                         behavior: HitTestBehavior.opaque,
                         child: Image.asset(
                           'assets/images/mascot_welcome.png',
-                          height: 205,
+                          height: Responsive.clamp(
+                            context.screenHeight * 0.23,
+                            145.0,
+                            205.0,
+                          ),
                           fit: BoxFit.contain,
                         ),
                       ),
@@ -618,12 +625,12 @@ class _FirstScreenViewState extends State<FirstScreenView>
               ),
             );
           },
-          child: const Text(
+          child: Text(
             'Spot the fakes before you\nspend.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: AppColors.nearBlack,
-              fontSize: 27,
+              fontSize: Responsive.fontSize(context, 27, minSize: 22, maxSize: 29),
               fontWeight: FontWeight.w800,
               height: 1.15,
               letterSpacing: -0.4,

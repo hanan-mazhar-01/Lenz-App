@@ -154,14 +154,13 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
       return;
     }
 
-    // 2. Registered users: credit/premium gate temporarily disabled - no
-    // scan limit for signed-in accounts for now. Guests above still get 3
-    // scans max. To re-enable, restore this check before starting the scan:
-    //   if (!authService.isAnonymous && !profileVm.user.isPremium &&
-    //       profileVm.user.scansRemaining <= 0) {
-    //     setState(() => _isPremiumModalActive = true);
-    //     return;
-    //   }
+    // 2. Registered users: require Pro subscription if user runs out of free scans
+    if (!authService.isAnonymous &&
+        !profileVm.user.isPremium &&
+        profileVm.user.scansRemaining <= 0) {
+      setState(() => _isPremiumModalActive = true);
+      return;
+    }
 
     final scanVm = context.read<ScanFlowViewModel>();
     scanVm.startScan();
@@ -342,6 +341,8 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                   onOpenReport: _openReport,
                   onOpenCategory: _openCategory,
                   onOpenProfile: () => setState(() => _currentTab = 4),
+                  onOpenPremium: () =>
+                      setState(() => _isPremiumModalActive = true),
                   onOpenGuides: () => setState(() => _isGuidesActive = true),
                   onOpenHistory: () => setState(() => _currentTab = 2),
                   tourHeroKey: _tourHeroKey,
