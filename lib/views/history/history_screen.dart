@@ -34,8 +34,8 @@ class HistoryScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 12, 20, 4),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
               child: Text('History', style: AppTypography.displayMedium),
             ),
 
@@ -59,7 +59,7 @@ class HistoryScreen extends StatelessWidget {
                     Expanded(
                       child: TextField(
                         onChanged: historyVm.setSearchQuery,
-                        decoration: const InputDecoration(
+                        decoration: InputDecoration(
                           hintText: 'Search your checks...',
                           hintStyle: AppTypography.callout,
                           border: InputBorder.none,

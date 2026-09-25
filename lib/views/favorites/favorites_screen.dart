@@ -31,8 +31,8 @@ class FavoritesScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 12, 20, 10),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 10),
               child: Text('Favorites', style: AppTypography.displayMedium),
             ),
 

@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>VeriCheck</string>
+	<string>Lenz</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>VeriCheck</string>
+	<string>Lenz</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -67,11 +67,11 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>VeriCheck uses your camera to capture product photos for AI-powered authenticity assessment.</string>
+	<string>Lenz uses your camera to capture product photos for AI-powered authenticity assessment.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>VeriCheck requires photo library access to analyze product images from your library.</string>
+	<string>Lenz requires photo library access to analyze product images from your library.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>VeriCheck requires microphone access if recording evidence video.</string>
+	<string>Lenz requires microphone access if recording evidence video.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>

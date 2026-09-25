@@ -322,12 +322,16 @@ class CategoryBrowseScreen extends StatelessWidget {
                         size: 17,
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        'Scan ${category.label}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
+                      Flexible(
+                        child: Text(
+                          'Scan ${category.label}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ],

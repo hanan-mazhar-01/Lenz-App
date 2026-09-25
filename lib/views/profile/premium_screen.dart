@@ -59,9 +59,9 @@ class PremiumScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    const Text('Premium isn\'t available yet.', style: AppTypography.displayMedium, textAlign: TextAlign.center),
+                    Text('Premium isn\'t available yet.', style: AppTypography.displayMedium, textAlign: TextAlign.center),
                     const SizedBox(height: 6),
-                    const Text(
+                    Text(
                       'We\'re building unlimited authentications and more. '
                       'You\'ll be able to subscribe right here once it launches.',
                       style: AppTypography.bodyMedium,

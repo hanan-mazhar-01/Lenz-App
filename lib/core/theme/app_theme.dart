@@ -17,18 +17,18 @@ abstract final class AppTheme {
         error: AppColors.danger,
         onError: AppColors.textInverse,
       ),
-      appBarTheme: const AppBarTheme(
+      appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: true,
-        systemOverlayStyle: SystemUiOverlayStyle(
+        systemOverlayStyle: const SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
           statusBarIconBrightness: Brightness.dark,
           statusBarBrightness: Brightness.light,
         ),
         titleTextStyle: AppTypography.titleMedium,
-        iconTheme: IconThemeData(
+        iconTheme: const IconThemeData(
           color: AppColors.textPrimary,
           size: 22,
         ),
@@ -65,22 +65,20 @@ abstract final class AppTheme {
         error: AppColors.danger,
         onError: AppColors.textInverse,
       ),
-      appBarTheme: const AppBarTheme(
+      appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: true,
-        systemOverlayStyle: SystemUiOverlayStyle(
+        systemOverlayStyle: const SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
           statusBarIconBrightness: Brightness.light,
           statusBarBrightness: Brightness.dark,
         ),
-        titleTextStyle: TextStyle(
+        titleTextStyle: AppTypography.titleMedium.copyWith(
           color: AppColors.textPrimaryDark,
-          fontSize: 17,
-          fontWeight: FontWeight.w600,
         ),
-        iconTheme: IconThemeData(
+        iconTheme: const IconThemeData(
           color: AppColors.textPrimaryDark,
           size: 22,
         ),

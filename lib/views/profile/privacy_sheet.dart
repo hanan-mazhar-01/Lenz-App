@@ -37,7 +37,7 @@ class PrivacySecuritySheet extends StatelessWidget {
             const SizedBox(height: 18),
             Text('Privacy & Security', style: AppTypography.titleLarge),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               'How your scan data and photos are guarded.',
               style: AppTypography.caption,
             ),

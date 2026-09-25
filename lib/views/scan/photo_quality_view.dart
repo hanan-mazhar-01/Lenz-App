@@ -122,18 +122,24 @@ class PhotoQualityView extends StatelessWidget {
                       Positioned(
                         top: 8,
                         left: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppColors.danger,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            'Looks like: ${validation.evidenceTypeDetected}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
+                        right: 8,
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.danger,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              'Looks like: ${validation.evidenceTypeDetected}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                         ),

@@ -81,7 +81,7 @@ class _GuidesScreenState extends State<GuidesScreen> {
                     icon: const Icon(CupertinoIcons.chevron_back, color: AppColors.textPrimary),
                     onPressed: widget.onBack,
                   ),
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'Authentication Guides',
                       style: AppTypography.displayMedium,
@@ -90,8 +90,8 @@ class _GuidesScreenState extends State<GuidesScreen> {
                 ],
               ),
               const SizedBox(height: 4),
-              const Padding(
-                padding: EdgeInsets.only(left: 12),
+              Padding(
+                padding: const EdgeInsets.only(left: 12),
                 child: Text(
                   'Expert tips and physical inspection signals.',
                   style: AppTypography.bodyMedium,

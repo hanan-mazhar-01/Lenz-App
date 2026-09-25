@@ -109,7 +109,7 @@ class GuideDetailView extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                               'Detective Pro Tip',
                               style: AppTypography.titleMedium,
                             ),

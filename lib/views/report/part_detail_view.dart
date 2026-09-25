@@ -97,6 +97,8 @@ class PartDetailView extends StatelessWidget {
         ),
         title: Text(
           item.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: AppColors.nearBlack,
             fontSize: 17.5,

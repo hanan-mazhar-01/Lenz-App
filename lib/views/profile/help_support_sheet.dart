@@ -123,7 +123,7 @@ class _HelpSupportSheetState extends State<HelpSupportSheet> {
             const SizedBox(height: 18),
             Text('Help & Support', style: AppTypography.titleLarge),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               'Answers to common questions and our contact information.',
               style: AppTypography.caption,
             ),

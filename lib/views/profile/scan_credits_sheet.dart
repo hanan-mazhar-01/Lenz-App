@@ -77,7 +77,7 @@ class ScanCreditsSheet extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Monthly Allowance', style: AppTypography.titleMedium),
+                    Text('Monthly Allowance', style: AppTypography.titleMedium),
                     Text(
                       user.isPremium ? '∞ / ∞' : '${user.scansRemaining} / 10 used',
                       style: AppTypography.captionMedium,

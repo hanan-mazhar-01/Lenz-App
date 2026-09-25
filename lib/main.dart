@@ -259,7 +259,7 @@ class _VeriCheckAppState extends State<VeriCheckApp> {
     }
 
     return MaterialApp(
-      title: 'VeriCheck',
+      title: 'Lenz',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       // Light-only app: no darkTheme is registered, and themeMode is pinned

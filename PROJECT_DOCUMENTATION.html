@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lenz Project Documentation</title>
+<style>
+  @page {
+    size: A4;
+    margin: 18mm 15mm 18mm 15mm;
+  }
+  body {
+    font-family: 'Liberation Sans', 'DejaVu Sans', Arial, Helvetica, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.55;
+    color: #1e293b;
+    background-color: #ffffff;
+    margin: 0;
+    padding: 0;
+  }
+  h1 {
+    font-size: 20pt;
+    color: #0f172a;
+    border-bottom: 2px solid #3b82f6;
+    padding-bottom: 8px;
+    margin-top: 0;
+    margin-bottom: 12px;
+  }
+  h2 {
+    font-size: 14pt;
+    color: #1e3a8a;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 5px;
+    margin-top: 22px;
+    margin-bottom: 10px;
+    page-break-after: avoid;
+  }
+  h3 {
+    font-size: 11.5pt;
+    color: #0f172a;
+    margin-top: 14px;
+    margin-bottom: 6px;
+    page-break-after: avoid;
+  }
+  p {
+    margin-top: 0;
+    margin-bottom: 10px;
+  }
+  blockquote {
+    border-left: 4px solid #3b82f6;
+    background-color: #f0f7ff;
+    padding: 8px 14px;
+    margin: 12px 0;
+    color: #1e40af;
+    font-size: 10pt;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 9.5pt;
+    page-break-inside: avoid;
+  }
+  th, td {
+    border: 1px solid #cbd5e1;
+    padding: 6px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background-color: #1e293b;
+    color: #ffffff;
+    font-weight: 600;
+  }
+  tr:nth-child(even) td {
+    background-color: #f8fafc;
+  }
+  code {
+    font-family: 'Liberation Mono', 'DejaVu Sans Mono', monospace;
+    font-size: 9pt;
+    background-color: #f1f5f9;
+    color: #0f172a;
+    padding: 1px 4px;
+    border-radius: 3px;
+    border: 1px solid #e2e8f0;
+  }
+  pre {
+    background-color: #0f172a;
+    color: #f8fafc;
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-family: 'Liberation Mono', 'DejaVu Sans Mono', monospace;
+    font-size: 8.5pt;
+    line-height: 1.4;
+    overflow-x: auto;
+    margin: 10px 0;
+    page-break-inside: avoid;
+  }
+  pre code {
+    background-color: transparent;
+    color: inherit;
+    border: none;
+    padding: 0;
+  }
+  ul, ol {
+    margin-top: 0;
+    margin-bottom: 10px;
+    padding-left: 22px;
+  }
+  li {
+    margin-bottom: 4px;
+  }
+  .diagram-box {
+    border: 1px solid #93c5fd;
+    background-color: #f8fafc;
+    border-radius: 6px;
+    padding: 10px;
+    margin: 14px 0;
+    page-break-inside: avoid;
+  }
+  .diagram-title {
+    font-weight: bold;
+    font-size: 11pt;
+    color: #1e3a8a;
+    margin-bottom: 8px;
+    text-align: center;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 4px;
+  }
+  .flow-table {
+    width: 100%;
+    border: none;
+    margin: 0;
+  }
+  .flow-table td {
+    border: none;
+    padding: 6px;
+    text-align: center;
+    vertical-align: middle;
+  }
+  .flow-step {
+    background-color: #ffffff;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 6px;
+    padding: 8px 6px !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    font-size: 9pt;
+  }
+  .flow-arrow {
+    font-size: 14pt;
+    font-weight: bold;
+    color: #3b82f6;
+    width: 25px;
+  }
+  .sequence-table {
+    width: 100%;
+    margin-top: 6px;
+  }
+  .sequence-table th {
+    background-color: #2563eb;
+  }
+  .footer {
+    margin-top: 30px;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 8px;
+    font-size: 8.5pt;
+    color: #64748b;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<h1>Lenz (VeriCheck / Replica Detector) — Complete Project Documentation</h1>
+<blockquote>
+<p><strong>Version:</strong> 1.0.0+1<br />
+<strong>Framework:</strong> Flutter (Dart 3.x) &amp; Firebase Cloud Functions (Node.js)<br />
+<strong>Domain:</strong> AI-Assisted Luxury Goods Authenticity &amp; Replica Detection</p>
+</blockquote>
+<hr />
+<h2>1. Executive Summary</h2>
+<p><strong>Lenz</strong> (also referenced as <em>VeriCheck</em> / <code>replica_detector</code>) is an enterprise-grade mobile application designed to authenticate luxury and high-value consumer goods (luxury handbags, watches, sneakers, clothing, jewelry, and accessories).</p>
+<p>Unlike standard image-classification apps that provide arbitrary single-shot labels, Lenz utilizes a <strong>multi-stage forensic inspection pipeline</strong>. It combines state-of-the-art multimodal vision models (<strong>Google Gemini 3.1 &amp; 3.5 Flash Lite</strong>) with a <strong>deterministic, local scoring engine</strong> and domain-specific knowledge bases to eliminate AI hallucination and produce auditable, defensible authenticity verdicts.</p>
+<hr />
+<h2>2. System Architecture &amp; Tech Stack</h2>
+<div class="diagram-box">
+  <div class="diagram-title">System Architecture &amp; Dataflow</div>
+  <table class="flow-table">
+    <tr>
+      <td class="flow-step"><strong>1. Mobile Client (Flutter)</strong><br><small>Camera Capture / Gallery</small></td>
+      <td class="flow-arrow">&rarr;</td>
+      <td class="flow-step"><strong>2. Image Prep Service</strong><br><small>Downscale, EXIF Strip, Base64</small></td>
+      <td class="flow-arrow">&rarr;</td>
+      <td class="flow-step"><strong>3. Firebase Cloud Function</strong><br><small>Auth, Quota &amp; Secret Manager</small></td>
+    </tr>
+    <tr>
+      <td class="flow-step"><strong>6. Local Scoring Engine</strong><br><small>Deterministic Rules (No Hallucination)</small></td>
+      <td class="flow-arrow">&larr;</td>
+      <td class="flow-step"><strong>5. Gemini Auth Repository</strong><br><small>Structured Forensic Observations</small></td>
+      <td class="flow-arrow">&larr;</td>
+      <td class="flow-step"><strong>4. Google Gemini Vision</strong><br><small>Gemini 3.1 / 3.5 Flash-Lite</small></td>
+    </tr>
+    <tr>
+      <td class="flow-step"><strong>7. ScanFlowViewModel</strong><br><small>State Machine / UI Delivery</small></td>
+      <td class="flow-arrow">&rarr;</td>
+      <td class="flow-step"><strong>8. Cloudinary Storage</strong><br><small>Async High-Res Media Hosting</small></td>
+      <td class="flow-arrow">&amp;</td>
+      <td class="flow-step"><strong>9. Cloud Firestore</strong><br><small>Scan History &amp; User Reports DB</small></td>
+    </tr>
+  </table>
+</div>
+<h3>Technology Matrix</h3>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">Layer</th>
+<th style="text-align:left">Technology</th>
+<th style="text-align:left">Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left"><strong>Mobile Client</strong></td>
+<td style="text-align:left"><strong>Flutter (Dart ^3.13.1)</strong></td>
+<td style="text-align:left">Cross-platform mobile UI for iOS and Android.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>State Management</strong></td>
+<td style="text-align:left"><strong>Provider (<code>provider: ^6.1.5+1</code>)</strong></td>
+<td style="text-align:left">MVVM pattern separating UI, business logic, and data sources.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>Camera &amp; Hardware</strong></td>
+<td style="text-align:left"><strong><code>camera</code>, <code>image_picker</code>, <code>local_auth</code></strong></td>
+<td style="text-align:left">High-res camera capture, gallery selection, and biometric locking.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>Image Processing</strong></td>
+<td style="text-align:left"><strong><code>image: ^4.10.1</code></strong></td>
+<td style="text-align:left">Client-side downsampling, EXIF metadata stripping, JPEG compression.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>Backend &amp; Cloud</strong></td>
+<td style="text-align:left"><strong>Firebase Cloud Functions (Node.js)</strong></td>
+<td style="text-align:left">Secure proxy protecting Gemini API keys, handling quotas and failovers.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>Authentication</strong></td>
+<td style="text-align:left"><strong>Firebase Auth</strong></td>
+<td style="text-align:left">Anonymous guest sign-in, Google Sign-In, Apple Sign-In.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>Database</strong></td>
+<td style="text-align:left"><strong>Cloud Firestore</strong></td>
+<td style="text-align:left">User profiles, scan history, custom collections, and category metadata.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>Media Hosting</strong></td>
+<td style="text-align:left"><strong>Cloudinary (Unsigned Preset)</strong></td>
+<td style="text-align:left">Long-term high-resolution evidence photo hosting for saved reports.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>AI Inference</strong></td>
+<td style="text-align:left"><strong>Gemini 3.1 / 3.5 Flash-Lite</strong></td>
+<td style="text-align:left">Multimodal identification, angle verification, and forensic observations.</td>
+</tr>
+<tr>
+<td style="text-align:left"><strong>Scoring &amp; Verification</strong></td>
+<td style="text-align:left"><strong>Deterministic Scoring Engine (Dart)</strong></td>
+<td style="text-align:left">Pure math/rule engine calculating final verdicts to prevent AI hallucinations.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>3. The Lenz End-to-End AI Pipeline</h2>
+<p>The core intellectual property of Lenz is its <strong>8-Stage Forensic Authentication Pipeline</strong>:</p>
+<div class="diagram-box">
+  <div class="diagram-title">8-Stage Forensic Inspection Sequence</div>
+  <table class="sequence-table">
+    <tr><th style="width: 50px;">Stage</th><th>Process &amp; Responsibility</th><th>Key Technical Component</th></tr>
+    <tr><td><strong>1</strong></td><td><strong>Initial Overview Capture:</strong> User takes overview photo; app strips EXIF and resizes to 768px.</td><td><code>ImagePreparationService</code></td></tr>
+    <tr><td><strong>2</strong></td><td><strong>Identification &amp; Guardrails:</strong> Gemini checks usability, filters out humans/objects, identifies product taxonomy.</td><td><code>identifyProduct()</code></td></tr>
+    <tr><td><strong>3</strong></td><td><strong>Dynamic Evidence Planning:</strong> Generates 4&ndash;6 targeted angle requests (Logo, Serial, Sole, etc.) with priority weights.</td><td><code>getRequiredEvidence()</code></td></tr>
+    <tr><td><strong>4</strong></td><td><strong>Guided Capture &amp; Validation:</strong> User captures each angle; AI verifies angle match and technical sharpness immediately.</td><td><code>validateEvidencePhoto()</code></td></tr>
+    <tr><td><strong>5</strong></td><td><strong>Backend Cloud Function Gateway:</strong> Firebase Callable Function manages secrets, atomic quotas, and model failovers.</td><td><code>functions/index.js</code></td></tr>
+    <tr><td><strong>6</strong></td><td><strong>Multi-Image Forensic Synthesis:</strong> All accepted photos analyzed simultaneously in one single multimodal prompt.</td><td><code>finalizeReport()</code></td></tr>
+    <tr><td><strong>7</strong></td><td><strong>Deterministic Local Scoring:</strong> Pure Dart rule engine calculates authenticity verdict &amp; confidence (max 94% cap).</td><td><code>AuthenticationScoringEngine</code></td></tr>
+    <tr><td><strong>8</strong></td><td><strong>Cloud Upload &amp; Persistence:</strong> Local photos upload to Cloudinary; report is persisted to Firestore and local history.</td><td><code>CloudinaryService</code> + <code>HistoryRepo</code></td></tr>
+  </table>
+</div>
+<h3>Detailed Pipeline Breakdown:</h3>
+<ol>
+<li>
+<p><strong>Stage 1: Client-Side Image Preparation (<code>ImagePreparationService</code>)</strong></p>
+<ul>
+<li>Automatically downsizes raw photos based on stage presets:
+<ul>
+<li><code>identification</code>: Max 768px, 80% JPEG quality (fast, low bandwidth).</li>
+<li><code>validation</code>: Max 1024px, 82% JPEG quality.</li>
+<li><code>evidence</code>: Max 1280px, 86% JPEG quality (preserves stitch/engraving detail).</li>
+</ul>
+</li>
+<li>Strips all EXIF metadata for user privacy.</li>
+</ul>
+</li>
+<li>
+<p><strong>Stage 2: Guardrail &amp; Product Identification (<code>identifyProduct</code>)</strong></p>
+<ul>
+<li>Validates that the photo is not too dark, blurry, blank, or an unparseable object.</li>
+<li>Detects humans/faces and rejects selfies or portraits.</li>
+<li>Rejects non-supported household clutter or general objects.</li>
+<li>Identifies product category, visible brand, model, and baseline confidence.</li>
+</ul>
+</li>
+<li>
+<p><strong>Stage 3: Dynamic Evidence Planning (<code>getRequiredEvidence</code>)</strong></p>
+<ul>
+<li>Dynamically determines 4 to 6 critical physical checkpoints needed to verify that specific item (e.g. Rolex dial, cyclops magnifier, caseback, serial engraving).</li>
+<li>Assigns priority weights: <code>critical</code>, <code>high</code>, <code>medium</code>, <code>low</code>.</li>
+<li>Incorporates hardcoded category blueprints (<code>AuthenticationRules</code>) as a fallback if AI generation fails.</li>
+</ul>
+</li>
+<li>
+<p><strong>Stage 4: Guided Angle Capture &amp; Real-Time Validation (<code>validateEvidencePhoto</code>)</strong></p>
+<ul>
+<li>User is guided with instructions on what angle to capture.</li>
+<li>The photo is validated immediately: Did the user actually photograph the requested area?</li>
+<li>Quality gates check for glare, blur, and distance before adding the image to the final evidence docket.</li>
+</ul>
+</li>
+<li>
+<p><strong>Stage 5: Secure Cloud Function Proxy Gateway (<code>generateStructuredContent</code>)</strong></p>
+<ul>
+<li>Client makes calls through an authenticated Firebase Callable Cloud Function.</li>
+<li><code>GEMINI_API_KEY</code> is securely fetched from Google Secret Manager.</li>
+<li>Atomic quota and credit deduction: Decrements user scan credit only on finalization. If the AI call fails, credit is automatically refunded in Firestore.</li>
+<li>Server-side model failover: If <code>gemini-3.1-flash-lite</code> experiences 429 rate limits or transient outages, it automatically fails over to <code>gemini-3.5-flash-lite</code>.</li>
+</ul>
+</li>
+<li>
+<p><strong>Stage 6: Multi-Image Forensic Synthesis (<code>finalizeReport</code>)</strong></p>
+<ul>
+<li>Combines all accepted angle photos into a <strong>single multimodal payload</strong>.</li>
+<li>Gemini compares the images against each other to identify cross-image inconsistencies (e.g., mismatched finishes, variant discrepancies, font flaws).</li>
+<li><strong>Crucial Rule:</strong> Gemini is instructed to report purely objective observations and signals, <em>never</em> a final authenticity score.</li>
+</ul>
+</li>
+<li>
+<p><strong>Stage 7: Deterministic Local Scoring Engine (<code>AuthenticationScoringEngine</code>)</strong></p>
+<ul>
+<li>Pure Dart mathematical scoring system.</li>
+<li>Requires minimum 75% weighted coverage, ≥3 accepted angles, and ≥4 consistent signals before &quot;Likely Authentic&quot; can be awarded.</li>
+<li>Heavy penalties for detected replica tells and contradictions.</li>
+<li>Caps confidence at 94% (acknowledging that photo-only inspection cannot guarantee 100% certainty).</li>
+<li>Generates final verdicts: <code>Likely Authentic</code>, <code>Likely Replica</code>, or <code>Inconclusive</code>.</li>
+</ul>
+</li>
+<li>
+<p><strong>Stage 8: Cloud Upload &amp; Asynchronous Sync (<code>CloudinaryService</code> &amp; <code>HistoryRepository</code>)</strong></p>
+<ul>
+<li>High-res local images upload to Cloudinary in the background.</li>
+<li>Local paths are swapped for HTTPS URLs so reports remain accessible across devices and sessions.</li>
+<li>Final report is persisted to Firestore and local offline storage.</li>
+</ul>
+</li>
+</ol>
+<hr />
+<h2>4. Codebase Directory Structure</h2>
+<pre><code>lib/
+├── core/
+│   ├── config/
+│   │   ├── cloudinary_config.dart        # Cloudinary cloud name &amp; unsigned upload preset
+│   │   ├── env_secrets.dart              # Local development secrets
+│   │   └── gemini_config.dart            # Model settings, timeouts &amp; retry parameters
+│   ├── errors/
+│   │   └── app_error.dart                # Centralized domain error types
+│   └── theme/
+│       ├── app_colors.dart               # Color tokens (Dark luxury theme)
+│       ├── app_theme.dart                # Material ThemeData definition
+│       └── app_typography.dart           # Font styles &amp; text themes
+│
+├── data/
+│   ├── authentication_rules.dart         # Category blueprints, inspection briefs &amp; fallback rules
+│   └── reference_library.dart            # Verified reference data for iconic models
+│
+├── models/
+│   ├── authentication_result.dart        # AuthenticationReport, Verdict, ScoredEvidence
+│   ├── category_item.dart                # Category representations
+│   ├── collection_item.dart              # User saved collections
+│   ├── evidence.dart                     # EvidenceItem, EvidenceWeight
+│   ├── evidence_observation.dart         # Forensic observations &amp; contradiction models
+│   ├── evidence_plan.dart                # Checklist plan models
+│   ├── evidence_validation.dart          # Per-photo validation results
+│   ├── guide.dart                        # Authentication guides
+│   ├── photo_quality.dart                # Image metrics (sharpness, lighting, framing)
+│   ├── product.dart                      # Product taxonomy model
+│   ├── product_identification.dart       # Presence check &amp; category identification
+│   └── user_profile.dart                 # User account, plan status &amp; scan quota
+│
+├── repositories/
+│   ├── authentication_repository.dart    # Abstract contract for auth verification
+│   ├── gemini_authentication_repository.dart # Full Gemini prompt orchestration
+│   ├── category_repository.dart          # Category exploration data
+│   ├── collection_repository.dart        # User collections CRUD
+│   ├── guide_repository.dart             # Static &amp; dynamic verification guides
+│   └── history_repository.dart           # Local &amp; Firestore scan history storage
+│
+├── services/
+│   ├── analytics_service.dart            # Firebase Analytics event logging
+│   ├── auth_service.dart                 # Firebase Auth integration &amp; lifecycle
+│   ├── authentication_scoring_engine.dart# Deterministic scoring algorithm
+│   ├── biometric_service.dart            # Face ID / Fingerprint app lock
+│   ├── cloudinary_service.dart           # Cloudinary HTTP upload client
+│   ├── data_migration_service.dart       # Local-to-cloud history synchronization
+│   ├── gemini_service.dart               # Cloud Function client with retry logic
+│   ├── home_tour_service.dart            # ShowcaseView app onboarding walkthrough
+│   ├── image_preparation_service.dart    # Image resizing, EXIF stripping &amp; base64
+│   ├── image_quality_checker.dart        # Basic client-side contrast/blur checks
+│   └── storage_service.dart              # SharedPreferences key-value wrapper
+│
+├── viewmodels/
+│   ├── favorites_viewmodel.dart          # Bookmarked scan reports
+│   ├── history_viewmodel.dart            # Scan history list, filters &amp; search
+│   ├── home_viewmodel.dart               # Dashboard stats, quick actions &amp; guides
+│   ├── onboarding_viewmodel.dart         # Intro walkthrough state
+│   ├── profile_viewmodel.dart            # Account info, credits &amp; app settings
+│   └── scan_flow_viewmodel.dart          # Main scan lifecycle state machine
+│
+├── views/
+│   ├── auth/                             # Login / Sign-up screen
+│   ├── category/                         # Category browsing
+│   ├── collection/                       # Saved items collection
+│   ├── favorites/                        # Favorites view
+│   ├── guides/                           # How-to authenticate guides
+│   ├── history/                          # Scan history list &amp; search
+│   ├── onboarding/                       # First launch intro
+│   ├── paywall/                          # Credit upgrade &amp; guest paywall
+│   ├── profile/                          # User profile, privacy &amp; settings
+│   ├── report/                           # Final authentication report views
+│   └── scan/                             # Camera capture, quality review &amp; progress
+│
+└── widgets/                              # Custom reusable UI components
+    ├── animations/                       # Loaders, transitions &amp; bounce buttons
+    ├── camera/                           # Zoom controls &amp; camera overlays
+    ├── cards/                            # Glassmorphism cards &amp; verdict badges
+    ├── mascot/                           # Lenz detective mascot animations
+    └── navigation/                       # Custom bottom navigation bar
+
+functions/
+├── index.js                              # Firebase Cloud Functions (Gemini Proxy)
+├── package.json                          # Backend dependencies
+└── node_modules/
+</code></pre>
+<hr />
+<h2>5. Security &amp; Privacy Architecture</h2>
+<ol>
+<li><strong>API Key Isolation:</strong>
+<ul>
+<li>No Gemini API keys exist in client code.</li>
+<li>The key is stored in <strong>Google Cloud Secret Manager</strong> (<code>GEMINI_API_KEY</code>) and accessed only within Cloud Functions.</li>
+</ul>
+</li>
+<li><strong>Transactional Quotas:</strong>
+<ul>
+<li>Free/Guest users have limited scan credits (3 for guests, 5 for free accounts).</li>
+<li>Credits are decremented inside a Firestore transaction.</li>
+<li>If the AI request fails or times out, the backend automatically refunds the scan credit.</li>
+</ul>
+</li>
+<li><strong>Anonymous Scanning Mode:</strong>
+<ul>
+<li>Supports an &quot;Anonymous Scanning&quot; privacy toggle.</li>
+<li>All EXIF metadata (GPS location, device hardware, timestamp) is stripped before photos leave the device.</li>
+</ul>
+</li>
+<li><strong>Data Isolation:</strong>
+<ul>
+<li>Firestore security rules restrict scan history documents so users can only read and write their own data.</li>
+</ul>
+</li>
+</ol>
+<hr />
+<h2>6. How to Set Up &amp; Deploy</h2>
+<h3>Prerequisites</h3>
+<ul>
+<li>Flutter SDK (≥ 3.13.1)</li>
+<li>Node.js (≥ 18) &amp; Firebase CLI</li>
+<li>Firebase Project with Blaze (Pay-as-you-go) Plan (required for Cloud Functions outbound network access)</li>
+<li>Cloudinary Account (for unsigned media uploads)</li>
+</ul>
+<h3>Client Setup</h3>
+<ol>
+<li>Clone the repository.</li>
+<li>Create <code>lib/core/config/env_secrets.dart</code> from the example:<pre><code class="language-bash">cp lib/core/config/env_secrets.example.dart lib/core/config/env_secrets.dart
+</code></pre>
+</li>
+<li>Install Flutter dependencies:<pre><code class="language-bash">flutter pub get
+</code></pre>
+</li>
+<li>Run the app:<pre><code class="language-bash">flutter run
+</code></pre>
+</li>
+</ol>
+<h3>Backend Deployment (Firebase Cloud Functions)</h3>
+<ol>
+<li>Initialize Firebase CLI in the project:<pre><code class="language-bash">firebase use &lt;your-firebase-project-id&gt;
+</code></pre>
+</li>
+<li>Store your Gemini API Key in Secret Manager:<pre><code class="language-bash">firebase functions:secrets:set GEMINI_API_KEY
+</code></pre>
+</li>
+<li>Deploy functions and rules:<pre><code class="language-bash">firebase deploy --only functions,firestore:rules,storage:rules
+</code></pre>
+</li>
+</ol>
+<hr />
+<h2>7. Reusability for Other Apps</h2>
+<p>If you want to reuse this architecture for another inspection or verification app (e.g., auto damage appraisal, jewelry valuation, sneaker trading, or receipt scanning), reuse the following core modules:</p>
+<ol>
+<li><strong><code>lib/services/image_preparation_service.dart</code></strong>: Universal image compression and payload preparation.</li>
+<li><strong><code>functions/index.js</code> &amp; <code>lib/services/gemini_service.dart</code></strong>: Secure AI proxy with Secret Manager integration, model failover, and credit management.</li>
+<li><strong><code>lib/services/authentication_scoring_engine.dart</code></strong>: Modularize the mathematical rules for your new domain.</li>
+<li><strong><code>lib/viewmodels/scan_flow_viewmodel.dart</code></strong>: Adapt the step-by-step state machine for your multi-step capture workflow.</li>
+</ol>
+
+<div class="footer">
+  Lenz / VeriCheck Engineering &bull; Confidential &bull; Generated on September 25, 2026
+</div>
+</body>
+</html>

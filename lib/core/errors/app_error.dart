@@ -43,7 +43,7 @@ class AppError implements Exception {
   factory AppError.serviceUnreachable({Object? original}) => AppError(
         type: AppErrorType.serviceUnreachable,
         title: 'Server Unreachable',
-        message: "We couldn't reach VeriCheck's servers. Your connection looks fine — this is usually temporary.",
+        message: "We couldn't reach Lenz's servers. Your connection looks fine — this is usually temporary.",
         recoveryAction: 'Please try again in a few seconds.',
         originalException: original,
       );

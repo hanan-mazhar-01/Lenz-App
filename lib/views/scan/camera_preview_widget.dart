@@ -80,7 +80,7 @@ class CameraPreviewWidgetState extends State<CameraPreviewWidget>
     if (e is CameraException) {
       final code = e.code.toLowerCase();
       if (code.contains('denied') || code.contains('restricted') || code.contains('permission')) {
-        return 'Camera access is turned off for VeriCheck. Enable it in your '
+        return 'Camera access is turned off for Lenz. Enable it in your '
             'device Settings, then tap Retry.';
       }
     }
