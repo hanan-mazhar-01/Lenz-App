@@ -59,21 +59,23 @@ class DefaultFirebaseOptions {
   );
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyC00-wDR_3DfeQCjqjoesKccn_K4TC0jfw',
-    appId: '1:157772513866:ios:1e4231dd3a5a4d580a5cb3',
+    appId: '1:157772513866:ios:b5f28e74e2cdedcb0a5cb3',
     messagingSenderId: '157772513866',
     projectId: 'lenz-ade22',
     storageBucket: 'lenz-ade22.firebasestorage.app',
     androidClientId: '157772513866-v1ilp8trg71vc6788h965259nmgdpnpm.apps.googleusercontent.com',
-    iosClientId: '157772513866-g880scvsdb8jbmvpsvo4s1eatl84kugk.apps.googleusercontent.com',
-    iosBundleId: 'com.veradostudio.replicaDetector',
+    iosClientId: '157772513866-59me5sse64tfenqg3ff6kmhacsqv7ssv.apps.googleusercontent.com',
+    iosBundleId: 'com.veradostudio.lenz',
   );
   static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyC00-wDR_3DfeQCjqjoesKccn_K4TC0jfw',
-    appId: '1:157772513866:ios:1e4231dd3a5a4d580a5cb3',
+    appId: '1:157772513866:ios:b5f28e74e2cdedcb0a5cb3',
     messagingSenderId: '157772513866',
     projectId: 'lenz-ade22',
     storageBucket: 'lenz-ade22.firebasestorage.app',
-    iosBundleId: 'com.veradostudio.replicaDetector',
+    androidClientId: '157772513866-v1ilp8trg71vc6788h965259nmgdpnpm.apps.googleusercontent.com',
+    iosClientId: '157772513866-59me5sse64tfenqg3ff6kmhacsqv7ssv.apps.googleusercontent.com',
+    iosBundleId: 'com.veradostudio.lenz',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(

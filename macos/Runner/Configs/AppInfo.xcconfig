@@ -8,7 +8,7 @@
 PRODUCT_NAME = replica_detector
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.veradostudio.replicaDetector
+PRODUCT_BUNDLE_IDENTIFIER = com.veradostudio.lenz
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 com.veradostudio. All rights reserved.

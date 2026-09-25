@@ -39,10 +39,10 @@
               "client_type": 3
             },
             {
-              "client_id": "157772513866-g880scvsdb8jbmvpsvo4s1eatl84kugk.apps.googleusercontent.com",
+              "client_id": "157772513866-59me5sse64tfenqg3ff6kmhacsqv7ssv.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.veradostudio.replicaDetector"
+                "bundle_id": "com.veradostudio.lenz"
               }
             }
           ]
@@ -75,10 +75,10 @@
               "client_type": 3
             },
             {
-              "client_id": "157772513866-g880scvsdb8jbmvpsvo4s1eatl84kugk.apps.googleusercontent.com",
+              "client_id": "157772513866-59me5sse64tfenqg3ff6kmhacsqv7ssv.apps.googleusercontent.com",
               "client_type": 2,
               "ios_info": {
-                "bundle_id": "com.veradostudio.replicaDetector"
+                "bundle_id": "com.veradostudio.lenz"
               }
             }
           ]
