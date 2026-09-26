@@ -46,7 +46,7 @@ class TermsOfServiceSheet extends StatelessWidget {
             const SizedBox(height: 18),
             Text('Terms of Service', style: AppTypography.titleLarge),
             const SizedBox(height: 4),
-            const Text(
+            Text(
               'Lenz Subscription & Usage Agreement',
               style: AppTypography.caption,
             ),
