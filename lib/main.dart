@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
@@ -5,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'core/theme/app_colors.dart';
 import 'core/theme/app_theme.dart';
 import 'firebase_options.dart';
 import 'repositories/authentication_repository.dart';
@@ -30,6 +30,7 @@ import 'viewmodels/scan_flow_viewmodel.dart';
 import 'views/auth/auth_screen.dart';
 import 'views/main_navigation_shell.dart';
 import 'views/onboarding/onboarding_screen.dart';
+import 'views/splash/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -189,6 +190,26 @@ class VeriCheckApp extends StatefulWidget {
 class _VeriCheckAppState extends State<VeriCheckApp> {
   String? _migratedUid;
 
+  /// Keeps the branded splash up long enough for its entrance animation to
+  /// play, instead of flashing for a few frames on a warm auth restore.
+  static const _minSplashDuration = Duration(milliseconds: 1800);
+  bool _minSplashElapsed = false;
+  Timer? _splashTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _splashTimer = Timer(_minSplashDuration, () {
+      if (mounted) setState(() => _minSplashElapsed = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _splashTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _handlePostSignInMigration(String uid) async {
     await DataMigrationService.migrateOfflineDataIfNeeded(uid: uid);
     if (!mounted) return;
@@ -247,11 +268,11 @@ class _VeriCheckAppState extends State<VeriCheckApp> {
     }
 
     Widget homeWidget;
-    if (!authService.isInitialized) {
+    if (!authService.isInitialized || !_minSplashElapsed) {
       // Firebase hasn't reported the real auth state yet (fresh cold start).
       // Without this gate, isAuthenticated reads as false for a moment and
       // the sign-in screen could flash before flipping to Home/Onboarding.
-      homeWidget = const _SplashScreen();
+      homeWidget = const SplashScreen();
     } else if (!onboardingVm.isCompleted) {
       homeWidget = OnboardingScreen(onFinish: onboardingVm.finishOnboarding);
     } else if (authService.isAuthenticated) {
@@ -269,7 +290,12 @@ class _VeriCheckAppState extends State<VeriCheckApp> {
       // Light-only app: no darkTheme is registered, and themeMode is pinned
       // to light so the OS's dark-mode setting is never followed.
       themeMode: ThemeMode.light,
-      home: homeWidget,
+      home: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 450),
+        switchInCurve: Curves.easeOut,
+        switchOutCurve: Curves.easeIn,
+        child: homeWidget,
+      ),
       builder: (context, child) {
         final mediaQuery = MediaQuery.of(context);
         // Clamp system accessibility text scale between 0.85 and 1.20 so text
@@ -283,25 +309,6 @@ class _VeriCheckAppState extends State<VeriCheckApp> {
           child: child ?? const SizedBox.shrink(),
         );
       },
-    );
-  }
-}
-
-/// Shown only for the brief moment before Firebase reports the real auth
-/// state on a cold start, so the sign-in screen never has a chance to flash.
-class _SplashScreen extends StatelessWidget {
-  const _SplashScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: AppColors.warmIvory,
-      body: Center(
-        child: CircularProgressIndicator(
-          strokeWidth: 2.4,
-          color: AppColors.deepForestGreen,
-        ),
-      ),
     );
   }
 }
