@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Privacy Policy · Lenz</title>
+  <meta name="description" content="How Lenz, the AI-assisted real or fake detector app, collects, uses, and protects your information.">
+  <meta name="theme-color" content="#FCF8F6">
+  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="apple-touch-icon" href="icon.png">
+  <style>
+    /* Lenz palette - mirrors lib/core/theme/app_colors.dart */
+    :root {
+      --ivory: #fcf8f6;
+      --warm-gray: #f7f3f1;
+      --card: #f1edeb;
+      --green: #122f24;
+      --mint: #d6e8de;
+      --text: #1f2023;
+      --text-2: #5f6264;
+      --text-3: #8a8d91;
+      --border: rgba(0, 0, 0, 0.06);
+      --radius-lg: 22px;
+      --radius-md: 16px;
+      --max: 760px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+
+    body {
+      margin: 0;
+      background: var(--ivory);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
+      overflow-wrap: break-word;
+    }
+
+    a {
+      color: var(--green);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      text-decoration-thickness: 1px;
+    }
+    a:hover { text-decoration-thickness: 2px; }
+
+    /* Header */
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(252, 248, 246, 0.86);
+      backdrop-filter: saturate(180%) blur(14px);
+      -webkit-backdrop-filter: saturate(180%) blur(14px);
+      border-bottom: 1px solid var(--border);
+    }
+    .site-header .inner {
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); }
+    .brand img { width: 36px; height: 36px; border-radius: 50%; box-shadow: 0 4px 12px rgba(18, 47, 36, 0.14); }
+    .brand-name { font-weight: 800; font-size: 18px; letter-spacing: -0.3px; }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--mint);
+      color: var(--green);
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.9px;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    /* Hero */
+    main { max-width: var(--max); margin: 0 auto; padding: 40px 20px 64px; }
+    .hero { text-align: center; margin-bottom: 32px; }
+    .hero-icon {
+      width: 96px;
+      height: 96px;
+      border-radius: 50%;
+      box-shadow: 0 0 0 8px var(--mint), 0 14px 32px rgba(18, 47, 36, 0.16);
+      margin-bottom: 22px;
+    }
+    h1 { font-size: clamp(30px, 6vw, 40px); line-height: 1.15; letter-spacing: -1px; font-weight: 800; margin: 0 0 10px; }
+    .meta { color: var(--text-3); font-size: 14px; margin: 0; }
+
+    /* Cards */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 22px 24px;
+      margin-bottom: 16px;
+    }
+    .summary { background: var(--green); border: none; }
+    .summary h2 { color: #fff; margin-top: 0; }
+    .summary ul { margin: 0; padding-left: 20px; }
+    .summary li { margin: 6px 0; color: rgba(245, 245, 247, 0.86); }
+    .summary strong { color: #fff; }
+
+    .toc h2 { margin-top: 0; }
+    .toc ol { margin: 0; padding-left: 22px; columns: 2; column-gap: 28px; }
+    .toc li { break-inside: avoid; margin: 4px 0; font-size: 15px; }
+    .toc a { text-decoration: none; color: var(--text-2); }
+    .toc a:hover { color: var(--green); text-decoration: underline; }
+
+    /* Sections */
+    section { scroll-margin-top: 76px; padding: 26px 0 6px; border-top: 1px solid var(--border); }
+    section:first-of-type { border-top: none; }
+    h2 { font-size: 22px; line-height: 1.25; letter-spacing: -0.4px; font-weight: 700; margin: 0 0 12px; }
+    h3 { font-size: 17px; letter-spacing: -0.2px; font-weight: 600; margin: 20px 0 6px; }
+    p, li { color: var(--text-2); }
+    p { margin: 0 0 14px; }
+    ul, ol { padding-left: 22px; margin: 0 0 14px; }
+    li { margin: 6px 0; }
+    strong { color: var(--text); font-weight: 600; }
+
+    .callout {
+      background: var(--warm-gray);
+      border-left: 4px solid var(--green);
+      border-radius: var(--radius-md);
+      padding: 16px 18px;
+      margin: 16px 0;
+    }
+    .callout p:last-child { margin-bottom: 0; }
+
+    .placeholder { background: #fff3c4; color: #6b5200; border-radius: 6px; padding: 1px 6px; font-weight: 600; }
+
+    /* Data table */
+    .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .data {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      margin: 8px 0 16px;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      font-size: 15px;
+    }
+    .data th, .data td { text-align: left; vertical-align: top; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+    .data tr:last-child td { border-bottom: none; }
+    .data th { background: var(--mint); color: var(--green); font-weight: 700; font-size: 13px; letter-spacing: 0.4px; text-transform: uppercase; }
+    .data td { color: var(--text-2); }
+    .data td:first-child { color: var(--text); font-weight: 600; min-width: 130px; }
+
+    /* Pills row (what we never do) */
+    .pills { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 16px; padding: 0; list-style: none; }
+    .pills li {
+      margin: 0;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: var(--mint);
+      color: var(--green);
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    /* Footer */
+    .contact { text-align: center; margin-top: 28px; }
+    .button {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 14px 26px;
+      border-radius: 999px;
+      background: var(--green);
+      color: #fff;
+      font-weight: 600;
+      text-decoration: none;
+      box-shadow: 0 10px 24px rgba(18, 47, 36, 0.22);
+    }
+    .button:hover { text-decoration: none; opacity: 0.92; }
+    footer { text-align: center; color: var(--text-3); font-size: 13px; padding: 24px 20px 40px; }
+    footer p { color: var(--text-3); margin: 4px 0; }
+    footer a { color: var(--text-2); }
+    .to-top {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: var(--green);
+      color: #fff;
+      text-decoration: none;
+      font-size: 18px;
+      box-shadow: 0 8px 20px rgba(18, 47, 36, 0.25);
+    }
+
+    @media (max-width: 560px) {
+      body { font-size: 15.5px; }
+      main { padding-top: 28px; }
+      .card { padding: 18px; }
+      .toc ol { columns: 1; }
+      .site-header .badge { display: none; }
+
+      /* Stack table rows into cards on phones */
+      .data, .data tbody, .data tr, .data td { display: block; width: 100%; }
+      .data { background: transparent; border: none; }
+      .data thead { display: none; }
+      .data tr {
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        margin-bottom: 10px;
+        padding: 6px 0;
+      }
+      .data td { border-bottom: none; padding: 6px 16px; }
+      .data td:first-child { font-size: 16px; padding-top: 10px; }
+      .data td:not(:first-child)::before {
+        content: attr(data-label);
+        display: block;
+        color: var(--green);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+        margin-bottom: 2px;
+      }
+    }
+
+    @media print {
+      .site-header, .to-top, .toc { display: none; }
+      body { background: #fff; }
+      .summary { background: #fff; border: 1px solid #ccc; }
+      .summary h2, .summary li, .summary strong { color: var(--text); }
+    }
+  </style>
+</head>
+<body id="top">
+
+  <header class="site-header">
+    <div class="inner">
+      <a class="brand" href="#top" aria-label="Lenz home">
+        <img src="icon.png" alt="" width="36" height="36">
+        <span class="brand-name">Lenz</span>
+      </a>
+      <span class="badge">Real or Fake Detector</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="hero">
+      <img class="hero-icon" src="icon.png" alt="Lenz app icon" width="96" height="96">
+      <h1>Privacy Policy</h1>
+      <p class="meta">Effective date: September 26, 2026 &nbsp;·&nbsp; Last updated: September 26, 2026</p>
+    </div>
+
+    <div class="card summary">
+      <h2>The short version</h2>
+      <ul>
+        <li>We collect only what Lenz needs to work: your account details, the product photos you scan, and your scan results.</li>
+        <li>Your photos are analyzed by <strong>Google Gemini AI</strong> and stored securely so your reports stay in your collection.</li>
+        <li>We <strong>do not sell</strong> your data, show ads, or track you across other apps and websites.</li>
+        <li>Face ID / Touch ID stays on your device. We <strong>never</strong> receive your biometric data.</li>
+        <li>You can <strong>delete your account and all its data</strong> anytime from Profile in the app.</li>
+      </ul>
+    </div>
+
+    <nav class="card toc" aria-label="Table of contents">
+      <h2>Contents</h2>
+      <ol>
+        <li><a href="#who-we-are">Who we are</a></li>
+        <li><a href="#collect">Information we collect</a></li>
+        <li><a href="#not-collect">What we don’t collect</a></li>
+        <li><a href="#use">How we use information</a></li>
+        <li><a href="#ai">AI processing of your photos</a></li>
+        <li><a href="#sharing">Service providers</a></li>
+        <li><a href="#permissions">Device permissions</a></li>
+        <li><a href="#retention">Data retention &amp; deletion</a></li>
+        <li><a href="#security">Security</a></li>
+        <li><a href="#rights">Your rights &amp; choices</a></li>
+        <li><a href="#children">Children’s privacy</a></li>
+        <li><a href="#transfers">International transfers</a></li>
+        <li><a href="#changes">Changes to this policy</a></li>
+        <li><a href="#contact">Contact us</a></li>
+      </ol>
+    </nav>
+
+    <section id="who-we-are">
+      <h2>1. Who we are</h2>
+      <p>This Privacy Policy explains how <strong>Verado Studio</strong> (“<strong>we</strong>”, “<strong>us</strong>”, “<strong>our</strong>”) collects, uses, and protects information when you use the <strong>Lenz</strong> mobile app (the “<strong>App</strong>”). We are the data controller for the personal information described here.</p>
+      <p>By using Lenz, you acknowledge the practices described in this policy. Please also read our <a href="terms.html">Terms of Service</a>.</p>
+    </section>
+
+    <section id="collect">
+      <h2>2. Information we collect</h2>
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr><th>Category</th><th>What it includes</th><th>Why we need it</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td data-label="Category">Account information</td>
+              <td data-label="What it includes">A unique user ID, your name, email address, and profile photo (if provided by Google), and your sign-in method (Apple, Google, email, or guest). If you use Sign in with Apple and hide your email, we receive only Apple’s private relay address.</td>
+              <td data-label="Why we need it">To create and secure your account, sync your data across devices, and personalize the App (e.g. greeting you by name).</td>
+            </tr>
+            <tr>
+              <td data-label="Category">Product photos</td>
+              <td data-label="What it includes">Photos you take with the camera or choose from your photo library to scan.</td>
+              <td data-label="Why we need it">To run the AI authenticity assessment and show images in your reports and collection.</td>
+            </tr>
+            <tr>
+              <td data-label="Category">Scan results &amp; collection</td>
+              <td data-label="What it includes">Authenticity reports, confidence scores, detected product details, saved items, favorites, and categories you create.</td>
+              <td data-label="Why we need it">To provide your scan history and collection.</td>
+            </tr>
+            <tr>
+              <td data-label="Category">Purchase information</td>
+              <td data-label="What it includes">Your subscription plan, status, trial eligibility, and purchase and renewal dates. Payments are processed by Apple; <strong>we never receive your card details</strong>.</td>
+              <td data-label="Why we need it">To unlock Lenz Premium features and manage scan allowances.</td>
+            </tr>
+            <tr>
+              <td data-label="Category">Usage data</td>
+              <td data-label="What it includes">In-app events such as scans started, completed, or failed, the premium screen being viewed, and purchases completed, together with basic device and app information (device model, OS version, app version, and an app instance identifier).</td>
+              <td data-label="Why we need it">To understand how Lenz is used, and to fix and improve features.</td>
+            </tr>
+            <tr>
+              <td data-label="Category">Diagnostics</td>
+              <td data-label="What it includes">Crash reports and related technical data (stack traces, device state at the time of the crash).</td>
+              <td data-label="Why we need it">To find and fix bugs and keep the App stable.</td>
+            </tr>
+            <tr>
+              <td data-label="Category">Support messages</td>
+              <td data-label="What it includes">Anything you send us by email, such as your email address and message.</td>
+              <td data-label="Why we need it">To respond to your request.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Some information, such as your preferences, onboarding status, and a cache of your reports, is also stored <strong>locally on your device</strong> so the App works quickly and offline.</p>
+    </section>
+
+    <section id="not-collect">
+      <h2>3. What we don’t collect or do</h2>
+      <ul class="pills">
+        <li>No selling of data</li>
+        <li>No advertising</li>
+        <li>No cross-app tracking</li>
+        <li>No precise location</li>
+        <li>No contacts</li>
+        <li>No biometric data</li>
+        <li>No audio recording</li>
+        <li>No payment card details</li>
+      </ul>
+      <p>Lenz does not use your data to track you across apps or websites owned by other companies, as “tracking” is defined by Apple, and does not share your data with data brokers.</p>
+    </section>
+
+    <section id="use">
+      <h2>4. How we use information</h2>
+      <p>We use the information above to:</p>
+      <ul>
+        <li>provide, operate, and maintain Lenz, including running scans and storing your reports;</li>
+        <li>create and manage your account, and carry over guest scans when you sign up;</li>
+        <li>process subscriptions and restore your Premium access across devices;</li>
+        <li>monitor performance, diagnose crashes, and improve the App;</li>
+        <li>prevent fraud and abuse, such as bypassing scan limits, and keep the service secure;</li>
+        <li>respond to support requests and send important service notices (for example, changes to our Terms);</li>
+        <li>comply with legal obligations.</li>
+      </ul>
+      <p>Where laws such as the GDPR apply, our legal bases are: <strong>performance of our contract</strong> with you (providing the App), our <strong>legitimate interests</strong> (security, analytics, and improvement, balanced against your rights), <strong>legal obligations</strong>, and your <strong>consent</strong> where required (for example, camera and photo access, which you can withdraw in iOS Settings).</p>
+    </section>
+
+    <section id="ai">
+      <h2>5. AI processing of your photos</h2>
+      <p>When you scan an item, your photos are sent over an encrypted connection to our secure cloud backend, which forwards them to <strong>Google’s Gemini AI models</strong> for analysis. Gemini returns observations about details such as stitching, materials, hardware, and typography, which we use to generate your report.</p>
+      <div class="callout">
+        <p>Your photos are processed only to produce <strong>your</strong> scan results. We do not use your photos to train our own AI models, and we do not sell or publish them.</p>
+      </div>
+      <p>Google processes this data as our service provider under its applicable API and cloud terms. Please avoid including faces, documents, or other personal information in your product photos.</p>
+    </section>
+
+    <section id="sharing">
+      <h2>6. Service providers</h2>
+      <p>We share information only with trusted providers who help us run Lenz, only as needed for the purposes above, and under contracts that require them to protect it:</p>
+      <div class="table-wrap">
+        <table class="data">
+          <thead>
+            <tr><th>Provider</th><th>Purpose</th><th>Data involved</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td data-label="Provider">Google Firebase</td>
+              <td data-label="Purpose">Authentication, cloud database, cloud functions, analytics, and crash reporting</td>
+              <td data-label="Data involved">Account info, scan results &amp; collection, usage data, diagnostics</td>
+            </tr>
+            <tr>
+              <td data-label="Provider">Google Gemini</td>
+              <td data-label="Purpose">AI image analysis</td>
+              <td data-label="Data involved">Product photos</td>
+            </tr>
+            <tr>
+              <td data-label="Provider">Cloudinary</td>
+              <td data-label="Purpose">Secure image storage and delivery</td>
+              <td data-label="Data involved">Product photos</td>
+            </tr>
+            <tr>
+              <td data-label="Provider">RevenueCat</td>
+              <td data-label="Purpose">Subscription status and entitlement management</td>
+              <td data-label="Data involved">User ID, purchase information</td>
+            </tr>
+            <tr>
+              <td data-label="Provider">Apple</td>
+              <td data-label="Purpose">App Store, in-app purchases, Sign in with Apple</td>
+              <td data-label="Data involved">Purchase information, Apple sign-in details</td>
+            </tr>
+            <tr>
+              <td data-label="Provider">Google Sign-In</td>
+              <td data-label="Purpose">Optional sign-in with your Google account</td>
+              <td data-label="Data involved">Name, email, profile photo</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>We may also disclose information if required by law, to protect the rights, safety, or property of our users or others, or as part of a merger, acquisition, or sale of assets. In that case, we will require the recipient to honor this policy.</p>
+    </section>
+
+    <section id="permissions">
+      <h2>7. Device permissions</h2>
+      <p>Lenz asks for permission before accessing the following. You can change these anytime in <strong>Settings &gt; Lenz</strong> on your iPhone.</p>
+      <ul>
+        <li><strong>Camera</strong>: to photograph the items you want to scan. The camera is used only while you are scanning, and no audio is recorded.</li>
+        <li><strong>Photo Library</strong>: to let you choose existing photos to scan. We only access the photos you select.</li>
+        <li><strong>Face ID / Touch ID</strong> (optional): to lock the App. Authentication is handled entirely by iOS on your device. Lenz only receives a yes/no result and never has access to your biometric data.</li>
+      </ul>
+    </section>
+
+    <section id="retention">
+      <h2>8. Data retention &amp; deletion</h2>
+      <p>We keep your information for as long as your account is active, or as needed to provide the App.</p>
+      <ul>
+        <li><strong>Deleting a scan</strong> removes its report and associated photos from our servers.</li>
+        <li><strong>Deleting your account</strong> (<strong>Profile &gt; Delete Account</strong> in the App) permanently removes your profile, reports, collection, categories, stored photos, and sign-in record. Deletion starts immediately and cannot be undone.</li>
+        <li><strong>Signing out</strong> clears the data cached on your device while keeping your cloud account.</li>
+        <li>Analytics and crash data are kept in aggregated or pseudonymous form for a limited period under our providers’ retention settings, then deleted.</li>
+        <li>We may keep limited records longer where the law requires it, for example purchase records for tax and accounting purposes.</li>
+      </ul>
+      <div class="callout">
+        <p>Deleting your account does <strong>not</strong> cancel an active subscription. Cancel it in <strong>Settings &gt; [your name] &gt; Subscriptions</strong>.</p>
+      </div>
+    </section>
+
+    <section id="security">
+      <h2>9. Security</h2>
+      <p>We protect your information with industry-standard measures, including TLS encryption for all data in transit, encryption at rest by our cloud providers, per-user access rules so only you can read your data, and server-side checks for sensitive operations like scan credits and account deletion.</p>
+      <p>No method of transmission or storage is completely secure, so we cannot guarantee absolute security. If we learn of a breach that affects your personal information, we will notify you as required by law.</p>
+    </section>
+
+    <section id="rights">
+      <h2>10. Your rights &amp; choices</h2>
+      <p>Depending on where you live, including the EU/UK (GDPR), California (CCPA/CPRA), and other jurisdictions, you may have the right to:</p>
+      <ul>
+        <li><strong>Access</strong> the personal information we hold about you and get a copy;</li>
+        <li><strong>Correct</strong> inaccurate information;</li>
+        <li><strong>Delete</strong> your information, which you can do instantly in the App;</li>
+        <li><strong>Object to</strong> or <strong>restrict</strong> certain processing;</li>
+        <li><strong>Data portability</strong>: receive your data in a machine-readable format;</li>
+        <li><strong>Withdraw consent</strong> at any time, for example by turning off camera or photo access;</li>
+        <li><strong>Complain</strong> to your local data protection authority.</li>
+      </ul>
+      <p>To exercise these rights, email <a href="mailto:support@veradostudio.com">support@veradostudio.com</a>. We will respond within the time required by law, typically 30 days, and may need to verify your identity first. We will not discriminate against you for exercising your rights.</p>
+      <p><strong>California residents:</strong> we do not sell or “share” personal information for cross-context behavioral advertising, as those terms are defined under California law.</p>
+    </section>
+
+    <section id="children">
+      <h2>11. Children’s privacy</h2>
+      <p>Lenz is not directed to children under 13, and we do not knowingly collect personal information from children under 13 (or the higher minimum age in your country). If you believe a child has given us personal information, contact us and we will delete it.</p>
+    </section>
+
+    <section id="transfers">
+      <h2>12. International transfers</h2>
+      <p>Our service providers may store and process information in countries other than your own, including the United States. Where required, these transfers are protected by appropriate safeguards such as the European Commission’s Standard Contractual Clauses.</p>
+    </section>
+
+    <section id="changes">
+      <h2>13. Changes to this policy</h2>
+      <p>We may update this Privacy Policy from time to time. When we do, we will update the “Last updated” date above. If a change is material, we will notify you in the App or by email before it takes effect.</p>
+    </section>
+
+    <section id="contact">
+      <h2>14. Contact us</h2>
+      <p>If you have questions or requests about your privacy, contact:</p>
+      <p>
+        <strong>Verado Studio</strong><br>
+        Email: <a href="mailto:support@veradostudio.com">support@veradostudio.com</a><br>
+        Address: <span class="placeholder">[BUSINESS ADDRESS]</span>
+      </p>
+      <div class="contact">
+        <a class="button" href="mailto:support@veradostudio.com?subject=Lenz%20Privacy%20Request">Contact Privacy Support</a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>© 2026 Verado Studio. All rights reserved.</p>
+    <p><a href="terms.html">Terms of Service</a> &nbsp;·&nbsp; <a href="privacy.html">Privacy Policy</a></p>
+  </footer>
+
+  <a class="to-top" href="#top" aria-label="Back to top">↑</a>
+</body>
+</html>
