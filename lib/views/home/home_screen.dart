@@ -113,7 +113,7 @@ class HomeScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Top Bar: Greeting (Hello, {name} 👋) + Profile Button at top right
+              // Top Bar: Greeting (Hi, {name} 👋) + Profile Button at top right
               _buildTopHeader(context, profileVm, authService),
 
               if (!profileVm.user.isPremium) ...[
@@ -189,7 +189,14 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  /// Top Bar: Greeting ("Hello, {name} 👋" & subtitle) + Profile button at top-right
+  /// First word of a full name ("Malik Haider" -> "Malik"), so the greeting
+  /// stays short. Only applied to real names, not fallbacks like 'Apple User'.
+  static String _firstName(String fullName) {
+    final trimmed = fullName.trim();
+    return trimmed.isEmpty ? trimmed : trimmed.split(RegExp(r'\s+')).first;
+  }
+
+  /// Top Bar: Greeting ("Hi, {name} 👋" & subtitle) + Profile button at top-right
   Widget _buildTopHeader(
     BuildContext context,
     ProfileViewModel profileVm,
@@ -207,19 +214,19 @@ class HomeScreen extends StatelessWidget {
           (user.name.isNotEmpty &&
               user.name != 'Collector' &&
               user.name != 'Guest Collector')
-          ? user.name
+          ? _firstName(user.name)
           : 'Guest';
     } else {
       if (user.name.isNotEmpty &&
           user.name != 'Collector' &&
           user.name != 'Guest Collector' &&
           (!isPrivateRelay || user.name.toLowerCase() != emailPrefix)) {
-        displayName = user.name;
+        displayName = _firstName(user.name);
       } else if (authService.currentUser?.displayName?.isNotEmpty == true &&
           authService.currentUser!.displayName != 'Collector' &&
           authService.currentUser!.displayName != 'Guest Collector' &&
           (!isPrivateRelay || authService.currentUser!.displayName!.toLowerCase() != emailPrefix)) {
-        displayName = authService.currentUser!.displayName!;
+        displayName = _firstName(authService.currentUser!.displayName!);
       } else if (authService.currentUser?.email?.contains('@') == true && !isPrivateRelay) {
         final prefix = authService.currentUser!.email!.split('@').first.trim();
         displayName = prefix.isNotEmpty
@@ -236,7 +243,7 @@ class HomeScreen extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Greeting text: Hello, {name} 👋 & Subtitle
+          // Greeting text: Hi, {name} 👋 & Subtitle
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -245,7 +252,7 @@ class HomeScreen extends StatelessWidget {
                   children: [
                     Flexible(
                       child: Text(
-                        'Hello, $displayName',
+                        'Hi, $displayName',
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: AppColors.nearBlack,
