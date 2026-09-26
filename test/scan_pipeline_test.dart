@@ -38,11 +38,16 @@ void main() {
     );
   }
 
-  Map<String, Map<String, dynamic>> happyPath({bool suspicious = false}) => {
+  Map<String, Map<String, dynamic>> happyPath({
+    bool suspicious = false,
+    Map<String, dynamic>? verification,
+  }) =>
+      {
         'product_identification': identificationJson(),
         'evidence_plan': evidencePlanJson(),
         'evidence_validation': validationJson(),
         'multi_image_forensic_observations': observationsJson(suspicious: suspicious),
+        'counterfeit_verification': verification ?? verificationJson(),
       };
 
   group('Identification is one fast call (§2, §3, §45)', () {
@@ -55,7 +60,19 @@ void main() {
       expect(h.vm.currentProduct!.name, 'Submariner Date');
       expect(h.vm.totalEvidenceCount, inInclusiveRange(5, 6));
       expect(h.gemini.callsMatching('product_identification'), 1);
-      expect(h.gemini.callsMatching('evidence_plan'), 1);
+      expect(h.gemini.callsMatching('evidence_plan'), 0,
+          reason: 'the plan is deterministic: the same product always gets the same checklist');
+    });
+
+    test('two scans of the same product get the identical checklist', () async {
+      final a = build(responses: happyPath());
+      await a.vm.captureInitialPhoto(imagePath: '/tmp/shot1.jpg');
+      final b = build(responses: happyPath());
+      await b.vm.captureInitialPhoto(imagePath: '/tmp/shot2.jpg');
+      expect(
+        a.vm.evidenceItems.map((e) => '${e.id}:${e.weight.name}').toList(),
+        b.vm.evidenceItems.map((e) => '${e.id}:${e.weight.name}').toList(),
+      );
     });
 
     test('identification uploads exactly one, downscaled image', () async {
@@ -300,6 +317,56 @@ void main() {
       expect(report.suspiciousFindings, isNotEmpty);
       expect(report.suspiciousFindings.first, contains('Dial'));
       expect(report.rationale, contains('Submariner Date'));
+      expect(h.gemini.callsMatching('counterfeit_verification'), 1,
+          reason: 'a replica verdict is always independently verified first');
+      expect(report.analysisLog['verification'], isNotNull);
+    });
+
+    test('a replica call the verification pass rejects is shown as Unable to Verify', () async {
+      final h = build(
+        responses: happyPath(
+          suspicious: true,
+          verification: verificationJson(outcome: 'EXPLAINED_BY_CONDITIONS', sufficient: false),
+        ),
+      );
+      await h.vm.captureInitialPhoto(imagePath: '/tmp/shot.jpg');
+      for (var i = 0; i < h.vm.evidenceItems.length; i++) {
+        h.vm.startEvidenceCapture(i);
+        await h.vm.submitEvidencePhoto('/tmp/angle$i.jpg');
+        h.vm.acceptPendingPhoto();
+      }
+      await h.vm.runAnalysis();
+      expect(h.vm.currentReport!.verdict, Verdict.inconclusive);
+    });
+
+    test('if the verification pass fails, no replica verdict is shown', () async {
+      final h = build(responses: happyPath(suspicious: true)..remove('counterfeit_verification'));
+      await h.vm.captureInitialPhoto(imagePath: '/tmp/shot.jpg');
+      for (var i = 0; i < h.vm.evidenceItems.length; i++) {
+        h.vm.startEvidenceCapture(i);
+        await h.vm.submitEvidencePhoto('/tmp/angle$i.jpg');
+        h.vm.acceptPendingPhoto();
+      }
+      await h.vm.runAnalysis();
+      expect(h.vm.currentReport!.verdict, Verdict.inconclusive);
+    });
+
+    test('every analysis sends a strict response schema and records versions', () async {
+      final h = build(responses: happyPath());
+      await h.vm.captureInitialPhoto(imagePath: '/tmp/shot.jpg');
+      for (var i = 0; i < h.vm.evidenceItems.length; i++) {
+        h.vm.startEvidenceCapture(i);
+        await h.vm.submitEvidencePhoto('/tmp/angle$i.jpg');
+        h.vm.acceptPendingPhoto();
+      }
+      await h.vm.runAnalysis();
+      final idx = h.gemini.calls.indexOf('multi_image_forensic_observations');
+      expect(h.gemini.schemas[idx], isNotNull);
+      final report = h.vm.currentReport!;
+      expect(report.engineVersion, '2.0');
+      expect(report.promptVersion, '2.0');
+      expect(report.analysisLog['decision_trace'], isNotEmpty);
+      expect(report.fingerprint, startsWith('WATCH|rolex|'));
     });
   });
 

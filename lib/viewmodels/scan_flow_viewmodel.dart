@@ -13,6 +13,7 @@ import '../repositories/history_repository.dart';
 import '../services/analytics_service.dart';
 import '../services/cloudinary_service.dart';
 import '../services/image_quality_checker.dart';
+import '../services/scan_consistency_service.dart';
 import '../services/storage_service.dart';
 
 enum ScanStep {
@@ -454,7 +455,7 @@ class ScanFlowViewModel extends ChangeNotifier {
       final identificationConfidence =
           (_currentProduct!.identificationConfidence * 100).round().clamp(0, 99);
 
-      final report = await _authRepo.finalizeReport(
+      final scored = await _authRepo.finalizeReport(
         product: _currentProduct!,
         evidenceItems: _evidenceItems,
         capturedImages: Map<String, String>.from(_capturedImagePaths),
@@ -462,6 +463,14 @@ class ScanFlowViewModel extends ChangeNotifier {
         // never credited to a requested angle, so coverage stays at zero.
         overviewImagePath: _initialImagePath,
         identificationConfidence: identificationConfidence,
+        scanId: 'scan_${DateTime.now().microsecondsSinceEpoch}',
+      );
+
+      // Repeat-scan consistency (§17-19): a stable earlier result of the
+      // same product is only overturned by new strong evidence.
+      final report = ScanConsistencyService.reconcile(
+        report: scored,
+        history: _historyRepo.allReports,
       );
 
       _currentReport = report;

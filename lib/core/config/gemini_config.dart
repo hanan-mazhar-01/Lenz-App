@@ -7,8 +7,10 @@ class GeminiConfig {
   static String get model => modelName;
   static set model(String val) => modelName = val;
 
-  /// Default generation temperature for deterministic, factual outputs.
-  static double temperature = 0.2;
+  /// Generation temperature. 0 = always pick the most likely token, so the
+  /// same photos produce the same findings as far as the model allows.
+  /// Mirrors the value hard-set in functions/index.js.
+  static double temperature = 0.0;
 
   /// Maximum tokens per response.
   static int maxOutputTokens = 2048;

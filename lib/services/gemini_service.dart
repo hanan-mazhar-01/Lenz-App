@@ -19,6 +19,7 @@ class GeminiService {
     String? requestTypeLabel,
     int? maxOutputTokens,
     Duration? timeout,
+    Map<String, dynamic>? responseSchema,
   }) async {
     final label = requestTypeLabel ?? 'inference';
     final startTime = DateTime.now();
@@ -42,6 +43,7 @@ class GeminiService {
           label,
           maxOutputTokens ?? GeminiConfig.maxOutputTokens,
           timeout ?? GeminiConfig.timeout,
+          responseSchema,
         );
         final elapsed = DateTime.now().difference(startTime).inMilliseconds;
         if (kDebugMode) {
@@ -110,6 +112,7 @@ class GeminiService {
     String requestTypeLabel,
     int maxOutputTokens,
     Duration timeout,
+    Map<String, dynamic>? responseSchema,
   ) async {
     try {
       final callable = _functions.httpsCallable(
@@ -125,6 +128,11 @@ class GeminiService {
 
       if (inlineImages != null && inlineImages.isNotEmpty) {
         payload['inlineImages'] = inlineImages;
+      }
+      // Enforced server-side as generationConfig.responseSchema: Gemini must
+      // return exactly these fields and enum values.
+      if (responseSchema != null) {
+        payload['responseSchema'] = responseSchema;
       }
 
       final result = await callable.call<dynamic>(payload).timeout(timeout);

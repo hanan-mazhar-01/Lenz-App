@@ -37,7 +37,7 @@ void main() {
 
     test('verdict label never promises a guarantee', () {
       final r = run(evidence: fullWatchEvidence(), observations: cleanWatchObservations());
-      expect(r.verdict.label, 'Likely Authentic');
+      expect(r.verdict.label, 'Appears Authentic');
       for (final v in Verdict.values) {
         expect(v.label.toLowerCase(), isNot(contains('guarantee')));
         expect(v.label, isNot(contains('100')));
@@ -46,7 +46,18 @@ void main() {
   });
 
   group('QA 2 — known replica signals (§29)', () {
-    test('inconsistencies on a critical angle produce Likely Replica', () {
+    test('strong, model-specific evidence on independent areas produces Likely Replica', () {
+      final r = run(evidence: fullWatchEvidence(), observations: strongReplicaWatchObservations());
+
+      expect(r.verdict, Verdict.likelyReplica);
+      expect(r.strongCounterfeitCount, 3);
+      expect(r.suspiciousFindings.length, 3);
+      expect(r.authenticationConfidence, lessThanOrEqualTo(94));
+      expect(r.counterfeitFindingsToVerify, isNotEmpty,
+          reason: 'a replica verdict must be sent for independent verification');
+    });
+
+    test('untyped "inconsistent" sentences alone are not enough for Likely Replica', () {
       final observations = [
         observation(id: 'full_watch', title: 'Full Watch', consistent: ['Case shape is close to reference']),
         observation(id: 'dial', title: 'Dial', inconsistent: [
@@ -61,18 +72,14 @@ void main() {
 
       final r = run(evidence: fullWatchEvidence(), observations: observations);
 
-      expect(r.verdict, Verdict.likelyReplica);
+      expect(r.verdict, Verdict.inconclusive,
+          reason: 'moderate findings with no strong, model-specific one cannot condemn an item');
       expect(r.suspiciousFindings.length, greaterThanOrEqualTo(4));
-      expect(r.authenticationConfidence, lessThanOrEqualTo(94));
     });
 
     test('the verdict is not hardcoded — the same images with clean observations pass', () {
       final evidence = fullWatchEvidence();
-      final replica = run(evidence: evidence, observations: [
-        observation(id: 'dial', title: 'Dial', inconsistent: ['Dial print bleeds at the edges']),
-        observation(id: 'reference_serial', title: 'Reference / Serial', inconsistent: ['Wrong serial format']),
-        ...cleanWatchObservations().where((o) => o.evidenceId != 'dial' && o.evidenceId != 'reference_serial'),
-      ]);
+      final replica = run(evidence: evidence, observations: strongReplicaWatchObservations());
       final genuine = run(evidence: evidence, observations: cleanWatchObservations());
 
       expect(replica.verdict, Verdict.likelyReplica);
@@ -92,7 +99,8 @@ void main() {
 
       expect(r.verdict, isNot(Verdict.likelyAuthentic),
           reason: 'A 99% quality photo of a flawed dial must not read as authentic');
-      expect(r.verdict, Verdict.likelyReplica);
+      expect(r.verdict, Verdict.inconclusive,
+          reason: 'one discrepancy blocks authentic but is not enough for replica');
     });
 
     test('image quality and authenticity move independently', () {
@@ -102,10 +110,7 @@ void main() {
       );
       final highQualityFlawed = run(
         evidence: fullWatchEvidence(quality: 98),
-        observations: [
-          ...cleanWatchObservations().where((o) => o.evidenceId != 'reference_serial'),
-          observation(id: 'reference_serial', title: 'Reference / Serial', inconsistent: ['Serial font is wrong for this reference']),
-        ],
+        observations: strongReplicaWatchObservations(),
       );
 
       expect(lowQualityClean.verdict, Verdict.likelyAuthentic);
@@ -147,10 +152,25 @@ void main() {
 
       final r = run(evidence: evidence, observations: cleanWatchObservations());
 
-      expect(r.verdict, Verdict.inconclusive);
+      // §30: "Appears Authentic" is allowed when the serial wasn't shown,
+      // but only with a visible limitation and a capped confidence.
+      expect(r.verdict, Verdict.likelyAuthentic);
+      expect(r.authenticationConfidence, lessThanOrEqualTo(86),
+          reason: 'without an identity marking the confidence ceiling is lower');
+      expect(r.limitations.join(' ').toLowerCase(), contains('number / engraving'));
       expect(r.missingEvidenceDescriptions.single, contains('Reference / Serial'));
       expect(r.nextChecks.join(' ').toLowerCase(), contains('reference / serial'));
       expect(r.nextChecks.first.toLowerCase(), startsWith('add a photo of'));
+    });
+
+    test('missing half the critical photos blocks Appears Authentic', () {
+      final evidence = fullWatchEvidence()
+          .map((e) => e.isCritical ? item(id: e.id, title: e.title, weight: e.weight, index: e.index, captured: false) : e)
+          .toList();
+      final r = run(evidence: evidence, observations: cleanWatchObservations());
+      expect(r.verdict, Verdict.inconclusive);
+      expect(r.needsMoreImages, isTrue);
+      expect(r.recommendedViews, isNotEmpty);
     });
   });
 
@@ -171,7 +191,9 @@ void main() {
 
       final r = run(evidence: evidence, observations: cleanWatchObservations());
 
-      expect(r.verdict, Verdict.inconclusive);
+      expect(r.verdict, isNot(Verdict.likelyReplica));
+      expect(r.authenticationConfidence, lessThanOrEqualTo(86));
+      expect(r.limitations.join(' '), contains("You don't have the"));
       expect(r.coveredCount, 5);
       expect(r.missingEvidenceDescriptions.single, contains("you told us you don't have this"));
       final scored = r.scoredEvidenceItems.firstWhere((e) => e.id == 'reference_serial');
@@ -282,12 +304,12 @@ void main() {
         observation(id: 'packaging', title: 'Box & Papers', consistent: ['Label matches the reference']),
       ]);
 
-      expect(dialFlaw.verdict, Verdict.likelyReplica,
-          reason: 'A flaw on a critical angle is decisive');
+      expect(dialFlaw.verdict, isNot(Verdict.likelyAuthentic),
+          reason: 'A flaw on a critical angle blocks an authentic result');
+      expect(packagingFlaw.verdict, Verdict.likelyAuthentic,
+          reason: 'A soft box label is packaging-level evidence and never decisive');
       expect(packagingFlaw.authenticationConfidence,
           isNot(equals(dialFlaw.authenticationConfidence)));
-      expect(packagingFlaw.verdict, isNot(Verdict.likelyReplica),
-          reason: 'A soft box label alone must not condemn the item');
     });
   });
 
@@ -296,10 +318,11 @@ void main() {
       final r = run(evidence: fullWatchEvidence(), observations: cleanWatchObservations());
       expect(r.rationale, contains('your Rolex Submariner Date'));
       expect(r.rationale, isNot(contains('The product looks good')));
-      expect(r.rationale.toLowerCase(), contains('6 photos you added'));
+      expect(r.rationale.toLowerCase(), contains('dial printing is sharp'));
+      expect(r.rationale.toLowerCase(), contains('not a guarantee'));
     });
 
-    test('an inconclusive rationale states what was missing', () {
+    test('the rationale states what was missing', () {
       final evidence = fullWatchEvidence()
           .map((e) => e.id == 'dial'
               ? item(id: 'dial', title: 'Dial', weight: EvidenceWeight.critical, index: 2, captured: false)
@@ -307,8 +330,8 @@ void main() {
           .toList();
       final r = run(evidence: evidence, observations: cleanWatchObservations());
 
-      expect(r.rationale, contains('Dial'));
-      expect(r.rationale.toLowerCase(), contains("we're missing"));
+      expect(r.rationale.toLowerCase(), contains('dial'));
+      expect(r.limitations.join(' ').toLowerCase(), contains('no photo of the dial'));
     });
 
     test('unclear observations surface separately from suspicious ones', () {
@@ -320,7 +343,9 @@ void main() {
       expect(r.unclearFindings, isNotEmpty);
       expect(r.unclearFindings.first, contains('Reference / Serial'));
       expect(r.suspiciousFindings, isEmpty);
-      expect(r.verdict, Verdict.inconclusive);
+      expect(r.verdict, isNot(Verdict.likelyReplica),
+          reason: 'an unreadable serial is uncertainty, not counterfeit evidence');
+      expect(r.limitations.join(' ').toLowerCase(), contains("wasn't clear enough"));
     });
   });
 }

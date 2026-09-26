@@ -56,6 +56,7 @@ class AuthenticationRepository {
     required Map<String, String> capturedImages,
     String? overviewImagePath,
     int identificationConfidence = 0,
+    String? scanId,
   }) {
     _requireConfigured();
     return _gemini.finalizeReport(
@@ -64,6 +65,7 @@ class AuthenticationRepository {
       capturedImages: capturedImages,
       overviewImagePath: overviewImagePath,
       identificationConfidence: identificationConfidence,
+      scanId: scanId,
     );
   }
 

@@ -7,6 +7,8 @@ import 'package:replica_detector/services/image_preparation_service.dart';
 class FakeGeminiService implements GeminiService {
   final List<String> calls = [];
   final List<int> imageCounts = [];
+  final List<String> prompts = [];
+  final List<Map<String, dynamic>?> schemas = [];
   final Map<String, Map<String, dynamic>> responses;
   final Map<String, Object> errors;
 
@@ -21,9 +23,12 @@ class FakeGeminiService implements GeminiService {
     String? requestTypeLabel,
     int? maxOutputTokens,
     Duration? timeout,
+    Map<String, dynamic>? responseSchema,
   }) async {
     final label = requestTypeLabel ?? 'unknown';
     calls.add(label);
+    prompts.add(prompt);
+    schemas.add(responseSchema);
     imageCounts.add(inlineImages?.length ?? 0);
 
     for (final entry in errors.entries) {
@@ -148,8 +153,20 @@ Map<String, dynamic> observationsJson({bool suspicious = false}) => {
           'title': 'Dial',
           'observations': ['Dial printing visible'],
           'consistent_signals': suspicious ? <String>[] : ['Kerning is even', 'Lume fills the markers'],
-          'inconsistent_signals': suspicious ? ['Coronet is malformed', 'Text bleeds at the edges'] : <String>[],
+          'inconsistent_signals': <String>[],
           'uncertain_signals': <String>[],
+          if (suspicious)
+            'findings': [
+              {
+                'feature': 'Coronet',
+                'dimension': 'TYPOGRAPHY',
+                'type': 'COUNTERFEIT_INDICATOR',
+                'strength': 'STRONG',
+                'observation': 'Coronet has a filled centre; the 126610LN coronet has open tines',
+                'model_specific': true,
+                'alternative_explanation': null,
+              },
+            ],
           'visible_quality': 92,
         },
         {
@@ -157,6 +174,18 @@ Map<String, dynamic> observationsJson({bool suspicious = false}) => {
           'title': 'Crown',
           'observations': ['Crown profile visible'],
           'consistent_signals': ['Knurling is cleanly machined'],
+          if (suspicious)
+            'findings': [
+              {
+                'feature': 'Triplock dots',
+                'dimension': 'HARDWARE',
+                'type': 'COUNTERFEIT_INDICATOR',
+                'strength': 'STRONG',
+                'observation': 'Two dots under the crown logo; this reference uses three',
+                'model_specific': true,
+                'alternative_explanation': null,
+              },
+            ],
           'inconsistent_signals': <String>[],
           'uncertain_signals': <String>[],
           'visible_quality': 88,
@@ -183,14 +212,27 @@ Map<String, dynamic> observationsJson({bool suspicious = false}) => {
           'evidence_id': 'reference_serial',
           'title': 'Reference / Serial',
           'observations': ['Serial visible'],
-          'consistent_signals': ['Serial format matches the model', 'Etch depth consistent'],
-          'inconsistent_signals': suspicious ? ['Serial is shallow and the wrong length'] : <String>[],
+          'consistent_signals': suspicious ? <String>[] : ['Serial format matches the model', 'Etch depth consistent'],
+          'inconsistent_signals': <String>[],
+          if (suspicious)
+            'findings': [
+              {
+                'feature': 'Rehaut serial',
+                'dimension': 'SERIAL_MARKING',
+                'type': 'COUNTERFEIT_INDICATOR',
+                'strength': 'STRONG',
+                'observation': 'Rehaut serial has 6 characters; this model uses 8',
+                'model_specific': true,
+                'alternative_explanation': null,
+              },
+            ],
           'uncertain_signals': <String>[],
           'visible_quality': 90,
         },
       ],
       'contradictions': <Map<String, dynamic>>[],
       'missing_critical_checks': <String>[],
+      'model_classification': suspicious ? 'LIKELY_REPLICA' : 'LIKELY_AUTHENTIC',
       'physical_checks': [
         {
           'title': 'Crown tactile check',
@@ -198,4 +240,13 @@ Map<String, dynamic> observationsJson({bool suspicious = false}) => {
           'what_to_look_for': 'Smooth threading without grit',
         },
       ],
+    };
+
+/// Second-pass verification response.
+Map<String, dynamic> verificationJson({String outcome = 'CONFIRMED', bool sufficient = true, int count = 3}) => {
+      'verifications': [
+        for (var i = 0; i < count; i++)
+          {'finding_index': i, 'outcome': outcome, 'verified_strength': 'STRONG', 'reason': 'fixture'},
+      ],
+      'sufficient_evidence_for_counterfeit': sufficient,
     };

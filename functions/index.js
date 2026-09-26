@@ -55,6 +55,13 @@ exports.generateStructuredContent = functions
 
     const uid = context.auth.uid;
     const { prompt, inlineImages, requestTypeLabel, maxOutputTokens } = data;
+    // Optional Gemini responseSchema (engine v2). Bounded so a caller can't
+    // push an arbitrarily large object through the proxy.
+    const responseSchema =
+      data.responseSchema && typeof data.responseSchema === "object" &&
+      JSON.stringify(data.responseSchema).length < 30000
+        ? data.responseSchema
+        : null;
 
     if (!prompt || typeof prompt !== "string") {
       throw new functions.https.HttpsError(
@@ -131,7 +138,7 @@ exports.generateStructuredContent = functions
     }
 
     try {
-      return await callGeminiAndParse({ inlineImages, prompt, maxOutputTokens, GEMINI_API_KEY });
+      return await callGeminiAndParse({ inlineImages, prompt, maxOutputTokens, responseSchema, GEMINI_API_KEY });
     } catch (err) {
       if (creditDecremented) {
         try {
@@ -157,7 +164,7 @@ exports.generateStructuredContent = functions
  * Split out from the main handler so the credit-refund catch above can wrap
  * it without duplicating the request/parsing logic.
  */
-async function callGeminiAndParse({ inlineImages, prompt, maxOutputTokens, GEMINI_API_KEY }) {
+async function callGeminiAndParse({ inlineImages, prompt, maxOutputTokens, responseSchema, GEMINI_API_KEY }) {
     // 3. Construct Gemini API request payload matching client shape
     const parts = [];
     if (Array.isArray(inlineImages) && inlineImages.length > 0) {
@@ -169,8 +176,13 @@ async function callGeminiAndParse({ inlineImages, prompt, maxOutputTokens, GEMIN
       contents: [{ parts }],
       generationConfig: {
         responseMimeType: "application/json",
-        temperature: 0.2,
+        // Determinism for repeat scans: temperature 0 always takes the most
+        // likely token, and a fixed seed pins any remaining sampling. The
+        // same photos should produce the same findings.
+        temperature: 0,
+        seed: 20260926,
         maxOutputTokens: maxOutputTokens || 2048,
+        ...(responseSchema ? { responseSchema } : {}),
       },
     };
 
@@ -195,6 +207,7 @@ async function callGeminiAndParse({ inlineImages, prompt, maxOutputTokens, GEMIN
     // retry loop across separate invocations, not from padding this one.
     const attemptsPerModel = 1;
     let response;
+    let usedModel = null;
     modelLoop: for (let m = 0; m < modelCandidates.length; m++) {
       const { name: modelName, thinkingConfig } = modelCandidates[m];
       const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
@@ -224,7 +237,10 @@ async function callGeminiAndParse({ inlineImages, prompt, maxOutputTokens, GEMIN
           continue;
         }
 
-        if (response.ok) break modelLoop;
+        if (response.ok) {
+          usedModel = modelName;
+          break modelLoop;
+        }
 
         const status = response.status;
         const isTransient = status === 429 || status >= 500;
@@ -297,6 +313,16 @@ async function callGeminiAndParse({ inlineImages, prompt, maxOutputTokens, GEMIN
 
     try {
       const parsed = JSON.parse(cleanJson);
+      // Which model actually answered. The two failover models don't give
+      // identical findings, so the client records this in every report's
+      // analysis log to explain any result differences.
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        parsed._meta = {
+          model: usedModel,
+          finishReason: candidates[0].finishReason || null,
+          schemaEnforced: Boolean(responseSchema),
+        };
+      }
       return parsed;
     } catch (parseError) {
       console.error("Failed to parse JSON response:", cleanJson);

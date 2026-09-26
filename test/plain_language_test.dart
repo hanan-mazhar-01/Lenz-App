@@ -227,7 +227,9 @@ void main() {
                   index: 6,
                   captured: false,
                 )
-              : e)
+              : e.id == 'dial'
+                  ? item(id: 'dial', title: 'Dial', weight: EvidenceWeight.critical, index: 2, captured: false)
+                  : e)
           .toList();
 
       final result = AuthenticationScoringEngine.evaluate(
@@ -240,8 +242,8 @@ void main() {
       );
 
       expect(result.verdict, Verdict.inconclusive);
-      expect(result.rationale, contains("We're missing one important photo"));
-      expect(result.missingEvidenceDescriptions.single, 'Number / Engraving — no photo added');
+      expect(result.rationale, contains("We're missing a few important photos"));
+      expect(result.missingEvidenceDescriptions, contains('Number / Engraving — no photo added'));
       expectPlain(result.rationale);
     });
 

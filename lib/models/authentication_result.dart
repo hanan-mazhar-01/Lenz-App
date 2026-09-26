@@ -1,13 +1,79 @@
 import 'evidence.dart';
 import 'product.dart';
 
+/// Internal classification. [code] is the engine's enum value; [label] is
+/// the user-facing wording.
 enum Verdict {
-  likelyAuthentic('Likely Authentic'),
-  likelyReplica('Likely Replica'),
-  inconclusive('Inconclusive');
+  likelyAuthentic('Appears Authentic', 'LIKELY_AUTHENTIC'),
+  likelyReplica('Likely Replica', 'LIKELY_REPLICA'),
+  inconclusive('Unable to Verify', 'INCONCLUSIVE');
 
   final String label;
-  const Verdict(this.label);
+  final String code;
+  const Verdict(this.label, this.code);
+
+  static Verdict parse(String? raw) {
+    final s = (raw ?? '').toLowerCase();
+    if (s.contains('authentic')) return Verdict.likelyAuthentic;
+    if (s.contains('replica') || s.contains('fake')) return Verdict.likelyReplica;
+    return Verdict.inconclusive;
+  }
+}
+
+/// How this scan relates to earlier scans of the same product (§17-19).
+class ConsistencyInfo {
+  /// The verdict the engine produced from this scan's evidence alone.
+  final Verdict rawVerdict;
+  final int rawConfidence;
+
+  final String? previousReportId;
+  final Verdict? previousVerdict;
+  final int? previousConfidence;
+
+  /// True when this scan's raw verdict was held back because it contradicted
+  /// a stable earlier result without new strong evidence.
+  final bool flipPrevented;
+
+  /// Aggregate across every matched scan, including this one.
+  final Verdict? sessionVerdict;
+  final int sessionScanCount;
+  final String note;
+
+  const ConsistencyInfo({
+    required this.rawVerdict,
+    required this.rawConfidence,
+    this.previousReportId,
+    this.previousVerdict,
+    this.previousConfidence,
+    this.flipPrevented = false,
+    this.sessionVerdict,
+    this.sessionScanCount = 1,
+    this.note = '',
+  });
+
+  Map<String, dynamic> toJson() => {
+        'rawVerdict': rawVerdict.name,
+        'rawConfidence': rawConfidence,
+        if (previousReportId != null) 'previousReportId': previousReportId,
+        if (previousVerdict != null) 'previousVerdict': previousVerdict!.name,
+        if (previousConfidence != null) 'previousConfidence': previousConfidence,
+        'flipPrevented': flipPrevented,
+        if (sessionVerdict != null) 'sessionVerdict': sessionVerdict!.name,
+        'sessionScanCount': sessionScanCount,
+        'note': note,
+      };
+
+  factory ConsistencyInfo.fromJson(Map<String, dynamic> json) => ConsistencyInfo(
+        rawVerdict: Verdict.parse(json['rawVerdict'] as String?),
+        rawConfidence: (json['rawConfidence'] as num?)?.toInt() ?? 0,
+        previousReportId: json['previousReportId'] as String?,
+        previousVerdict: json['previousVerdict'] == null ? null : Verdict.parse(json['previousVerdict'] as String?),
+        previousConfidence: (json['previousConfidence'] as num?)?.toInt(),
+        flipPrevented: json['flipPrevented'] as bool? ?? false,
+        sessionVerdict: json['sessionVerdict'] == null ? null : Verdict.parse(json['sessionVerdict'] as String?),
+        sessionScanCount: (json['sessionScanCount'] as num?)?.toInt() ?? 1,
+        note: json['note'] as String? ?? '',
+      );
 }
 
 /// A product-specific physical check the user can perform in person (§36).
@@ -69,6 +135,33 @@ class AuthenticationReport {
   final DateTime timestamp;
   final bool isFavorite;
 
+  // ------------------------------------------------------------ engine v2
+  /// 0-100: how well the photos let anyone inspect the item.
+  final int imageQualityScore;
+
+  /// 0-100: confidence in the analysis itself. Separate from
+  /// [authenticationConfidence], which is how strongly the evidence
+  /// supports the verdict.
+  final int analysisConfidence;
+
+  final bool needsMoreImages;
+  final List<String> recommendedViews;
+  final List<String> limitations;
+
+  /// Serial/model text read off the item. Observed text only, never
+  /// validated against a brand database.
+  final List<String> observedText;
+
+  /// Semantic product fingerprint used to recognise repeat scans.
+  final String? fingerprint;
+  final ConsistencyInfo? consistency;
+
+  final String engineVersion;
+  final String promptVersion;
+
+  /// Debug record of the analysis (§34). No personal data.
+  final Map<String, dynamic> analysisLog;
+
   const AuthenticationReport({
     required this.id,
     required this.product,
@@ -91,6 +184,17 @@ class AuthenticationReport {
     required this.rationale,
     required this.timestamp,
     this.isFavorite = false,
+    this.imageQualityScore = 0,
+    this.analysisConfidence = 0,
+    this.needsMoreImages = false,
+    this.recommendedViews = const [],
+    this.limitations = const [],
+    this.observedText = const [],
+    this.fingerprint,
+    this.consistency,
+    this.engineVersion = '1.0',
+    this.promptVersion = '1.0',
+    this.analysisLog = const {},
   }) : authenticationConfidence = authenticationConfidence ?? overallScore;
 
   /// Evidence items the user actually supplied and the app accepted.
@@ -118,6 +222,17 @@ class AuthenticationReport {
     String? rationale,
     DateTime? timestamp,
     bool? isFavorite,
+    int? imageQualityScore,
+    int? analysisConfidence,
+    bool? needsMoreImages,
+    List<String>? recommendedViews,
+    List<String>? limitations,
+    List<String>? observedText,
+    String? fingerprint,
+    ConsistencyInfo? consistency,
+    String? engineVersion,
+    String? promptVersion,
+    Map<String, dynamic>? analysisLog,
   }) {
     return AuthenticationReport(
       id: id ?? this.id,
@@ -141,6 +256,17 @@ class AuthenticationReport {
       rationale: rationale ?? this.rationale,
       timestamp: timestamp ?? this.timestamp,
       isFavorite: isFavorite ?? this.isFavorite,
+      imageQualityScore: imageQualityScore ?? this.imageQualityScore,
+      analysisConfidence: analysisConfidence ?? this.analysisConfidence,
+      needsMoreImages: needsMoreImages ?? this.needsMoreImages,
+      recommendedViews: recommendedViews ?? this.recommendedViews,
+      limitations: limitations ?? this.limitations,
+      observedText: observedText ?? this.observedText,
+      fingerprint: fingerprint ?? this.fingerprint,
+      consistency: consistency ?? this.consistency,
+      engineVersion: engineVersion ?? this.engineVersion,
+      promptVersion: promptVersion ?? this.promptVersion,
+      analysisLog: analysisLog ?? this.analysisLog,
     );
   }
 
@@ -167,19 +293,22 @@ class AuthenticationReport {
       'rationale': rationale,
       'timestamp': timestamp.toIso8601String(),
       'isFavorite': isFavorite,
+      'imageQualityScore': imageQualityScore,
+      'analysisConfidence': analysisConfidence,
+      'needsMoreImages': needsMoreImages,
+      'recommendedViews': recommendedViews,
+      'limitations': limitations,
+      'observedText': observedText,
+      if (fingerprint != null) 'fingerprint': fingerprint,
+      if (consistency != null) 'consistency': consistency!.toJson(),
+      'engineVersion': engineVersion,
+      'promptVersion': promptVersion,
+      'analysisLog': analysisLog,
     };
   }
 
   factory AuthenticationReport.fromJson(Map<String, dynamic> json) {
-    Verdict v;
-    final vStr = (json['verdict'] as String?)?.toLowerCase() ?? '';
-    if (vStr.contains('authentic')) {
-      v = Verdict.likelyAuthentic;
-    } else if (vStr.contains('replica') || vStr.contains('fake')) {
-      v = Verdict.likelyReplica;
-    } else {
-      v = Verdict.inconclusive;
-    }
+    final v = Verdict.parse(json['verdict'] as String?);
 
     List<String> strings(String key) =>
         (json[key] as List?)?.map((e) => e.toString()).toList() ?? const [];
@@ -218,6 +347,19 @@ class AuthenticationReport {
           ? DateTime.tryParse(json['timestamp'] as String) ?? DateTime.now()
           : DateTime.now(),
       isFavorite: json['isFavorite'] as bool? ?? false,
+      imageQualityScore: (json['imageQualityScore'] as num?)?.toInt() ?? 0,
+      analysisConfidence: (json['analysisConfidence'] as num?)?.toInt() ?? 0,
+      needsMoreImages: json['needsMoreImages'] as bool? ?? false,
+      recommendedViews: strings('recommendedViews'),
+      limitations: strings('limitations'),
+      observedText: strings('observedText'),
+      fingerprint: json['fingerprint'] as String?,
+      consistency: json['consistency'] is Map
+          ? ConsistencyInfo.fromJson(Map<String, dynamic>.from(json['consistency'] as Map))
+          : null,
+      engineVersion: json['engineVersion'] as String? ?? '1.0',
+      promptVersion: json['promptVersion'] as String? ?? '1.0',
+      analysisLog: json['analysisLog'] is Map ? Map<String, dynamic>.from(json['analysisLog'] as Map) : const {},
     );
   }
 }

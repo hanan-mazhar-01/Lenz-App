@@ -1,3 +1,4 @@
+import 'package:replica_detector/models/evidence_finding.dart';
 import 'package:replica_detector/models/evidence.dart';
 import 'package:replica_detector/models/evidence_observation.dart';
 import 'package:replica_detector/models/evidence_validation.dart';
@@ -126,3 +127,62 @@ List<PartObservation> cleanWatchObservations() => [
       observation(id: 'bracelet_clasp', title: 'Bracelet & Clasp', consistent: ['Clasp stamping is crisp']),
       observation(id: 'reference_serial', title: 'Reference / Serial', consistent: ['Serial format matches the model', 'Etch depth is consistent']),
     ];
+
+/// A typed engine-v2 finding.
+EvidenceFinding finding(
+  String evidenceId,
+  FindingType type, {
+  FindingStrength strength = FindingStrength.moderate,
+  String dimension = 'OTHER',
+  String feature = 'detail',
+  String observation = 'observed detail',
+  bool modelSpecific = false,
+  String? alternative,
+}) =>
+    EvidenceFinding(
+      evidenceId: evidenceId,
+      feature: feature,
+      dimension: dimension,
+      type: type,
+      strength: strength,
+      observation: observation,
+      modelSpecific: modelSpecific,
+      alternativeExplanation: alternative,
+    );
+
+/// An observation carrying typed findings.
+PartObservation typedObservation(String id, String title, List<EvidenceFinding> findings, {int quality = 90}) =>
+    PartObservation(evidenceId: id, title: title, observations: ['observed $title'], findings: findings, visibleQuality: quality);
+
+/// Strong, specific, model-level counterfeit evidence on three independent
+/// aspects of the watch: what a real replica verdict needs.
+List<PartObservation> strongReplicaWatchObservations() => [
+      observation(id: 'full_watch', title: 'Full Watch', consistent: ['Case shape is close to reference']),
+      typedObservation('dial', 'Dial', [
+        finding('dial', FindingType.counterfeitIndicator,
+            strength: FindingStrength.strong,
+            dimension: 'TYPOGRAPHY',
+            feature: 'Coronet',
+            observation: 'Coronet has a filled centre; the 126610LN coronet has open tines',
+            modelSpecific: true),
+      ]),
+      typedObservation('crown', 'Crown', [
+        finding('crown', FindingType.counterfeitIndicator,
+            strength: FindingStrength.strong,
+            dimension: 'HARDWARE',
+            feature: 'Triplock dots',
+            observation: 'Two dots under the crown logo; this reference uses three',
+            modelSpecific: true),
+      ]),
+      observation(id: 'caseback', title: 'Caseback', consistent: ['Caseback is unengraved']),
+      observation(id: 'bracelet_clasp', title: 'Bracelet & Clasp', consistent: ['Clasp closes flush']),
+      typedObservation('reference_serial', 'Reference / Serial', [
+        finding('reference_serial', FindingType.counterfeitIndicator,
+            strength: FindingStrength.strong,
+            dimension: 'SERIAL_MARKING',
+            feature: 'Rehaut serial',
+            observation: 'Rehaut serial has 6 characters; this model uses 8',
+            modelSpecific: true),
+      ]),
+    ];
+

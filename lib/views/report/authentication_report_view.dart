@@ -133,6 +133,15 @@ class _AuthenticationReportViewState extends State<AuthenticationReportView> {
               child: _buildQuickSummaryCard(context, report),
             ),
 
+            // 3b. Scores, limitations, next photo, repeat-scan note
+            if (_hasAssessmentDetails(report)) ...[
+              const SizedBox(height: 14),
+              FadeSlideTransition(
+                delay: const Duration(milliseconds: 140),
+                child: _buildAssessmentDetailsCard(report),
+              ),
+            ],
+
             const SizedBox(height: 22),
 
             // 4. Evidence List Section (Only shows items with user photos + percentage indicator line)
@@ -281,9 +290,9 @@ class _AuthenticationReportViewState extends State<AuthenticationReportView> {
     // 1-line reason explaining the confidence percentage clearly
     String singleLineReason;
     if (isAuthentic) {
-      singleLineReason = '$score% confidence genuine based on matching specifications.';
+      singleLineReason = '$score% confidence, based on the details visible in your photos.';
     } else if (isReplica) {
-      singleLineReason = '$score% confidence replica based on detected manufacturing flaws.';
+      singleLineReason = '$score% confidence, based on multiple product-specific inconsistencies.';
     } else {
       singleLineReason = report.rationale.isNotEmpty
           ? report.rationale.split('.').first
@@ -396,19 +405,17 @@ class _AuthenticationReportViewState extends State<AuthenticationReportView> {
   /// 3. Quick Summary Card
   Widget _buildQuickSummaryCard(BuildContext context, AuthenticationReport report) {
     // Derive clean summary bullet points from quickSummaryPoints or positive findings or defaults
+    // Only real findings: never pad with generic filler text.
     final List<String> bulletPoints = [];
     if (report.quickSummaryPoints.isNotEmpty) {
-      bulletPoints.addAll(report.quickSummaryPoints.take(2));
+      bulletPoints.addAll(report.quickSummaryPoints.take(3));
     } else if (report.positiveFindings.isNotEmpty) {
       bulletPoints.addAll(report.positiveFindings.take(2));
     }
-
-    if (bulletPoints.isEmpty) {
-      bulletPoints.add('Logo placement and typography analyzed.');
-      bulletPoints.add('Materials, seams, and hardware inspected.');
-    } else if (bulletPoints.length == 1) {
-      bulletPoints.add('Materials and finishing analyzed.');
+    if (bulletPoints.isEmpty && report.rationale.isNotEmpty) {
+      bulletPoints.add(report.rationale);
     }
+    final suspicious = report.suspiciousFindings.map((s) => s.toLowerCase()).toSet();
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -460,13 +467,9 @@ class _AuthenticationReportViewState extends State<AuthenticationReportView> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Padding(
-                    padding: EdgeInsets.only(top: 2),
-                    child: Icon(
-                      CupertinoIcons.checkmark_circle_fill,
-                      color: AppColors.deepForestGreen,
-                      size: 16,
-                    ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: _bulletIcon(point, report, suspicious),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -484,6 +487,115 @@ class _AuthenticationReportViewState extends State<AuthenticationReportView> {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bulletIcon(String point, AuthenticationReport report, Set<String> suspicious) {
+    final p = point.toLowerCase();
+    final isConcern = suspicious.contains(p) || p.startsWith('needs a closer look');
+    final isInfo = p.startsWith('next photo') ||
+        p.contains('earlier scan') ||
+        report.limitations.any((l) => l.toLowerCase() == p);
+    if (isConcern) {
+      return const Icon(CupertinoIcons.exclamationmark_circle_fill, color: Color(0xFF991B1B), size: 16);
+    }
+    if (isInfo) {
+      return const Icon(CupertinoIcons.info_circle_fill, color: Color(0xFFD97706), size: 16);
+    }
+    return const Icon(CupertinoIcons.checkmark_circle_fill, color: AppColors.deepForestGreen, size: 16);
+  }
+
+  bool _hasAssessmentDetails(AuthenticationReport report) =>
+      report.imageQualityScore > 0 ||
+      report.limitations.isNotEmpty ||
+      report.recommendedViews.isNotEmpty ||
+      (report.consistency?.note.isNotEmpty ?? false);
+
+  /// Scores are kept separate on purpose: how good the photos are, how
+  /// sure the analysis is, and what the item is are different questions
+  /// from whether it's authentic (§15).
+  Widget _buildAssessmentDetailsCard(AuthenticationReport report) {
+    Widget scoreTile(String label, int value) => Expanded(
+          child: Column(
+            children: [
+              Text(
+                value > 0 ? '$value%' : '—',
+                style: const TextStyle(
+                  color: AppColors.nearBlack,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.3,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.charcoalGray, fontSize: 11, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        );
+
+    Widget heading(String text) => Padding(
+          padding: const EdgeInsets.only(top: 14, bottom: 6),
+          child: Text(
+            text,
+            style: const TextStyle(color: AppColors.nearBlack, fontSize: 14, fontWeight: FontWeight.w800),
+          ),
+        );
+
+    Widget line(IconData icon, Color color, String text) => Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(padding: const EdgeInsets.only(top: 2), child: Icon(icon, size: 15, color: color)),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  text,
+                  style: const TextStyle(color: AppColors.charcoalGray, fontSize: 13, height: 1.35),
+                ),
+              ),
+            ],
+          ),
+        );
+
+    final consistencyNote = report.consistency?.note ?? '';
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.veryLightWarmGray,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.nearBlack.withValues(alpha: 0.06)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (report.imageQualityScore > 0)
+            Row(
+              children: [
+                scoreTile('Photo quality', report.imageQualityScore),
+                scoreTile('Analysis confidence', report.analysisConfidence),
+                scoreTile('Item identified', report.identificationConfidence),
+              ],
+            ),
+          if (consistencyNote.isNotEmpty) ...[
+            heading('Earlier scans'),
+            line(CupertinoIcons.arrow_2_circlepath, AppColors.deepForestGreen, consistencyNote),
+          ],
+          if (report.limitations.isNotEmpty) ...[
+            heading('Limitations'),
+            for (final l in report.limitations) line(CupertinoIcons.info_circle, const Color(0xFFD97706), l),
+          ],
+          if (report.recommendedViews.isNotEmpty) ...[
+            heading(report.needsMoreImages ? 'More photos needed' : 'Recommended next photo'),
+            for (final v in report.recommendedViews) line(CupertinoIcons.camera, AppColors.deepForestGreen, v),
+          ],
         ],
       ),
     );

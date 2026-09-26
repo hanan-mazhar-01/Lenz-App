@@ -3,6 +3,8 @@ enum ProductCategory {
   bags('Bags'),
   watches('Watches'),
   clothing('Clothing'),
+  wallets('Wallets'),
+  eyewear('Eyewear'),
   accessories('Accessories');
 
   final String label;
@@ -19,6 +21,10 @@ class Product {
   final String imageAsset;
   final double identificationConfidence;
 
+  /// Fine-grained inspection code from identification, e.g. SUNGLASSES vs
+  /// EYEGLASSES or SNEAKER vs SHOE. Null for reports from engine v1.
+  final String? categoryCode;
+
   const Product({
     required this.id,
     required this.name,
@@ -28,6 +34,7 @@ class Product {
     this.customCategory,
     required this.imageAsset,
     this.identificationConfidence = 0.92,
+    this.categoryCode,
   });
 
   String get categoryLabel => customCategory ?? category.label;
@@ -44,6 +51,7 @@ class Product {
       if (customCategory != null) 'customCategory': customCategory,
       'imageAsset': imageAsset,
       'identificationConfidence': identificationConfidence,
+      if (categoryCode != null) 'categoryCode': categoryCode,
     };
   }
 
@@ -73,6 +81,7 @@ class Product {
       customCategory: customCat,
       imageAsset: json['imageAsset'] as String? ?? '',
       identificationConfidence: (json['identificationConfidence'] as num?)?.toDouble() ?? 0.9,
+      categoryCode: json['categoryCode'] as String?,
     );
   }
 }

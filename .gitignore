@@ -63,3 +63,6 @@ node_modules/
 
 # Local logs and backups
 git-push-error.log
+
+# Live authenticity evaluation output
+eval_results/

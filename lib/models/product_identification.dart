@@ -41,6 +41,10 @@ class ProductIdentification {
   final String? _product;
   final String? model;
   final String? variant;
+
+  /// Engine v2 inspection code: WATCH, HANDBAG, SNEAKER, SHOE, CLOTHING,
+  /// WALLET, ACCESSORY, SUNGLASSES, EYEGLASSES or OTHER.
+  final String? categoryCode;
   final double identificationConfidence;
   final List<String> visibleDetails;
   final List<String> missingEvidence;
@@ -56,6 +60,7 @@ class ProductIdentification {
     String? product,
     this.model,
     this.variant,
+    this.categoryCode,
     required this.identificationConfidence,
     this.visibleDetails = const [],
     this.missingEvidence = const [],
@@ -98,6 +103,8 @@ class ProductIdentification {
     final rawCat = (json['product_category'] as String? ?? json['category'] as String? ?? '').trim();
     final rawBrand = (json['brand'] as String? ?? '').trim();
     final rawProd = (json['product'] as String? ?? json['product_name'] as String? ?? '').trim();
+    final rawCode = (json['category_code'] as String? ?? '').trim().toUpperCase();
+    final categoryCode = categoryCodes.contains(rawCode) ? rawCode : null;
 
     final bool hasValidCategory = rawCat.isNotEmpty &&
         rawCat.toLowerCase() != 'unknown' &&
@@ -272,6 +279,7 @@ class ProductIdentification {
       product: cleanProduct,
       model: json['model'] as String?,
       variant: json['variant'] as String?,
+      categoryCode: categoryCode,
       identificationConfidence: conf,
       visibleDetails: details,
       missingEvidence: missing,
@@ -289,6 +297,7 @@ class ProductIdentification {
         'product': _product,
         if (model != null) 'model': model,
         if (variant != null) 'variant': variant,
+        if (categoryCode != null) 'category_code': categoryCode,
         'identification_confidence': identificationConfidence,
         'visible_details': visibleDetails,
         'missing_evidence': missingEvidence,
@@ -296,19 +305,45 @@ class ProductIdentification {
         'is_identified': isIdentified,
       };
 
-  ProductCategory get resolvedProductCategory {
-    final lower = category.toLowerCase();
-    if (lower.contains('watch') || lower.contains('timepiece')) {
-      return ProductCategory.watches;
-    } else if (lower.contains('bag') || lower.contains('purse') || lower.contains('tote') || lower.contains('wallet')) {
-      return ProductCategory.bags;
-    } else if (lower.contains('sneaker') || lower.contains('shoe') || lower.contains('footwear') || lower.contains('boot')) {
-      return ProductCategory.sneakers;
-    } else if (lower.contains('cloth') || lower.contains('apparel') || lower.contains('jacket') || lower.contains('hoodie')) {
-      return ProductCategory.clothing;
+  static const categoryCodes = {
+    'WATCH', 'HANDBAG', 'SNEAKER', 'SHOE', 'CLOTHING', 'WALLET',
+    'ACCESSORY', 'SUNGLASSES', 'EYEGLASSES', 'OTHER',
+  };
+
+  /// The inspection code, falling back to keyword matching on the free-text
+  /// category for engine v1 responses.
+  String get resolvedCategoryCode {
+    if (categoryCode != null) return categoryCode!;
+    final l = category.toLowerCase();
+    if (l.contains('sunglass')) return 'SUNGLASSES';
+    if (l.contains('glasses') || l.contains('eyewear') || l.contains('optical') || l.contains('spectacle') || l.contains('frames')) {
+      return 'EYEGLASSES';
     }
-    return ProductCategory.accessories;
+    if (l.contains('watch') || l.contains('timepiece')) return 'WATCH';
+    if (l.contains('wallet') || l.contains('card holder') || l.contains('cardholder')) return 'WALLET';
+    if (l.contains('bag') || l.contains('purse') || l.contains('tote')) return 'HANDBAG';
+    if (l.contains('sneaker') || l.contains('trainer')) return 'SNEAKER';
+    if (l.contains('shoe') || l.contains('footwear') || l.contains('boot') || l.contains('loafer') || l.contains('heel')) {
+      return 'SHOE';
+    }
+    if (l.contains('cloth') || l.contains('apparel') || l.contains('jacket') || l.contains('hoodie') || l.contains('shirt')) {
+      return 'CLOTHING';
+    }
+    if (l.contains('access') || l.contains('belt') || l.contains('jewel')) return 'ACCESSORY';
+    return 'OTHER';
   }
+
+  static ProductCategory categoryForCode(String code) => switch (code) {
+        'WATCH' => ProductCategory.watches,
+        'HANDBAG' => ProductCategory.bags,
+        'SNEAKER' || 'SHOE' => ProductCategory.sneakers,
+        'CLOTHING' => ProductCategory.clothing,
+        'WALLET' => ProductCategory.wallets,
+        'SUNGLASSES' || 'EYEGLASSES' => ProductCategory.eyewear,
+        _ => ProductCategory.accessories,
+      };
+
+  ProductCategory get resolvedProductCategory => categoryForCode(resolvedCategoryCode);
 
   Product toProduct({required String imageAsset, String? id}) {
     if (!productDetected || productCategory == null) {
@@ -317,22 +352,10 @@ class ProductIdentification {
       );
     }
 
-    final stdCat = resolvedProductCategory;
+    final code = resolvedCategoryCode;
+    final stdCat = categoryForCode(code);
     final lower = category.toLowerCase().trim();
-    final bool isStandard = lower.contains('watch') ||
-        lower.contains('timepiece') ||
-        lower.contains('bag') ||
-        lower.contains('purse') ||
-        lower.contains('tote') ||
-        lower.contains('wallet') ||
-        lower.contains('sneaker') ||
-        lower.contains('shoe') ||
-        lower.contains('footwear') ||
-        lower.contains('cloth') ||
-        lower.contains('apparel') ||
-        lower.contains('jacket') ||
-        lower.contains('hoodie') ||
-        lower == 'accessories';
+    final bool isStandard = code != 'OTHER' && code != 'ACCESSORY' || lower == 'accessories';
 
     final custom = !isStandard && category.trim().isNotEmpty && lower != 'unknown'
         ? category.trim()
@@ -347,6 +370,7 @@ class ProductIdentification {
       customCategory: custom,
       imageAsset: imageAsset,
       identificationConfidence: identificationConfidence,
+      categoryCode: code,
     );
   }
 }

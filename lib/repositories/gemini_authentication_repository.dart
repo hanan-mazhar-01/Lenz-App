@@ -1,17 +1,22 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import '../core/config/authenticity_engine_config.dart';
 import '../core/errors/app_error.dart';
 import '../data/authentication_rules.dart';
 import '../data/reference_library.dart';
 import '../models/authentication_result.dart';
 import '../models/evidence.dart';
 import '../models/evidence_observation.dart';
-import '../models/evidence_plan.dart';
 import '../models/evidence_validation.dart';
 import '../models/product.dart';
 import '../models/product_identification.dart';
+import '../models/evidence_finding.dart';
 import '../services/authentication_scoring_engine.dart';
+import '../services/authenticity_prompts.dart';
 import '../services/gemini_service.dart';
 import '../services/image_preparation_service.dart';
+import '../services/image_quality_checker.dart';
+import '../services/scan_consistency_service.dart';
 
 /// Real inference pipeline. Every value it returns originates in a model
 /// response or the local scoring engine — there is no synthetic fallback, so a
@@ -53,76 +58,13 @@ class GeminiAuthenticationRepository {
       preset: ImagePreset.identification,
     );
 
-    const prompt = '''You are a strict luxury product presence validator and identifier for an authentication system.
-Before attempting to identify any brand or product, perform an IMAGE VALIDATION & PRODUCT PRESENCE evaluation.
-
-IMAGE VALIDATION RULES:
-1. USABILITY & BRIGHTNESS:
-   - If the photo is pitch black, extremely dark, or has insufficient lighting:
-     status="unusable_image", reason="image_too_dark", product_detected=false.
-     message="Image is too dark to analyze. Please move to a brighter area and scan the item again."
-   - If the photo is completely blank, solid color, empty wall, or has no visible object:
-     status="unusable_image", reason="no_visible_content", product_detected=false.
-     message="No visible item detected. Please point the camera at a product and try again."
-   - If the photo is heavily blurred, out of focus, or obstructed:
-     status="unusable_image", reason="insufficient_visual_quality", product_detected=false.
-     message="The image isn't clear enough to analyze. Please capture a sharper photo with the item fully visible."
-
-2. HUMAN DETECTION:
-   - If the photo primarily contains a person, human face, selfie, body, hands, or outfit without an obvious luxury product being inspected:
-     status="not_product", reason="human_detected", product_detected=false.
-     message="Please scan a luxury item such as a handbag, watch, shoe, wallet, jewelry, or other supported product."
-     DO NOT guess or invent a product or brand for a human.
-
-3. IRRELEVANT OBJECTS:
-   - If the photo depicts food, drinks, furniture, wall, floor, animal, pet, vehicle, landscape, scenery, random electronics (computer monitor, keyboard, cable), or general household clutter:
-     status="not_product", reason="unsupported_object", product_detected=false.
-     message="No supported luxury item detected. Please scan a supported product."
-     DO NOT invent a luxury brand or classify random objects as luxury goods.
-
-4. PARTIAL / INSUFFICIENT EVIDENCE:
-   - If a product appears to be present but is heavily cropped, mostly hidden, or too distant to identify:
-     status="insufficient_evidence", reason="partial_product_insufficient_evidence", product_detected=false.
-     message="There isn't enough visible detail to reliably determine the item. Please capture a clearer full-view photo."
-
-5. VALID SUPPORTED LUXURY PRODUCT:
-   - ONLY when an actual physical luxury product (e.g. Handbag, Watch, Sneakers/Shoes, Clothing, Wallet, Belt, Jewelry, Sunglasses/Eyewear, Perfume) is clearly visible and centered:
-     status="product_detected", reason="valid_luxury_product", product_detected=true.
-     Identify product_category (e.g. "Bags", "Watches", "Sneakers", "Clothing", "Accessories", "Jewelry").
-     Identify brand ONLY if visible or distinctive (e.g. "Louis Vuitton", "Rolex", "Nike", "Gucci", "Hermes"). If not identifiable, set brand="not_identifiable".
-     Identify product_name and model ONLY if clearly recognizable. NEVER hallucinate details.
-     confidence: realistic 0.0 to 0.99.
-     IMPORTANT: this app's entire purpose is checking whether an item is a genuine luxury product or a replica/fake - so many scanned items will legitimately look plain, unbranded, low-quality, or otherwise NOT obviously "luxury" at a glance (that uncertainty is exactly what the user is trying to resolve). Classify by OBJECT TYPE, not by how expensive or authentic it looks: if the object is clearly a watch (any analog/digital watch with a case, dial and strap/band - branded or not, plain or ornate, blurry logo or no logo, glare on the dial, worn on a wrist or on a surface), that is a valid product_category="Watches" with product_detected=true, even if you cannot tell the brand, cannot tell if it's genuine, or it doesn't look expensive. The same applies to bags, sneakers, wallets, belts, jewelry, eyewear, and perfume - do not reject an item just because it looks like it could be fake, generic, or low-value. Only use "not_product"/"unsupported_object" for things that are not one of these product types at all (e.g. furniture, food, a wall).
-
-CRITICAL INVARIANTS:
-- If product_detected is false:
-  brand MUST be null
-  model MUST be null
-  product_name MUST be null
-  product_category MUST be null
-- NEVER output "Unknown Luxury Item". Output status "not_product" or "unusable_image" instead.
-
-OUTPUT RFC-8259 JSON ONLY:
-{
-  "status": "product_detected | not_product | unusable_image | insufficient_evidence",
-  "reason": "human_detected | unsupported_object | image_too_dark | no_visible_content | insufficient_visual_quality | partial_product_insufficient_evidence | valid_luxury_product",
-  "product_detected": true,
-  "product_category": "Category Name or null",
-  "brand": "Brand Name or null",
-  "product_name": "Product Name or null",
-  "model": "Model or null",
-  "confidence": 0.92,
-  "visible_details": ["feature 1", "feature 2"],
-  "missing_evidence": ["missing angle"],
-  "message": "User-facing summary"
-}''';
-
     final response = await _geminiService.generateStructuredContent(
-      prompt: prompt,
+      prompt: AuthenticityPrompts.identificationPrompt,
       inlineImages: [prepared.toInlineData()],
       requestTypeLabel: 'product_identification_and_validation',
-      maxOutputTokens: 600,
+      maxOutputTokens: 700,
       timeout: const Duration(seconds: 30),
+      responseSchema: AuthenticityPrompts.identificationSchema,
     );
 
     final identification = ProductIdentification.fromJson(response);
@@ -134,80 +76,29 @@ OUTPUT RFC-8259 JSON ONLY:
   // Step 2 — Evidence plan: 5-6 product-specific angles with weights
   // ---------------------------------------------------------------------------
 
+  /// The capture checklist for this product.
+  ///
+  /// Deterministic on purpose: it comes from the category/model rule set,
+  /// not from a fresh Gemini call. Engine v1 asked Gemini for a new plan on
+  /// every scan, so two scans of the same item were judged against
+  /// different "critical" angles, which is one of the reasons results
+  /// flipped between scans.
   Future<List<EvidenceItem>> getRequiredEvidence(Product product) async {
     final cacheKey = '${product.id}|${product.brand}|${product.name}';
     final cached = _evidencePlanCache[cacheKey];
-    if (cached != null) {
-      if (kDebugMode) debugPrint('[Auth] evidence plan served from scan cache');
-      return cached;
-    }
+    if (cached != null) return cached;
 
     final rules = AuthenticationRules.resolve(
       category: product.category,
       brand: product.brand,
       model: product.model,
+      name: product.name,
     );
-    final ref = ReferenceLibrary.findReference(product.brand, product.name);
-
-    final referenceHint = ref != null
-        ? '\nKnown checkpoints for this model:\n${ref.features.map((f) => '- ${f.title}: ${f.expectedDetail}').join('\n')}'
-        : '';
-
-    final prompt = '''Item: ${product.brand} ${product.name}${product.model.isNotEmpty ? ' (${product.model})' : ''} - ${product.category.label}.
-
-Choose the smallest practical set of clear, easy-to-understand photo requests that give strong evidence for THIS specific product. Return 5 or 6.
-$referenceHint
-
-WRITE FOR A NORMAL PERSON, NOT AN AUTHENTICATOR:
-- "title": 1-3 everyday words naming a physical part. The user must understand it without reading anything else.
-  Good: Full Item, Logo, Tag, Inside, Back, Bottom, Front, Side, Sole, Stitching, Clasp, Zipper, Dial, Crown, Engraving, Number, Box Label.
-  Never: reference area, production identifier, construction detail, hardware geometry, typography, manufacturing marker, authentication evidence.
-- "guide": ONE short sentence telling them what to do, e.g. "Take a close-up of the small knob on the side."
-- "why": ONE short sentence, e.g. "We'll check its shape and details." No authentication theory.
-
-Ask for one photo per physical area, not one per detail: request "Logo" once rather than logo spacing, logo font and logo placement separately.
-
-Assign a weight (this is internal, the user never sees it):
-- "critical": identity evidence (serial or model number, main logo, dial, size or neck tag)
-- "high": strong build or shape evidence
-- "medium": supporting detail
-- "low": box, papers or packaging (never decisive)
-
-Include 2-3 critical items. At most one "low".
-
-JSON only:
-{"requiredEvidence":[{"id":"snake_case_internal_id","title":"Short Title","guide":"One short sentence.","reason":"One short sentence.","weight":"critical|high|medium|low"}]}''';
-
-    List<EvidenceItem> items;
-    try {
-      final response = await _geminiService.generateStructuredContent(
-        prompt: prompt,
-        requestTypeLabel: 'evidence_plan',
-        maxOutputTokens: 1400,
-        timeout: const Duration(seconds: 35),
-      );
-
-      final plan = EvidencePlan.fromJson(response);
-      items = <EvidenceItem>[];
-      for (int i = 0; i < plan.requiredEvidence.length; i++) {
-        items.add(plan.requiredEvidence[i].toEvidenceItem(index: i + 1));
-      }
-    } catch (e) {
-      // The plan is a capture checklist, not a result. Falling back to the local
-      // category blueprint keeps the user moving without inventing findings.
-      if (kDebugMode) {
-        debugPrint('[Auth] evidence plan request failed ($e) - using local category blueprint');
-      }
-      items = const [];
-    }
-
-    if (items.length < 4) {
-      items = rules.evidenceBlueprint
-          .asMap()
-          .entries
-          .map((e) => e.value.toEvidenceItem(e.key + 1))
-          .toList();
-    }
+    final items = rules.evidenceBlueprint
+        .asMap()
+        .entries
+        .map((e) => e.value.toEvidenceItem(e.key + 1))
+        .toList();
 
     final normalized = _normalizePlan(items, rules);
     _evidencePlanCache[cacheKey] = normalized;
@@ -359,17 +250,22 @@ JSON only:
     required Map<String, String> capturedImages,
     String? overviewImagePath,
     int identificationConfidence = 0,
+    String? scanId,
   }) async {
+    final startedAt = DateTime.now();
     final rules = AuthenticationRules.resolve(
       category: product.category,
       brand: product.brand,
       model: product.model,
+      name: product.name,
     );
     final ref = ReferenceLibrary.findReference(product.brand, product.name);
 
     final imageParts = <Map<String, dynamic>>[];
     final imageManifest = StringBuffer();
     final missingList = <EvidenceItem>[];
+    final localQuality = <int>[];
+    final localQualityById = <String, int>{};
 
     int imageIndex = 1;
     for (final item in evidenceItems) {
@@ -383,13 +279,17 @@ JSON only:
       imageManifest.writeln(
         'IMAGE $imageIndex -> evidence_id "${item.id}" (${item.title}, importance: ${item.weight.label})',
       );
+      final q = await ImageQualityChecker.evaluate(path);
+      if (q.qualityScore > 0) {
+        localQuality.add(q.qualityScore);
+        localQualityById[item.id] = q.qualityScore;
+      }
       imageIndex++;
     }
 
     // The user supplied none of the requested angles. Rather than blocking
     // them, analyse the original identification photo on its own. It is not
-    // credited to any requested angle, so evidence coverage stays at zero and
-    // the result is bounded to inconclusive (§4, §26).
+    // credited to any requested angle, so evidence coverage stays at zero.
     var overviewOnly = false;
     if (imageParts.isEmpty) {
       if (overviewImagePath == null || overviewImagePath.isEmpty) {
@@ -403,103 +303,236 @@ JSON only:
         'IMAGE 1 -> evidence_id "overview" (the original identification photo; '
         'it was NOT captured against any requested angle)',
       );
+      final q = await ImageQualityChecker.evaluate(overviewImagePath);
+      if (q.qualityScore > 0) localQuality.add(q.qualityScore);
       overviewOnly = true;
     }
 
     final missingNote = missingList.isEmpty
-        ? 'None - all requested angles were supplied.'
+        ? 'None - all requested photos were supplied.'
         : missingList
             .map((m) => '- ${m.title} (${m.weight.label}${m.isUnavailable ? ', user does not have it' : ', not supplied'})')
             .join('\n');
 
-    final referenceNotes = StringBuffer();
-    if (ref != null) {
-      referenceNotes.writeln('Documented checkpoints for ${ref.brand} ${ref.model}:');
-      for (final f in ref.features) {
-        referenceNotes.writeln('- ${f.title}: ${f.expectedDetail}');
-      }
-      referenceNotes.writeln('Documented replica tells:');
-      for (final flaw in ref.commonReplicaFlaws) {
-        referenceNotes.writeln('- $flaw');
-      }
-    }
-
-    final prompt = '''All attached images show ONE physical item: ${product.brand} ${product.name}${product.model.isNotEmpty ? ' (${product.model})' : ''}, category ${product.category.label}.
-
-$imageManifest
-Requested angles NOT supplied:
-$missingNote
-${overviewOnly ? '\nNOTE: none of the requested angles were supplied. Report only what the single overview photo shows, and list every requested angle under missing_critical_checks.' : ''}
-
-INSPECTION FRAMEWORK for this category:
-${rules.inspectionBriefing}
-
-${referenceNotes.isEmpty ? '' : referenceNotes.toString()}
-RULES:
-1. Report OBSERVATIONS, not a verdict. Do NOT output an authenticity score or conclusion - the application computes that.
-2. Treat all images as the same item. Actively compare them against each other and report any conflict (a reference on one image disagreeing with another, mismatched finish, different variant).
-3. Category knowledge tells you what to inspect. It is NEVER proof by itself. Anchor each finding in what is visible in these photos.
-4. If a detail is too small, blurred or obscured to judge, put it in uncertain_signals - do not guess.
-5. Reference every observation to the evidence_id of the image it came from.
-
-JSON only:
-{"evidence_observations":[{"evidence_id":"","title":"","observations":[""],"consistent_signals":[""],"inconsistent_signals":[""],"uncertain_signals":[""],"visible_quality":0}],"contradictions":[{"description":"","involved_parts":[""],"severity":"minor|moderate|critical"}],"missing_critical_checks":[""],"physical_checks":[{"title":"","description":"","what_to_look_for":""}]}''';
+    final prompt = AuthenticityPrompts.forensicAnalysisPrompt(
+      product: product,
+      rules: rules,
+      imageManifest: imageManifest.toString(),
+      missingNote: missingNote,
+      overviewOnly: overviewOnly,
+      reference: ref,
+    );
 
     // A failure here is surfaced, never replaced with invented observations.
     final response = await _geminiService.generateStructuredContent(
       prompt: prompt,
       inlineImages: imageParts,
       requestTypeLabel: 'multi_image_forensic_observations',
-      maxOutputTokens: 4096,
+      maxOutputTokens: 8192,
       timeout: const Duration(seconds: 90),
+      responseSchema: AuthenticityPrompts.forensicAnalysisSchema,
     );
 
-    final geminiResponse = GeminiEvidenceResponse.fromJson(response);
-
-    if (geminiResponse.partObservations.isEmpty) {
+    final analysis = GeminiEvidenceResponse.fromJson(response);
+    if (analysis.partObservations.isEmpty) {
       throw AppError.invalidResponse();
     }
 
-    final scoringResult = AuthenticationScoringEngine.evaluate(
-      product: product,
-      rawIdentificationConfidence: identificationConfidence,
-      requiredEvidence: evidenceItems,
-      capturedImages: capturedImages,
-      observations: geminiResponse.partObservations,
-      contradictions: geminiResponse.contradictions,
-      rules: rules,
-      reference: ref,
-      hasModelReference: ref != null,
+    ScoringEngineResult score({
+      Map<String, VerificationResult> verifications = const {},
+      bool? verificationSufficient,
+    }) =>
+        AuthenticationScoringEngine.evaluate(
+          product: product,
+          rawIdentificationConfidence: identificationConfidence,
+          requiredEvidence: evidenceItems,
+          capturedImages: capturedImages,
+          observations: analysis.partObservations,
+          contradictions: analysis.contradictions,
+          rules: rules,
+          reference: ref,
+          hasModelReference: ref != null,
+          analysis: analysis,
+          localQualityScores: localQuality,
+          verifications: verifications,
+          verificationSufficient: verificationSufficient,
+        );
+
+    var result = score();
+
+    // Contradiction check (§26-27): before "Likely Replica" is ever shown,
+    // a second, independent pass challenges each counterfeit finding.
+    Map<String, dynamic>? verificationLog;
+    if (result.verdict == Verdict.likelyReplica && result.counterfeitFindingsToVerify.isNotEmpty) {
+      final toVerify = result.counterfeitFindingsToVerify;
+      try {
+        final vResponse = await _geminiService.generateStructuredContent(
+          prompt: AuthenticityPrompts.verificationPrompt(
+            product: product,
+            counterfeitFindings: toVerify,
+            imageManifest: imageManifest.toString(),
+            rules: rules,
+          ),
+          inlineImages: imageParts,
+          requestTypeLabel: 'counterfeit_verification',
+          maxOutputTokens: 2048,
+          timeout: const Duration(seconds: 60),
+          responseSchema: AuthenticityPrompts.verificationSchema,
+        );
+        final verifications = <String, VerificationResult>{};
+        for (final v in (vResponse['verifications'] as List? ?? const []).whereType<Map>()) {
+          final idx = (v['finding_index'] as num?)?.toInt();
+          if (idx == null || idx < 0 || idx >= toVerify.length) continue;
+          final f = toVerify[idx];
+          verifications[AuthenticationScoringEngine.findingKey(f.evidenceId, f)] = VerificationResult(
+            outcome: VerificationOutcome.parse(v['outcome'] as String?),
+            strength: FindingStrength.parse(v['verified_strength'] as String?),
+            reason: (v['reason'] as String? ?? '').trim(),
+          );
+        }
+        final sufficient = vResponse['sufficient_evidence_for_counterfeit'] == true;
+        result = score(verifications: verifications, verificationSufficient: sufficient);
+        verificationLog = {
+          'sufficient': sufficient,
+          // A list, not a map: the keys contain free text, which is fragile
+          // as Firestore map keys.
+          'results': [for (final e in verifications.entries) {'finding': e.key, ...e.value.toJson()}],
+          'verdictAfter': result.verdict.code,
+          'model': (vResponse['_meta'] as Map?)?['model'],
+        };
+      } catch (e) {
+        // No verification, no replica verdict: an unchallenged counterfeit
+        // call is exactly the false positive this pass exists to prevent.
+        result = score(verificationSufficient: false);
+        verificationLog = {'error': e.toString(), 'verdictAfter': result.verdict.code};
+      }
+    }
+
+    final fingerprint = ScanConsistencyService.fingerprint(
+      product,
+      analysedModel: analysis.model,
+      observedText: analysis.observedText,
     );
+
+    final analysisLog = _buildAnalysisLog(
+      scanId: scanId,
+      startedAt: startedAt,
+      product: product,
+      rules: rules,
+      analysis: analysis,
+      result: result,
+      rawResponse: response,
+      localQualityById: localQualityById,
+      verificationLog: verificationLog,
+      fingerprint: fingerprint,
+      imageCount: imageParts.length,
+    );
+    if (kDebugMode) {
+      debugPrint('[AuthEngine] ${jsonEncode({...analysisLog, 'raw_response': '<omitted>'})}');
+    }
 
     return AuthenticationReport(
       id: 'rep_${DateTime.now().millisecondsSinceEpoch}',
       product: product,
-      verdict: scoringResult.verdict,
-      overallScore: scoringResult.authenticationConfidence,
-      identificationConfidence: scoringResult.identificationConfidence,
-      authenticationConfidence: scoringResult.authenticationConfidence,
-      evidenceCoverageText: scoringResult.evidenceCoverageText,
-      coveredEvidenceCount: scoringResult.coveredCount,
-      totalEvidenceCount: scoringResult.totalCount,
-      quickSummaryPoints: scoringResult.quickSummaryPoints,
-      positiveFindings: scoringResult.positiveFindings,
-      suspiciousFindings: scoringResult.suspiciousFindings,
-      unclearFindings: scoringResult.unclearFindings,
-      missingEvidence: scoringResult.missingEvidenceDescriptions,
-      contradictions: scoringResult.contradictionDescriptions,
-      nextChecks: scoringResult.nextChecks,
-      physicalChecks: geminiResponse.physicalChecks
+      verdict: result.verdict,
+      overallScore: result.authenticationConfidence,
+      identificationConfidence: result.identificationConfidence,
+      authenticationConfidence: result.authenticationConfidence,
+      evidenceCoverageText: result.evidenceCoverageText,
+      coveredEvidenceCount: result.coveredCount,
+      totalEvidenceCount: result.totalCount,
+      quickSummaryPoints: result.quickSummaryPoints,
+      positiveFindings: result.positiveFindings,
+      suspiciousFindings: result.suspiciousFindings,
+      unclearFindings: result.unclearFindings,
+      missingEvidence: result.missingEvidenceDescriptions,
+      contradictions: result.contradictionDescriptions,
+      nextChecks: result.nextChecks,
+      physicalChecks: analysis.physicalChecks
           .map((c) => PhysicalCheck(
                 title: c['title'] ?? '',
                 description: c['description'] ?? '',
                 whatToLookFor: c['what_to_look_for'] ?? '',
               ))
           .toList(),
-      evidenceItems: scoringResult.scoredEvidenceItems,
-      rationale: scoringResult.rationale,
+      evidenceItems: result.scoredEvidenceItems,
+      rationale: result.rationale,
       timestamp: DateTime.now(),
       isFavorite: false,
+      imageQualityScore: result.imageQualityScore,
+      analysisConfidence: result.analysisConfidence,
+      needsMoreImages: result.needsMoreImages,
+      recommendedViews: result.recommendedViews,
+      limitations: result.limitations,
+      observedText: analysis.observedText,
+      fingerprint: fingerprint,
+      engineVersion: AuthenticityEngineConfig.engineVersion,
+      promptVersion: AuthenticityEngineConfig.promptVersion,
+      analysisLog: analysisLog,
     );
+  }
+
+  /// Everything needed to explain a result later (§34), and nothing about
+  /// the user: no name, email, uid, image data or file paths.
+  static Map<String, dynamic> _buildAnalysisLog({
+    required String? scanId,
+    required DateTime startedAt,
+    required Product product,
+    required AuthenticationRuleSet rules,
+    required GeminiEvidenceResponse analysis,
+    required ScoringEngineResult result,
+    required Map<String, dynamic> rawResponse,
+    required Map<String, int> localQualityById,
+    required Map<String, dynamic>? verificationLog,
+    required String fingerprint,
+    required int imageCount,
+  }) {
+    var raw = jsonEncode(rawResponse);
+    if (raw.length > 20000) raw = '${raw.substring(0, 20000)}...<truncated>';
+    final findings = result.normalizedFindings;
+    return {
+      'engine_version': AuthenticityEngineConfig.engineVersion,
+      'prompt_version': AuthenticityEngineConfig.promptVersion,
+      'timestamp': startedAt.toIso8601String(),
+      'duration_ms': DateTime.now().difference(startedAt).inMilliseconds,
+      'scan_id': ?scanId,
+      'gemini_model': (rawResponse['_meta'] as Map?)?['model'],
+      'schema_enforced': (rawResponse['_meta'] as Map?)?['schemaEnforced'] ?? false,
+      'inspection_profile': rules.profileName,
+      'category': product.categoryCode ?? product.category.name,
+      'detected_category': analysis.categoryCode,
+      'brand': product.brand,
+      'detected_brand': analysis.brand,
+      'model': product.model,
+      'detected_model': analysis.model,
+      'model_confidence': analysis.modelConfidence,
+      'model_confirmed': analysis.modelConfirmed,
+      'fingerprint': fingerprint,
+      'image_count': imageCount,
+      'image_quality': result.imageQualityScore,
+      'gemini_image_quality': analysis.imageQualityScore,
+      'image_quality_issues': analysis.imageQualityIssues,
+      'local_image_quality': localQualityById,
+      'classification': result.verdict.code,
+      'model_classification': analysis.modelClassification,
+      'authenticity_confidence': result.authenticationConfidence,
+      'analysis_confidence': result.analysisConfidence,
+      'identification_confidence': result.identificationConfidence,
+      'authentic_points': result.authenticPoints,
+      'counterfeit_points': result.counterfeitPoints,
+      'strongCounterfeitCount': result.strongCounterfeitCount,
+      'flaggedEvidenceIds': {
+        for (final f in findings.where((f) => f.isCounterfeit && f.strength != FindingStrength.weak)) f.evidenceId,
+      }.toList(),
+      'authenticEvidenceIds': {
+        for (final f in findings.where((f) => f.isAuthentic && f.strength != FindingStrength.weak)) f.evidenceId,
+      }.toList(),
+      'contradiction_check': analysis.contradictionCheck.toJson(),
+      'decision_trace': result.decisionTrace,
+      'evidence': findings.map((f) => f.toJson()).toList(),
+      'missing_evidence': findings.where((f) => f.type == FindingType.missing).map((f) => f.toJson()).toList(),
+      'verification': ?verificationLog,
+      'raw_response': raw,
+    };
   }
 }

@@ -12,6 +12,8 @@ enum InspectionDimension {
   hardware('Hardware', 'Metal parts'),
   serial('Serial / Reference', 'Numbers and engraving'),
   labels('Labels & Tags', 'Tags and labels'),
+  display('Display & Sensors', 'Screen and sensors'),
+  lens('Lenses', 'Lenses'),
   packaging('Packaging', 'Box and papers');
 
   /// Internal label used in model prompts.
@@ -108,12 +110,17 @@ class EvidenceBlueprint {
 
   final EvidenceWeight weight;
 
+  /// True for photos of identity markings (serial, model code, date code,
+  /// size tag). Without one, the result's confidence ceiling is lower.
+  final bool identityMarking;
+
   const EvidenceBlueprint({
     required this.id,
     required this.title,
     required this.guide,
     required this.why,
     required this.weight,
+    this.identityMarking = false,
   });
 
   EvidenceItem toEvidenceItem(int index) => EvidenceItem(
@@ -138,13 +145,32 @@ class AuthenticationRuleSet {
   final List<EvidenceBlueprint> evidenceBlueprint;
   final List<InspectionRule> inspectionRules;
 
+  /// Category-specific traps: things that look like counterfeit evidence
+  /// in photos but usually aren't. Sent to the model verbatim.
+  final List<String> cautions;
+
+  /// When true, an overlay's rules replace the category rules instead of
+  /// adding to them. Needed where the base rules would actively mislead,
+  /// e.g. mechanical-watch dial rules applied to an Apple Watch screen.
+  final bool replacesBaseRules;
+
+  /// Human label for the inspection profile in prompts and logs.
+  final String profileName;
+
   const AuthenticationRuleSet({
     required this.category,
     this.brand,
     this.model,
     required this.evidenceBlueprint,
     required this.inspectionRules,
+    this.cautions = const [],
+    this.replacesBaseRules = false,
+    this.profileName = '',
   });
+
+  /// Evidence ids that show an identity marking.
+  Set<String> get identityEvidenceIds =>
+      evidenceBlueprint.where((e) => e.identityMarking).map((e) => e.id).toSet();
 
   List<String> get criticalEvidenceIds => evidenceBlueprint
       .where((e) => e.weight == EvidenceWeight.critical)
@@ -180,7 +206,11 @@ class AuthenticationRuleSet {
       model: override.model ?? model,
       evidenceBlueprint:
           override.evidenceBlueprint.isNotEmpty ? override.evidenceBlueprint : evidenceBlueprint,
-      inspectionRules: [...inspectionRules, ...override.inspectionRules],
+      inspectionRules: override.replacesBaseRules
+          ? override.inspectionRules
+          : [...inspectionRules, ...override.inspectionRules],
+      cautions: override.replacesBaseRules ? override.cautions : [...cautions, ...override.cautions],
+      profileName: override.profileName.isNotEmpty ? override.profileName : profileName,
     );
   }
 
@@ -239,6 +269,56 @@ abstract final class AuthenticationRules {
       guide: 'Take a close-up of any number or engraving on the watch.',
       why: "We'll check it matches this model.",
       weight: EvidenceWeight.critical,
+      identityMarking: true,
+    ),
+  ];
+
+  /// Apple Watch and other smartwatches: a screen, sensors and a digital
+  /// crown, none of which mechanical-watch rules describe correctly.
+  static const List<EvidenceBlueprint> _smartwatch = [
+    EvidenceBlueprint(
+      id: 'front_display',
+      title: 'Front',
+      guide: 'Take a photo of the front with the screen on.',
+      why: "We'll check the screen shape, edges and bezel.",
+      weight: EvidenceWeight.critical,
+    ),
+    EvidenceBlueprint(
+      id: 'back_sensor',
+      title: 'Back',
+      guide: 'Turn the watch over and photograph the sensor on the back.',
+      why: "We'll check the sensor layout and the text around it.",
+      weight: EvidenceWeight.critical,
+      identityMarking: true,
+    ),
+    EvidenceBlueprint(
+      id: 'side_crown',
+      title: 'Crown Side',
+      guide: 'Take a close-up of the side with the crown and button.',
+      why: "We'll check the crown, button and openings.",
+      weight: EvidenceWeight.high,
+    ),
+    EvidenceBlueprint(
+      id: 'other_side',
+      title: 'Other Side',
+      guide: 'Photograph the opposite side of the watch.',
+      why: "We'll check the speaker openings and case edge.",
+      weight: EvidenceWeight.medium,
+    ),
+    EvidenceBlueprint(
+      id: 'band_connector',
+      title: 'Band / Connector',
+      guide: 'Show where the band slides into the watch.',
+      why: "We'll check the band slot and release button.",
+      weight: EvidenceWeight.medium,
+    ),
+    EvidenceBlueprint(
+      id: 'about_screen',
+      title: 'About Screen',
+      guide: 'Open Settings > General > About and photograph the screen.',
+      why: "We'll read the model details the watch reports.",
+      weight: EvidenceWeight.high,
+      identityMarking: true,
     ),
   ];
 
@@ -271,6 +351,7 @@ abstract final class AuthenticationRules {
       guide: 'Take a close-up of the tag or number inside.',
       why: "We'll check it matches this model.",
       weight: EvidenceWeight.critical,
+      identityMarking: true,
     ),
     EvidenceBlueprint(
       id: 'stitching',
@@ -310,6 +391,7 @@ abstract final class AuthenticationRules {
       guide: 'Take a photo of the tag inside the shoe.',
       why: "We'll check the text and numbers.",
       weight: EvidenceWeight.critical,
+      identityMarking: true,
     ),
     EvidenceBlueprint(
       id: 'stitching',
@@ -356,6 +438,7 @@ abstract final class AuthenticationRules {
       guide: 'Take a photo of the tag near the neck.',
       why: "We'll check the text and stitching.",
       weight: EvidenceWeight.critical,
+      identityMarking: true,
     ),
     EvidenceBlueprint(
       id: 'wash_tag',
@@ -363,6 +446,7 @@ abstract final class AuthenticationRules {
       guide: 'Take a photo of the care tag inside.',
       why: "We'll check the codes match this item.",
       weight: EvidenceWeight.high,
+      identityMarking: true,
     ),
     EvidenceBlueprint(
       id: 'stitching',
@@ -377,6 +461,100 @@ abstract final class AuthenticationRules {
       guide: 'Take a very close photo of the print or embroidery.',
       why: "We'll check how cleanly it's done.",
       weight: EvidenceWeight.medium,
+    ),
+  ];
+
+  // ---------------------------------------------------------------- wallets
+  static const List<EvidenceBlueprint> _wallet = [
+    EvidenceBlueprint(
+      id: 'full_wallet',
+      title: 'Full Wallet',
+      guide: 'Take a photo of the whole wallet, closed.',
+      why: "We'll check the overall shape and finish.",
+      weight: EvidenceWeight.high,
+    ),
+    EvidenceBlueprint(
+      id: 'logo',
+      title: 'Logo',
+      guide: 'Take a clear close-up of the logo or brand stamp.',
+      why: "We'll check its shape, depth and spacing.",
+      weight: EvidenceWeight.critical,
+    ),
+    EvidenceBlueprint(
+      id: 'interior_slots',
+      title: 'Inside',
+      guide: 'Open it and photograph the card slots.',
+      why: "We'll check how the inside is made.",
+      weight: EvidenceWeight.high,
+    ),
+    EvidenceBlueprint(
+      id: 'production_code',
+      title: 'Stamp / Number',
+      guide: 'Take a close-up of any code, stamp or "Made in" text inside.',
+      why: "We'll check it matches this model.",
+      weight: EvidenceWeight.critical,
+      identityMarking: true,
+    ),
+    EvidenceBlueprint(
+      id: 'edges_stitching',
+      title: 'Edges / Stitching',
+      guide: 'Take a close-up of an edge and its stitching.',
+      why: "We'll check the edge paint and stitches.",
+      weight: EvidenceWeight.medium,
+    ),
+    EvidenceBlueprint(
+      id: 'hardware',
+      title: 'Zipper / Snap',
+      guide: 'Show any zipper, snap or metal part clearly.',
+      why: "We'll check its shape and engraving.",
+      weight: EvidenceWeight.medium,
+    ),
+  ];
+
+  // ---------------------------------------------------------------- eyewear
+  static const List<EvidenceBlueprint> _eyewear = [
+    EvidenceBlueprint(
+      id: 'front_frame',
+      title: 'Front',
+      guide: 'Take a photo of the glasses from the front, lying flat.',
+      why: "We'll check the frame shape and lens outline.",
+      weight: EvidenceWeight.high,
+    ),
+    EvidenceBlueprint(
+      id: 'temple_outside',
+      title: 'Side / Arm',
+      guide: 'Photograph one arm from the outside, logo side up.',
+      why: "We'll check the logo and arm shape.",
+      weight: EvidenceWeight.high,
+    ),
+    EvidenceBlueprint(
+      id: 'inside_temple_markings',
+      title: 'Inside Arms',
+      guide: 'Photograph the inside of both arms so the printed codes are readable.',
+      why: "We'll read the model, size and 'Made in' markings.",
+      weight: EvidenceWeight.critical,
+      identityMarking: true,
+    ),
+    EvidenceBlueprint(
+      id: 'hinge',
+      title: 'Hinge',
+      guide: 'Take a close-up of where an arm joins the front.',
+      why: "We'll check the hinge and screws.",
+      weight: EvidenceWeight.high,
+    ),
+    EvidenceBlueprint(
+      id: 'bridge_nose_pads',
+      title: 'Nose Area',
+      guide: 'Take a close-up of the bridge and nose pads.',
+      why: "We'll check how the middle is built.",
+      weight: EvidenceWeight.medium,
+    ),
+    EvidenceBlueprint(
+      id: 'lens_logo',
+      title: 'Lens Logo',
+      guide: 'Tilt one lens toward the light and photograph any small logo on it.',
+      why: "We'll check the etched or printed lens mark.",
+      weight: EvidenceWeight.critical,
     ),
   ];
 
@@ -402,6 +580,7 @@ abstract final class AuthenticationRules {
       guide: 'Take a close-up of any number or engraving.',
       why: "We'll check it matches this model.",
       weight: EvidenceWeight.critical,
+      identityMarking: true,
     ),
     EvidenceBlueprint(
       id: 'material_finish',
@@ -468,14 +647,14 @@ abstract final class AuthenticationRules {
   static const List<InspectionRule> _watchRules = [
     InspectionRule(
       dimension: InspectionDimension.hardware,
-      check: 'Crown knurling, pusher machining and lug finishing.',
+      check: 'Analog watches: crown knurling, pusher machining and lug finishing.',
       genuineSignal: 'Machined teeth with clean edges; lugs flow smoothly into the case.',
       replicaSignal: 'Casting burrs, soft knurling, abrupt lug transitions.',
       simpleTip: 'Look at the small knob on the side. Its grooves should be sharp, not rounded.',
     ),
     InspectionRule(
       dimension: InspectionDimension.typography,
-      check: 'Dial text print quality, marker alignment and lume application.',
+      check: 'Analog watches: dial text print quality, marker alignment and lume application.',
       genuineSignal: 'Pad-printed text with sharp serifs; lume evenly filled to marker edges.',
       replicaSignal: 'Bleeding or grainy text; lume overflowing or pooled unevenly.',
       simpleTip: 'Look at the front. The text should be sharp and the markers evenly placed.',
@@ -486,6 +665,44 @@ abstract final class AuthenticationRules {
       genuineSignal: 'Solid links with no rattle; end links sit flush to the case.',
       replicaSignal: 'Hollow links, visible gaps at the lugs, loose clasp latching.',
       simpleTip: 'Shake the strap gently. It should feel solid with no rattle or gaps.',
+    ),
+  ];
+
+  static const List<InspectionRule> _smartwatchRules = [
+    InspectionRule(
+      dimension: InspectionDimension.shape,
+      check: 'Case geometry: corner radius, case thickness, curvature of the glass into the case, symmetry.',
+      genuineSignal: 'Case proportions and corner radius match the identified generation and size.',
+      replicaSignal: 'Visibly thicker case, flat glass with a hard edge, or proportions from a different model.',
+      simpleTip: 'Look at the watch from the side. The glass should curve smoothly into the case.',
+    ),
+    InspectionRule(
+      dimension: InspectionDimension.display,
+      check: 'Display: bezel width around the active area, screen shape, how the interface fills the screen.',
+      genuineSignal: 'Thin, even black border; interface fills the curved screen as expected for the generation.',
+      replicaSignal: 'Thick uneven bezel, rectangular non-curved screen, or an interface that is not watchOS.',
+      simpleTip: 'Turn the screen on. The black border around it should be thin and even.',
+    ),
+    InspectionRule(
+      dimension: InspectionDimension.hardware,
+      check: 'Digital Crown and side button: position, proportions, crown ridges, red ring on Series models with ECG where applicable.',
+      genuineSignal: 'Crown and button placed and sized as expected for the generation; clean fine ridges on the crown.',
+      replicaSignal: 'Crown or button in the wrong place, oversized, loose-looking, or with coarse moulded ridges.',
+      simpleTip: 'Look at the knob on the side. It should look precise, with fine even ridges.',
+    ),
+    InspectionRule(
+      dimension: InspectionDimension.display,
+      check: 'Back sensor: lens arrangement, sensor window shape, text printed around the sensor.',
+      genuineSignal: 'Sensor layout matches the identified generation; any printed text is crisp and even.',
+      replicaSignal: 'Sensor layout from no real generation, cheap-looking plastic back, blurry or misspelled text.',
+      simpleTip: 'Turn it over. The sensor should look precise and any text should be sharp.',
+    ),
+    InspectionRule(
+      dimension: InspectionDimension.hardware,
+      check: 'Band connector slot, band release buttons, speaker and microphone openings.',
+      genuineSignal: 'Clean slot edges, release buttons flush, openings neatly machined and placed as expected.',
+      replicaSignal: 'Rough slot edges, missing release buttons, openings in the wrong place.',
+      simpleTip: 'Check the slot where the band goes in. Its edges should be clean and even.',
     ),
   ];
 
@@ -523,7 +740,7 @@ abstract final class AuthenticationRules {
     ),
     InspectionRule(
       dimension: InspectionDimension.labels,
-      check: 'Inner size tag layout, font and production codes.',
+      check: 'Inner size tag layout, font and production codes (SKU/style code).',
       genuineSignal: 'Crisp thermal print with correct code structure for the model.',
       replicaSignal: 'Thickened or stamped-looking font, wrong code layout.',
       simpleTip: 'Look at the tag inside. The printing should be sharp, not thick or smudged.',
@@ -542,7 +759,7 @@ abstract final class AuthenticationRules {
       dimension: InspectionDimension.labels,
       check: 'Neck and care label weave, print and code structure.',
       genuineSignal: 'Tightly woven label, sharp print, codes matching the garment.',
-      replicaSignal: 'Coarse weave, blurred print, generic or missing codes.',
+      replicaSignal: 'Coarse weave, blurred print, codes that conflict with the garment.',
       simpleTip: 'Check the neck tag. It should be tightly woven with clear printing.',
     ),
     InspectionRule(
@@ -561,43 +778,178 @@ abstract final class AuthenticationRules {
     ),
   ];
 
+  static const List<InspectionRule> _walletRules = [
+    InspectionRule(
+      dimension: InspectionDimension.stitching,
+      check: 'Stitch pitch and edge paint along the outer edges and card slots.',
+      genuineSignal: 'Even pitch, straight stitch lines, smooth sealed edge paint.',
+      replicaSignal: 'Wandering stitch lines, frayed thread, lumpy or cracked edge paint.',
+      simpleTip: 'Run a finger along the edge. It should be smooth and evenly sealed.',
+    ),
+    InspectionRule(
+      dimension: InspectionDimension.labels,
+      check: 'Heat stamp or embossed logo depth, font and alignment; interior code format.',
+      genuineSignal: 'Crisp, evenly deep stamp with correct letterforms; code formatted as expected.',
+      replicaSignal: 'Shallow or blurry stamp, wrong letter shapes, code in an impossible format.',
+      simpleTip: 'Look at the stamped logo. It should be pressed evenly and read cleanly.',
+    ),
+    InspectionRule(
+      dimension: InspectionDimension.hardware,
+      check: 'Zipper pulls and snaps: engraving, weight, plating.',
+      genuineSignal: 'Engraved brand marks, even plating, solid feel.',
+      replicaSignal: 'Unmarked generic hardware where the model uses branded hardware, flaking plating.',
+      simpleTip: 'Check the zipper pull or snap for a clean engraved brand mark.',
+    ),
+  ];
+
+  static const List<InspectionRule> _eyewearRules = [
+    InspectionRule(
+      dimension: InspectionDimension.shape,
+      check: 'Frame geometry and symmetry: lens shape, bridge width, brow line, temple angle.',
+      genuineSignal: 'Symmetric frame whose shape matches the identified model family.',
+      replicaSignal: 'Visibly asymmetric frame, or a shape that belongs to no model in the family.',
+      simpleTip: 'Lay them flat. Both sides should be a perfect mirror of each other.',
+    ),
+    InspectionRule(
+      dimension: InspectionDimension.serial,
+      check: 'Inside-temple markings: model code, colour code, lens-bridge-temple size, "Made in", CE mark.',
+      genuineSignal: 'Crisp, evenly printed markings in the brand\'s usual layout, consistent with the model.',
+      replicaSignal: 'Smudged or uneven print, misspellings, a model code that conflicts with the frame shape.',
+      simpleTip: 'Read the tiny text inside the arms. It should be sharp and evenly spaced.',
+    ),
+    InspectionRule(
+      dimension: InspectionDimension.hardware,
+      check: 'Hinges, screws and temple cores: hinge type (barrel, spring, riveted), screw finish, visible metal core.',
+      genuineSignal: 'Solid multi-barrel or brand-specific hinge, clean screws, rivets where the model has them.',
+      replicaSignal: 'Flimsy single-barrel hinge on a model known for a heavier one, glued rather than riveted parts.',
+      simpleTip: 'Open and close the arms. The hinge should feel solid and move smoothly.',
+    ),
+    InspectionRule(
+      dimension: InspectionDimension.lens,
+      check: 'Lens logo (etched or printed), lens edge finishing and fit in the frame.',
+      genuineSignal: 'Fine, even lens mark in the correct lens and position; lenses seated tightly.',
+      replicaSignal: 'Thick sticker-like lens logo, mark in the wrong lens, gaps between lens and frame.',
+      simpleTip: 'Tilt a lens in the light. Any small logo on it should be fine and clean.',
+    ),
+    InspectionRule(
+      dimension: InspectionDimension.logo,
+      check: 'Temple logo: plaque, print or inlay; spacing and alignment.',
+      genuineSignal: 'Logo cleanly applied, level, correctly spaced for the model.',
+      replicaSignal: 'Crooked or bubbled logo, wrong font, logo placed on the wrong part of the arm.',
+      simpleTip: 'Look at the logo on the arm. It should be straight and neatly applied.',
+    ),
+  ];
+
+  // --------------------------------------------------------------- cautions
+  /// Applies to every category.
+  static const List<String> _sharedCautions = [
+    'A detail that is not visible is MISSING evidence, never counterfeit evidence.',
+    'Lighting, glare, reflections, shadows, blur, compression artifacts, camera angle and lens distortion change how details look. Do not treat those effects as counterfeit indicators.',
+    'Normal wear, scratches, dirt and fading are not counterfeit indicators.',
+    'Colour differences between photos are usually white-balance, not materials.',
+  ];
+
+  static const List<String> _watchCautions = [
+    'Dial glare and crystal reflections often hide or distort printing: report as AMBIGUOUS.',
+    'Only apply analog-dial rules (lume, pad printing, crown knurling) to analog watches.',
+  ];
+
+  static const List<String> _smartwatchCautions = [
+    'This is a smartwatch: do NOT apply mechanical-watch rules (lume, pad-printed dial text, crown knurling, rehaut, movement).',
+    'Serial numbers cannot be validated against Apple from a photo. Report a visible serial only as observed text.',
+    'A dark screen, screen protector or case cover hides details: report as MISSING or AMBIGUOUS.',
+    'Generations differ (sensor layout, button shape, case size). Compare only against the generation you identified; if the generation is uncertain, do not count generation-specific differences as counterfeit evidence.',
+  ];
+
+  static const List<String> _bagCautions = [
+    'Pattern alignment is only evidence when this specific model is known to be aligned at that seam. Do not apply generic "luxury bags are always aligned" rules.',
+    'Date codes and heat stamps vary by year and factory; only a format that is impossible for the brand is counterfeit evidence.',
+  ];
+
+  static const List<String> _sneakerCautions = [
+    'Slight colour differences, creasing, worn soles and dirt are not counterfeit indicators.',
+    'Stitch counts and shapes vary between factories and production years of genuine pairs.',
+  ];
+
+  static const List<String> _clothingCautions = [
+    'A missing or cut-out tag is MISSING evidence, not counterfeit evidence.',
+    'Fabric texture and colour change dramatically with lighting and wrinkles.',
+  ];
+
+  static const List<String> _eyewearCautions = [
+    'Lens tint, mirror coatings and reflections change dramatically with lighting and angle. Never treat reflection or tint differences as counterfeit indicators.',
+    'If inside-temple markings are not readable, request another photo rather than judging the glasses.',
+    'Prescription lenses fitted by an optician replace the original lenses, so a missing lens logo on eyeglasses is not counterfeit evidence.',
+  ];
+
+  static const List<String> _walletCautions = [
+    'Many genuine small leather goods have no serial or date code; its absence is not counterfeit evidence.',
+  ];
+
   static AuthenticationRuleSet forCategory(ProductCategory category) {
     switch (category) {
       case ProductCategory.watches:
-        return AuthenticationRuleSet(
-          category: category,
+        return const AuthenticationRuleSet(
+          category: ProductCategory.watches,
           evidenceBlueprint: _watch,
-          inspectionRules: const [..._sharedRules, ..._watchRules],
+          inspectionRules: [..._sharedRules, ..._watchRules],
+          cautions: [..._sharedCautions, ..._watchCautions],
+          profileName: 'WATCH',
         );
       case ProductCategory.bags:
-        return AuthenticationRuleSet(
-          category: category,
+        return const AuthenticationRuleSet(
+          category: ProductCategory.bags,
           evidenceBlueprint: _bag,
-          inspectionRules: const [..._sharedRules, ..._bagRules],
+          inspectionRules: [..._sharedRules, ..._bagRules],
+          cautions: [..._sharedCautions, ..._bagCautions],
+          profileName: 'HANDBAG',
         );
       case ProductCategory.sneakers:
-        return AuthenticationRuleSet(
-          category: category,
+        return const AuthenticationRuleSet(
+          category: ProductCategory.sneakers,
           evidenceBlueprint: _sneaker,
-          inspectionRules: const [..._sharedRules, ..._sneakerRules],
+          inspectionRules: [..._sharedRules, ..._sneakerRules],
+          cautions: [..._sharedCautions, ..._sneakerCautions],
+          profileName: 'SNEAKER/SHOE',
         );
       case ProductCategory.clothing:
-        return AuthenticationRuleSet(
-          category: category,
+        return const AuthenticationRuleSet(
+          category: ProductCategory.clothing,
           evidenceBlueprint: _clothing,
-          inspectionRules: const [..._sharedRules, ..._clothingRules],
+          inspectionRules: [..._sharedRules, ..._clothingRules],
+          cautions: [..._sharedCautions, ..._clothingCautions],
+          profileName: 'CLOTHING',
+        );
+      case ProductCategory.wallets:
+        return const AuthenticationRuleSet(
+          category: ProductCategory.wallets,
+          evidenceBlueprint: _wallet,
+          inspectionRules: [..._sharedRules, ..._walletRules],
+          cautions: [..._sharedCautions, ..._walletCautions],
+          profileName: 'WALLET',
+        );
+      case ProductCategory.eyewear:
+        return const AuthenticationRuleSet(
+          category: ProductCategory.eyewear,
+          evidenceBlueprint: _eyewear,
+          inspectionRules: [..._sharedRules, ..._eyewearRules],
+          cautions: [..._sharedCautions, ..._eyewearCautions],
+          profileName: 'EYEWEAR',
         );
       case ProductCategory.accessories:
-        return AuthenticationRuleSet(
-          category: category,
+        return const AuthenticationRuleSet(
+          category: ProductCategory.accessories,
           evidenceBlueprint: _accessory,
-          inspectionRules: const [..._sharedRules],
+          inspectionRules: [..._sharedRules],
+          cautions: _sharedCautions,
+          profileName: 'ACCESSORY',
         );
     }
   }
 
   /// Model-specific overlays. Add entries to sharpen a given model without
-  /// touching any UI code.
+  /// touching any UI code. [AuthenticationRuleSet.model] is matched against
+  /// the product's name and model together.
   static final List<AuthenticationRuleSet> modelOverlays = [
     const AuthenticationRuleSet(
       category: ProductCategory.watches,
@@ -622,16 +974,27 @@ abstract final class AuthenticationRules {
         ),
       ],
     ),
+    const AuthenticationRuleSet(
+      category: ProductCategory.watches,
+      brand: 'Apple',
+      model: 'Watch',
+      evidenceBlueprint: _smartwatch,
+      inspectionRules: [..._sharedRules, ..._smartwatchRules],
+      cautions: [..._sharedCautions, ..._smartwatchCautions],
+      replacesBaseRules: true,
+      profileName: 'SMARTWATCH (Apple Watch)',
+    ),
   ];
 
   static AuthenticationRuleSet resolve({
     required ProductCategory category,
     String? brand,
     String? model,
+    String? name,
   }) {
     var base = forCategory(category);
     final b = (brand ?? '').toLowerCase().trim();
-    final m = (model ?? '').toLowerCase().trim();
+    final m = '${name ?? ''} ${model ?? ''}'.toLowerCase().trim();
 
     for (final overlay in modelOverlays) {
       if (overlay.category != category) continue;
@@ -651,8 +1014,8 @@ abstract final class AuthenticationRules {
   /// supporting material as minor.
   static EvidenceWeight inferWeight(String evidenceId) {
     final id = evidenceId.toLowerCase();
-    const critical = ['serial', 'reference', 'date_code', 'datecode', 'dial', 'size_tag', 'neck_tag', 'heat_stamp', 'production', 'number', 'engrav'];
-    const high = ['logo', 'monogram', 'marking', 'hallmark', 'caseback', 'interior', 'inside', 'sole', 'bottom', 'crown', 'graphic', 'back'];
+    const critical = ['serial', 'reference', 'date_code', 'datecode', 'dial', 'size_tag', 'neck_tag', 'heat_stamp', 'production', 'number', 'engrav', 'temple_marking', 'markings'];
+    const high = ['logo', 'monogram', 'marking', 'hallmark', 'caseback', 'interior', 'inside', 'sole', 'bottom', 'crown', 'graphic', 'back', 'hinge', 'sensor', 'display'];
     const low = ['box', 'packaging', 'paper', 'receipt', 'dustbag', 'dust_bag', 'card'];
 
     for (final k in low) {
