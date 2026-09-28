@@ -1,11 +1,14 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
+import '../../core/config/revenue_cat_config.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
 import '../../services/haptics.dart';
 import '../../services/revenue_cat_service.dart';
+import '../../viewmodels/profile_viewmodel.dart';
 import '../../widgets/animations/bounce_button.dart';
 import '../../widgets/mascot/detective_mascot_widget.dart';
 import '../profile/privacy_sheet.dart';
@@ -77,28 +80,39 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
   Future<void> _handlePurchase() async {
     if (_isProcessingPurchase || _isRestoring) return;
 
-    if (_selectedPackage == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Offerings are loading or unavailable. Please try again in a moment.'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
     setState(() => _isProcessingPurchase = true);
     Haptics.mediumImpact();
 
     try {
-      final success = await RevenueCatService.purchasePackage(_selectedPackage!);
+      bool success = false;
+      if (_selectedPackage != null) {
+        success = await RevenueCatService.purchasePackage(_selectedPackage!);
+      } else {
+        // Fallback: Purchase directly by configured Apple Product ID
+        final productId = _fallbackSelectedIndex == 1
+            ? RevenueCatConfig.yearlySubscriptionId
+            : RevenueCatConfig.monthlySubscriptionId;
+        success = await RevenueCatService.purchaseProduct(productId);
+      }
+
       if (!mounted) return;
 
-      if (success) {
+      final isProNow = success || RevenueCatService.isPremiumNotifier.value;
+      if (isProNow) {
+        final chosenPlan = RevenueCatService.activePlanNotifier.value ??
+            ((_selectedPackage?.packageType == PackageType.annual ||
+                    (_selectedPackage == null && _fallbackSelectedIndex == 1))
+                ? 'Yearly Pro'
+                : 'Monthly Pro');
+        try {
+          final profileVm = context.read<ProfileViewModel>();
+          profileVm.setPremiumStatus(true, planName: chosenPlan);
+        } catch (_) {}
+
         Haptics.heavyImpact();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Welcome to Lenz Premium! All scans unlocked.'),
+          SnackBar(
+            content: Text('Welcome to $chosenPlan! Unlimited authentications unlocked.'),
             backgroundColor: AppColors.deepForestGreen,
           ),
         );
@@ -128,11 +142,19 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
       final restored = await RevenueCatService.restorePurchases();
       if (!mounted) return;
 
-      if (restored) {
+      final isProNow = restored || RevenueCatService.isPremiumNotifier.value;
+
+      if (isProNow) {
+        final chosenPlan = RevenueCatService.activePlanNotifier.value ?? 'Monthly Pro';
+        try {
+          final profileVm = context.read<ProfileViewModel>();
+          profileVm.setPremiumStatus(true, planName: chosenPlan);
+        } catch (_) {}
+
         Haptics.heavyImpact();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Purchases restored successfully! Premium unlocked.'),
+          SnackBar(
+            content: Text('Purchases restored successfully! $chosenPlan active.'),
             backgroundColor: AppColors.deepForestGreen,
           ),
         );

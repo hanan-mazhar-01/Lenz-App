@@ -47,13 +47,28 @@ class _GuestPaywallScreenState extends State<GuestPaywallScreen> {
     super.dispose();
   }
 
+  void _onAccountLinked() {
+    try {
+      final profileVm = context.read<ProfileViewModel>();
+      profileVm.setScansRemaining(3);
+      profileVm.setPlanName('Free Plan');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Account created! 3 free scans have been added to your balance.'),
+          backgroundColor: AppColors.deepForestGreen,
+        ),
+      );
+    } catch (_) {}
+    Haptics.mediumImpact();
+    Navigator.of(context).pop(true);
+  }
+
   Future<void> _handleGoogleSignIn(AuthService authService) async {
     Haptics.lightImpact();
     final cred = await authService.signInWithGoogle();
     if (!mounted) return;
     if (cred != null) {
-      Haptics.mediumImpact();
-      Navigator.of(context).pop(true);
+      _onAccountLinked();
     }
   }
 
@@ -62,8 +77,7 @@ class _GuestPaywallScreenState extends State<GuestPaywallScreen> {
     final cred = await authService.signInWithApple();
     if (!mounted) return;
     if (cred != null) {
-      Haptics.mediumImpact();
-      Navigator.of(context).pop(true);
+      _onAccountLinked();
     }
   }
 
@@ -87,15 +101,13 @@ class _GuestPaywallScreenState extends State<GuestPaywallScreen> {
       );
       if (!mounted) return;
       if (cred != null) {
-        Haptics.mediumImpact();
-        Navigator.of(context).pop(true);
+        _onAccountLinked();
       }
     } else {
       final cred = await authService.signInWithEmail(email, password);
       if (!mounted) return;
       if (cred != null) {
-        Haptics.mediumImpact();
-        Navigator.of(context).pop(true);
+        _onAccountLinked();
       }
     }
   }

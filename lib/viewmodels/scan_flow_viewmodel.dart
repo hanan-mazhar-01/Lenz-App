@@ -83,6 +83,9 @@ class ScanFlowViewModel extends ChangeNotifier {
   /// Mirrors the "Anonymous Scanning" privacy toggle in Settings.
   bool get _stripExif => _storageService?.getBool('anonymous_scanning', defaultValue: false) ?? false;
 
+  /// Optional callback invoked when a scan is successfully completed and recorded.
+  VoidCallback? onScanComplete;
+
   Future<void> Function()? _failedAction;
 
   ScanStep _currentStep = ScanStep.directScan;
@@ -628,6 +631,7 @@ class ScanFlowViewModel extends ChangeNotifier {
 
       _currentReport = report;
       _historyRepo.addReport(report);
+      onScanComplete?.call();
       _categoryRepo?.registerCategory(report.product.categoryLabel);
 
       AnalyticsService.instance.logScanCompleted(

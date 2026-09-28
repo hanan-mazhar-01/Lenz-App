@@ -5,29 +5,78 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_profile.dart';
+import '../services/revenue_cat_service.dart';
 
 class ProfileViewModel extends ChangeNotifier {
   static const String _keyName = 'user_profile_name';
   static const String _keyEmail = 'user_profile_email';
   static const String _keyAvatar = 'user_profile_avatar';
+  static const String _keyIsPremium = 'user_profile_is_premium';
+  static const String _keyPlanName = 'user_profile_plan_name';
+  static const String _keyScansRemaining = 'user_profile_scans_remaining';
 
   StreamSubscription<DocumentSnapshot>? _firestoreSub;
   StreamSubscription<User?>? _authSub;
+  VoidCallback? _revenueCatListener;
 
   UserProfile _user = const UserProfile(
     name: 'Collector',
     email: '',
     planName: 'Free Plan',
-    scansRemaining: 5,
+    scansRemaining: 3,
     isPremium: false,
   );
 
-  UserProfile get user => _user;
-  bool get isPremium => _user.isPremium;
+  UserProfile get user {
+    final rcActive = RevenueCatService.isPremiumNotifier.value;
+    if (rcActive && !_user.isPremium) {
+      final rcPlan = RevenueCatService.activePlanNotifier.value ?? 'Lenz Pro';
+      return _user.copyWith(
+        isPremium: true,
+        planName: rcPlan,
+      );
+    }
+    return _user;
+  }
+
+  bool get isPremium => _user.isPremium || RevenueCatService.isPremiumNotifier.value;
 
   ProfileViewModel() {
     _loadProfile();
     _listenToAuthAndFirestore();
+    _listenToRevenueCat();
+  }
+
+  void _listenToRevenueCat() {
+    _revenueCatListener = () {
+      final isRcPro = RevenueCatService.isPremiumNotifier.value;
+      final rcPlan = RevenueCatService.activePlanNotifier.value ?? 'Lenz Pro';
+      if (isRcPro) {
+        _user = _user.copyWith(
+          isPremium: true,
+          planName: rcPlan,
+        );
+        _persistPremium(true, rcPlan);
+        notifyListeners();
+      } else if (!isRcPro && _user.isPremium && (_user.planName.contains('Pro') || _user.planName.contains('Premium'))) {
+        _user = _user.copyWith(
+          isPremium: false,
+          planName: 'Free Plan',
+        );
+        _persistPremium(false, 'Free Plan');
+        notifyListeners();
+      }
+    };
+    RevenueCatService.isPremiumNotifier.addListener(_revenueCatListener!);
+
+    if (RevenueCatService.isPremiumNotifier.value) {
+      final rcPlan = RevenueCatService.activePlanNotifier.value ?? 'Lenz Pro';
+      _user = _user.copyWith(
+        isPremium: true,
+        planName: rcPlan,
+      );
+      _persistPremium(true, rcPlan);
+    }
   }
 
   void _listenToAuthAndFirestore() {
@@ -95,13 +144,19 @@ class ProfileViewModel extends ChangeNotifier {
                   }
                 }
 
+                final firestoreIsPremium = data['isPremium'] as bool? ?? false;
+                final isProActive = firestoreIsPremium || RevenueCatService.isPremiumNotifier.value;
+                final rcPlan = RevenueCatService.activePlanNotifier.value;
+
                 _user = _user.copyWith(
                   name: resolvedName,
                   email: (data['email'] as String?)?.isNotEmpty == true
                       ? data['email'] as String
                       : (currentAuthUser?.email ?? _user.email),
-                  planName: data['planName'] as String? ?? _user.planName,
-                  isPremium: data['isPremium'] as bool? ?? _user.isPremium,
+                  planName: isProActive
+                      ? (rcPlan ?? (data['planName'] as String?) ?? 'Lenz Pro')
+                      : (data['planName'] as String? ?? _user.planName),
+                  isPremium: isProActive,
                   scansRemaining: (data['scansRemaining'] as num?)?.toInt() ??
                       _user.scansRemaining,
                   avatarPath: data['avatarUrl'] as String? ?? _user.avatarPath,
@@ -125,11 +180,19 @@ class ProfileViewModel extends ChangeNotifier {
       final savedName = prefs.getString(_keyName);
       final savedEmail = prefs.getString(_keyEmail);
       final savedAvatar = prefs.getString(_keyAvatar);
+      final savedIsPremium = prefs.getBool(_keyIsPremium) ?? false;
+      final savedPlanName = prefs.getString(_keyPlanName);
+      final savedScans = prefs.getInt(_keyScansRemaining);
+      final effectiveIsPremium = savedIsPremium || RevenueCatService.isPremiumNotifier.value;
+      final rcPlan = RevenueCatService.activePlanNotifier.value;
 
       _user = _user.copyWith(
         name: (savedName != null && savedName.trim().isNotEmpty) ? savedName : _user.name,
         email: (savedEmail != null && savedEmail.trim().isNotEmpty) ? savedEmail : _user.email,
         avatarPath: savedAvatar,
+        scansRemaining: savedScans ?? _user.scansRemaining,
+        isPremium: effectiveIsPremium,
+        planName: effectiveIsPremium ? (rcPlan ?? savedPlanName ?? 'Lenz Pro') : _user.planName,
       );
       notifyListeners();
     } catch (_) {}
@@ -163,7 +226,7 @@ class ProfileViewModel extends ChangeNotifier {
       name: 'Collector',
       email: '',
       planName: 'Free Plan',
-      scansRemaining: 5,
+      scansRemaining: 3,
       isPremium: false,
     );
     notifyListeners();
@@ -172,6 +235,58 @@ class ProfileViewModel extends ChangeNotifier {
       await prefs.remove(_keyName);
       await prefs.remove(_keyEmail);
       await prefs.remove(_keyAvatar);
+      await prefs.remove(_keyIsPremium);
+      await prefs.remove(_keyPlanName);
+      await prefs.remove(_keyScansRemaining);
+    } catch (_) {}
+  }
+
+  /// Sets premium status locally and persists it.
+  void setPremiumStatus(bool isPremium, {String? planName}) {
+    final effectivePlan = planName ?? (isPremium ? 'Lenz Pro' : 'Free Plan');
+    _user = _user.copyWith(
+      isPremium: isPremium,
+      planName: effectivePlan,
+    );
+    _persistPremium(isPremium, effectivePlan);
+    RevenueCatService.isPremiumNotifier.value = isPremium;
+    notifyListeners();
+  }
+
+  /// Updates the plan name display (e.g. 'Free Plan', 'Monthly Pro', 'Yearly Pro').
+  void setPlanName(String planName) {
+    _user = _user.copyWith(planName: planName);
+    notifyListeners();
+  }
+
+  /// Updates the available free scans remaining.
+  void setScansRemaining(int count) {
+    _user = _user.copyWith(scansRemaining: count);
+    _persistScansRemaining(count);
+    notifyListeners();
+  }
+
+  /// Decrements one scan credit when a non-premium scan completes.
+  void decrementScanCount() {
+    if (isPremium) return;
+    final updated = (_user.scansRemaining - 1).clamp(0, 9999);
+    _user = _user.copyWith(scansRemaining: updated);
+    _persistScansRemaining(updated);
+    notifyListeners();
+  }
+
+  Future<void> _persistScansRemaining(int count) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_keyScansRemaining, count);
+    } catch (_) {}
+  }
+
+  Future<void> _persistPremium(bool isPremium, String planName) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyIsPremium, isPremium);
+      await prefs.setString(_keyPlanName, planName);
     } catch (_) {}
   }
 
@@ -241,21 +356,11 @@ class ProfileViewModel extends ChangeNotifier {
     } catch (_) {}
   }
 
-  // Real premium status only ever comes from Firestore (via the listener
-  // above), which itself is only ever written server-side (Cloud Functions -
-  // see finalizeAccountUpgrade / revenueCatWebhook in functions/index.js).
-  // There used to be an upgradeToPremium()/restorePurchases() pair here that
-  // flipped `isPremium` locally with no real purchase behind it - a
-  // guaranteed App Store rejection (Guideline 3.1.1) and something the
-  // Firestore listener would silently overwrite on the next snapshot
-  // anyway, since clients can never legally write isPremium themselves.
-  // When real purchasing (RevenueCat) is implemented, add real
-  // purchase()/restorePurchases() methods here that call the RevenueCat SDK
-  // and let the resulting webhook/entitlement update Firestore - never set
-  // isPremium locally again.
-
   @override
   void dispose() {
+    if (_revenueCatListener != null) {
+      RevenueCatService.isPremiumNotifier.removeListener(_revenueCatListener!);
+    }
     _firestoreSub?.cancel();
     _authSub?.cancel();
     super.dispose();

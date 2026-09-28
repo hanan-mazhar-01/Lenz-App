@@ -146,30 +146,25 @@ async function admitCall({ db, admin, uid, token, scanId, imageCount, nowMs = Da
     if (sessionChargeDue(session, { imageCount })) {
       session.charged = true;
       charged = true;
-      // Credits apply to guests only for now (paywall disabled for signed-in
-      // free accounts, see main_navigation_shell.dart); same policy as before.
-      if (isGuest) {
-        const data = userDoc.exists ? userDoc.data() : {};
-        const isPremium = Boolean(data.isPremium);
-        const remaining = typeof data.scansRemaining === "number" ? data.scansRemaining : 3;
-        if (!isPremium) {
-          if (remaining <= 0) throw new RequestError("resource-exhausted", "No scan credits remaining. Please upgrade to premium.");
-          userUpdate = { scansRemaining: remaining - 1, lastScanAt: admin.firestore.FieldValue.serverTimestamp() };
-          if (!userDoc.exists) {
-            userUpdate = {
-              name: (token && token.name) || "Guest Collector",
-              email: (token && token.email) || "",
-              planName: "Guest Plan",
-              isPremium: false,
-              createdAt: admin.firestore.FieldValue.serverTimestamp(),
-              ...userUpdate,
-            };
-          }
-        } else {
-          charged = false; // nothing to refund for premium accounts
+      // Credits apply to non-premium accounts (both guests and free registered users).
+      const data = userDoc.exists ? userDoc.data() : {};
+      const isPremium = Boolean(data.isPremium);
+      const remaining = typeof data.scansRemaining === "number" ? data.scansRemaining : 3;
+      if (!isPremium) {
+        if (remaining <= 0) throw new RequestError("resource-exhausted", "No scan credits remaining. Please upgrade to premium.");
+        userUpdate = { scansRemaining: remaining - 1, lastScanAt: admin.firestore.FieldValue.serverTimestamp() };
+        if (!userDoc.exists) {
+          userUpdate = {
+            name: (token && token.name) || (isGuest ? "Guest Collector" : "Collector"),
+            email: (token && token.email) || "",
+            planName: isGuest ? "Guest Plan" : "Free Plan",
+            isPremium: false,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            ...userUpdate,
+          };
         }
       } else {
-        charged = false;
+        charged = false; // nothing to refund for premium accounts
       }
     }
 

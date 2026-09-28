@@ -79,7 +79,7 @@ class ScanCreditsSheet extends StatelessWidget {
                   children: [
                     Text('Monthly Allowance', style: AppTypography.titleMedium),
                     Text(
-                      user.isPremium ? '∞ / ∞' : '${user.scansRemaining} / 10 used',
+                      user.isPremium ? '∞ / ∞' : '${(3 - user.scansRemaining).clamp(0, 3)} / 3 used',
                       style: AppTypography.captionMedium,
                     ),
                   ],
@@ -88,7 +88,7 @@ class ScanCreditsSheet extends StatelessWidget {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(6),
                   child: LinearProgressIndicator(
-                    value: user.isPremium ? 1.0 : (user.scansRemaining / 10).clamp(0.0, 1.0),
+                    value: user.isPremium ? 1.0 : (user.scansRemaining / 3).clamp(0.0, 1.0),
                     backgroundColor: AppColors.neutralPill,
                     color: AppColors.accent,
                     minHeight: 8,
@@ -97,7 +97,7 @@ class ScanCreditsSheet extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(
                   user.isPremium
-                      ? 'You have unlimited authentications active.'
+                      ? '${user.planName} Active • Unlimited authentications unlocked.'
                       : 'Free scans don\'t reset automatically - each one is used once.',
                   style: AppTypography.caption,
                 ),
@@ -107,30 +107,36 @@ class ScanCreditsSheet extends StatelessWidget {
 
           const SizedBox(height: 18),
 
-          // No purchasable refills/upgrade yet - there's no real payment
-          // integration wired up. This used to show "+5 Scans $4.99" /
-          // "Switch to Premium $19.99/mo" buttons that displayed a fake
-          // success toast or a locally-flipped flag with zero real
-          // transaction (a guaranteed App Store rejection).
           if (!user.isPremium)
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.hourglass_top_rounded, size: 20, color: AppColors.textSecondary),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'More scans and Premium plans are coming soon.',
-                      style: AppTypography.caption.copyWith(color: AppColors.textSecondary),
+            GestureDetector(
+              onTap: () {
+                Navigator.of(context).pop();
+                onOpenPremium();
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  color: AppColors.accent,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.accent.withOpacity(0.25),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: const Center(
+                  child: Text(
+                    'Upgrade to Pro for Unlimited Scans',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                ],
+                ),
               ),
             ),
 

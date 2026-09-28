@@ -164,7 +164,7 @@ class AuthService extends ChangeNotifier {
           'email': resolved.email ?? '',
           'planName': isAnon ? 'Guest Plan' : 'Free Plan',
           'isPremium': false,
-          'scansRemaining': isAnon ? 3 : 5,
+          'scansRemaining': 3,
           'avatarUrl': resolved.photoUrl ?? '',
           'createdAt': FieldValue.serverTimestamp(),
         });

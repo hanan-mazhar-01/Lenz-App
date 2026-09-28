@@ -228,7 +228,7 @@ exports.finalizeAccountUpgrade = functions.https.onCall(async (_data, context) =
 
   const uid = context.auth.uid;
   const userRef = db.collection("users").doc(uid);
-  const FREE_PLAN_SCANS = 5;
+  const FREE_PLAN_SCANS = 3;
 
   await db.runTransaction(async (transaction) => {
     const doc = await transaction.get(userRef);
@@ -256,12 +256,9 @@ exports.finalizeAccountUpgrade = functions.https.onCall(async (_data, context) =
     // re-topping-up a free user's balance every time they simply log back in.
     if (userData.planName && userData.planName !== "Guest Plan") return;
 
-    const currentScans =
-      typeof userData.scansRemaining === "number" ? userData.scansRemaining : 0;
-
     transaction.update(userRef, {
       planName: "Free Plan",
-      scansRemaining: Math.max(currentScans, FREE_PLAN_SCANS),
+      scansRemaining: FREE_PLAN_SCANS,
       upgradedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
   });

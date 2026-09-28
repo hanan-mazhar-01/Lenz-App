@@ -163,6 +163,12 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     }
 
     final scanVm = context.read<ScanFlowViewModel>();
+    scanVm.onScanComplete = () {
+      final pVm = context.read<ProfileViewModel>();
+      if (!pVm.isPremium) {
+        pVm.decrementScanCount();
+      }
+    };
     scanVm.startScan();
     setState(() {
       _isScanFlowActive = true;

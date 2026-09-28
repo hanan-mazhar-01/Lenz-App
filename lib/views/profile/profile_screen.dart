@@ -739,6 +739,59 @@ class ProfileScreen extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                            const SizedBox(height: 5),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: user.isPremium
+                                        ? const Color(0xFFE5C378)
+                                        : AppColors.neutralPill,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (user.isPremium) ...[
+                                        const Icon(
+                                          Icons.verified_rounded,
+                                          size: 11,
+                                          color: Color(0xFF122F24),
+                                        ),
+                                        const SizedBox(width: 3),
+                                      ],
+                                      Text(
+                                        user.isPremium
+                                            ? (user.planName.toUpperCase().contains('YEARLY')
+                                                ? 'YEARLY PRO'
+                                                : 'MONTHLY PRO')
+                                            : 'FREE PLAN',
+                                        style: TextStyle(
+                                          color: user.isPremium
+                                              ? const Color(0xFF122F24)
+                                              : AppColors.charcoalGray,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.3,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  user.isPremium
+                                      ? 'Unlimited Scans'
+                                      : '${user.scansRemaining} scans remaining',
+                                  style: const TextStyle(
+                                    color: AppColors.charcoalGray,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ],
                         ],
                       ),
@@ -970,9 +1023,9 @@ class ProfileScreen extends StatelessWidget {
                                     children: [
                                       Row(
                                         children: [
-                                          const Text(
-                                            'Lenz Pro',
-                                            style: TextStyle(
+                                          Text(
+                                            user.isPremium ? user.planName : 'Lenz Pro',
+                                            style: const TextStyle(
                                               color: Colors.white,
                                               fontSize: 16,
                                               fontWeight: FontWeight.w800,
@@ -987,7 +1040,11 @@ class ProfileScreen extends StatelessWidget {
                                               borderRadius: BorderRadius.circular(6),
                                             ),
                                             child: Text(
-                                              user.isPremium ? 'PRO ACTIVE' : 'UNLIMITED',
+                                              user.isPremium
+                                                  ? (user.planName.toUpperCase().contains('YEARLY')
+                                                      ? 'YEARLY PRO'
+                                                      : 'MONTHLY PRO')
+                                                  : 'UPGRADE',
                                               style: const TextStyle(
                                                 color: Color(0xFF122F24),
                                                 fontSize: 9.5,
@@ -1001,7 +1058,7 @@ class ProfileScreen extends StatelessWidget {
                                       const SizedBox(height: 2),
                                       Text(
                                         user.isPremium
-                                            ? 'Active • All forensic features unlocked'
+                                            ? '${user.planName} Active • Unlimited scans unlocked'
                                             : 'Upgrade for unlimited scans & certificates',
                                         style: TextStyle(
                                           color: Colors.white.withOpacity(0.75),

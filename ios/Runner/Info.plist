@@ -22,10 +22,31 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.157772513866-59me5sse64tfenqg3ff6kmhacsqv7ssv</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>GIDClientID</key>
+	<string>157772513866-59me5sse64tfenqg3ff6kmhacsqv7ssv.apps.googleusercontent.com</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Lenz uses your camera to capture product photos for AI-powered authenticity assessment.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Lenz requires microphone access if recording evidence video.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Lenz requires photo library access to analyze product images from your library.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -65,27 +86,6 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>Lenz uses your camera to capture product photos for AI-powered authenticity assessment.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Lenz requires photo library access to analyze product images from your library.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Lenz requires microphone access if recording evidence video.</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
-	<key>GIDClientID</key>
-	<string>157772513866-59me5sse64tfenqg3ff6kmhacsqv7ssv.apps.googleusercontent.com</string>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>com.googleusercontent.apps.157772513866-59me5sse64tfenqg3ff6kmhacsqv7ssv</string>
-			</array>
-		</dict>
 	</array>
 </dict>
 </plist>
