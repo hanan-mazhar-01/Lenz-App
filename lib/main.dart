@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
@@ -50,6 +51,22 @@ void main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+
+    // App Check: attaches a token to every Cloud Function call so the
+    // backend can require it (ENFORCE_APP_CHECK) once the apps are
+    // registered in the Firebase console. Debug builds use the debug
+    // provider, whose token is printed in the log for the console allow
+    // list. Until enforcement is on, a missing token changes nothing.
+    if (!kIsWeb) {
+      try {
+        await FirebaseAppCheck.instance.activate(
+          androidProvider: kDebugMode ? AndroidProvider.debug : AndroidProvider.playIntegrity,
+          appleProvider: kDebugMode ? AppleProvider.debug : AppleProvider.appAttestWithDeviceCheckFallback,
+        );
+      } catch (e) {
+        if (kDebugMode) debugPrint('[main] App Check activation failed: $e');
+      }
+    }
 
     if (!kIsWeb) {
       FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;

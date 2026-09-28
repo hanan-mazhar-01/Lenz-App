@@ -210,5 +210,100 @@ void main() {
       expect(res.status, LocalQualityStatus.usable);
     });
   });
-}
 
+  group('Only the supported categories are scanned', () {
+    Map<String, dynamic> detected({String? code, String category = 'Watches', String type = 'watch', String? brand = 'Casio'}) => {
+          'status': 'product_detected',
+          'reason': 'valid_luxury_product',
+          'product_detected': true,
+          'category_code': code,
+          'product_category': category,
+          'product_type': type,
+          'brand': brand,
+          'product_name': '$brand item',
+          'confidence': 0.9,
+        };
+
+    test('watches, bags, shoes, clothing, wallets, eyewear and accessories are accepted', () {
+      for (final code in ['WATCH', 'HANDBAG', 'SNEAKER', 'SHOE', 'CLOTHING', 'WALLET', 'ACCESSORY', 'SUNGLASSES', 'EYEGLASSES']) {
+        final id = ProductIdentification.fromJson(detected(code: code));
+        expect(id.status, IdentificationStatus.productDetected, reason: code);
+      }
+    });
+
+    test('a replica imitating a known brand is still scanned', () {
+      final id = ProductIdentification.fromJson(detected(code: 'SNEAKER', category: 'Sneakers', type: 'sneaker', brand: 'Michael Kors'));
+      expect(id.status, IdentificationStatus.productDetected);
+    });
+
+    test('perfume, cosmetics and gadgets are refused even when filed as accessories', () {
+      for (final type in ['eau de toilette', 'perfume', 'lipstick', 'wireless earbuds', 'headphones', 'smartphone']) {
+        final id = ProductIdentification.fromJson(detected(code: 'ACCESSORY', category: 'Accessories', type: type));
+        expect(id.status, IdentificationStatus.notProduct, reason: type);
+        expect(id.reason, 'unsupported_object');
+        expect(() => id.toProduct(imageAsset: '/tmp/x.jpg'), throwsException);
+      }
+    });
+
+    test('an unknown code or an old ELECTRONICS / COSMETICS / OTHER code is refused', () {
+      for (final code in ['OTHER', 'ELECTRONICS', 'COSMETICS']) {
+        final id = ProductIdentification.fromJson(detected(code: code, category: code == 'OTHER' ? 'Other' : code, type: code == 'COSMETICS' ? 'perfume' : 'gadget'));
+        expect(id.status, IdentificationStatus.notProduct, reason: code);
+      }
+      final fragrance = ProductIdentification.fromJson(detected(category: 'Fragrance', type: 'eau de toilette'));
+      expect(fragrance.status, IdentificationStatus.notProduct);
+    });
+
+    test('a generic unbranded item the model refuses stays refused', () {
+      final id = ProductIdentification.fromJson({
+        'status': 'not_product',
+        'reason': 'unsupported_object',
+        'product_detected': false,
+        'confidence': 0.9,
+        'message': 'This looks like a generic, unbranded item.',
+      });
+      expect(id.status, IdentificationStatus.notProduct);
+      expect(id.message, contains('unbranded'));
+    });
+  });
+
+  group('Pictures of pictures are refused', () {
+    Map<String, dynamic> detectedAs(String source) => {
+          'image_source': source,
+          'status': 'product_detected',
+          'reason': 'valid_luxury_product',
+          'product_detected': true,
+          'category_code': 'WATCH',
+          'product_category': 'Watches',
+          'product_type': 'smartwatch',
+          'brand': 'Apple',
+          'product_name': 'Apple Watch',
+          'confidence': 0.95,
+        };
+
+    test('an internet image or a photo of a screen is refused, even if the model identified it', () {
+      for (final source in ['INTERNET_IMAGE', 'SCREEN_OR_PRINT']) {
+        final id = ProductIdentification.fromJson(detectedAs(source));
+        expect(id.status, IdentificationStatus.unusableImage, reason: source);
+        expect(id.reason, 'not_real_photo');
+        expect(id.message, contains('take a photo of the actual item'));
+        expect(() => id.toProduct(imageAsset: '/tmp/x.jpg'), throwsException);
+      }
+    });
+
+    test('the refusal reason alone is enough', () {
+      final id = ProductIdentification.fromJson({
+        'status': 'unusable_image',
+        'reason': 'not_real_photo',
+        'product_detected': false,
+        'confidence': 0.9,
+        'message': 'x',
+      });
+      expect(id.reason, 'not_real_photo');
+    });
+
+    test('a real photo of the item is identified normally', () {
+      expect(ProductIdentification.fromJson(detectedAs('PHYSICAL_ITEM')).status, IdentificationStatus.productDetected);
+    });
+  });
+}

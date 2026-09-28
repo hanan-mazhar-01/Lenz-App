@@ -35,7 +35,13 @@ class ScanValidationResultView extends StatelessWidget {
     Color badgeColor;
     String buttonText;
 
-    if (reason == 'image_too_dark') {
+    if (reason == 'not_real_photo') {
+      title = 'This is a picture, not the item';
+      badgeLabel = 'Not a Real Photo';
+      badgeIcon = CupertinoIcons.photo_on_rectangle;
+      badgeColor = const Color(0xFFD97706);
+      buttonText = 'Take a Photo';
+    } else if (reason == 'image_too_dark') {
       title = 'Too dark to analyze';
       badgeLabel = 'Too Dark';
       badgeIcon = CupertinoIcons.moon_fill;

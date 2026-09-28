@@ -66,3 +66,6 @@ git-push-error.log
 
 # Live authenticity evaluation output
 eval_results/
+
+# Local evaluation photos from the owner device (private, never commit)
+eval_data/

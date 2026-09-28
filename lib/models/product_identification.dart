@@ -1,5 +1,6 @@
 import '../core/errors/app_error.dart';
 import 'product.dart';
+import 'product_identity.dart';
 
 enum IdentificationStatus {
   productDetected('product_detected'),
@@ -51,6 +52,15 @@ class ProductIdentification {
   final String message;
   final bool isIdentified;
 
+  /// Engine v3: per-attribute identity with explicit certainty.
+  final ProductIdentity? identity;
+
+  /// Engine v3: bounding box of the item [ymin, xmin, ymax, xmax] in 0..1.
+  final List<double>? itemBox;
+
+  /// Engine v3: which part of the product the first photo shows.
+  final String visiblePart;
+
   const ProductIdentification({
     required this.status,
     required this.reason,
@@ -66,6 +76,9 @@ class ProductIdentification {
     this.missingEvidence = const [],
     required this.message,
     this.isIdentified = true,
+    this.identity,
+    this.itemBox,
+    this.visiblePart = '',
   })  : _brand = brand,
         _product = product;
 
@@ -163,6 +176,23 @@ class ProductIdentification {
           missing.add(item.toString().trim());
         }
       }
+    }
+
+    // 0. Not a real photo of the item (a screen, a printed picture or an
+    //    internet image): nothing about the item can be checked from it.
+    final source = json['image_source']?.toString();
+    if (reason == 'not_real_photo' || source == 'SCREEN_OR_PRINT' || source == 'INTERNET_IMAGE') {
+      return ProductIdentification(
+        status: IdentificationStatus.unusableImage,
+        reason: 'not_real_photo',
+        productDetected: false,
+        identificationConfidence: conf,
+        visibleDetails: details,
+        missingEvidence: missing,
+        message: 'This looks like a picture from the internet or a screen, not the item itself. '
+            'Please take a photo of the actual item with the camera.',
+        isIdentified: false,
+      );
     }
 
     // 1. Unusable Image (Too dark, blank, blurry)
@@ -270,6 +300,60 @@ class ProductIdentification {
       cleanProduct = rawCat;
     }
 
+    List<String> strings(String k) => [
+          for (final e in (json[k] as List? ?? const []))
+            if (e != null && e.toString().trim().isNotEmpty) e.toString().trim(),
+        ];
+    // Only the supported categories are scanned. A fragrance, cosmetic or
+    // gadget the model filed under a catch-all code, or an explicit "OTHER",
+    // is refused. A fashion label the keyword fallback can't map (no code
+    // given) is treated as an accessory.
+    final type = '$rawCat ${json['product_type'] ?? ''}';
+    final looksUnsupported = RegExp(
+      r'perfume|fragrance|toilette|parfum|cologne|cosmetic|makeup|skincare|lipstick|smartphone|mobile phone|earbud|headphone|earphone|airpods|laptop|tablet|speaker|charger|electronic',
+      caseSensitive: false,
+    ).hasMatch(type);
+    final labelCode = _codeFromLabel(rawCat);
+    final code = categoryCode ?? (labelCode == 'OTHER' && !looksUnsupported ? 'ACCESSORY' : labelCode);
+    if (!supportedCategoryCodes.contains(code) || (looksUnsupported && code == 'ACCESSORY')) {
+      return ProductIdentification(
+        status: IdentificationStatus.notProduct,
+        reason: 'unsupported_object',
+        productDetected: false,
+        identificationConfidence: conf,
+        visibleDetails: details,
+        missingEvidence: missing,
+        message: 'No supported item detected. Please scan a watch, bag, shoe, clothing, wallet, eyewear or accessory.',
+        isIdentified: false,
+      );
+    }
+    final brandAttr = IdentityAttribute.fromParts(cleanBrand, json['brand_status'],
+        basis: json['brand_basis'], source: 'DESIGN');
+    final modelAttr = IdentityAttribute.fromParts(json['model'], json['model_status'],
+        basis: json['model_basis'], source: 'DESIGN');
+    final genAttr = IdentityAttribute.fromParts(json['generation'], json['generation_status'],
+        basis: json['generation_basis'], source: 'DESIGN');
+    final exactAttr = IdentityAttribute.fromParts(json['exact_model'], json['exact_model_status'],
+        basis: 'read from the photo', source: 'MARKING');
+    final identity = ProductIdentity(
+      categoryCode: code,
+      productType: (json['product_type'] as String? ?? '').trim(),
+      brand: brandAttr,
+      modelFamily: modelAttr,
+      generation: genAttr,
+      exactModel: exactAttr,
+      visibleCharacteristics: strings('visible_characteristics').isNotEmpty ? strings('visible_characteristics') : details,
+      distinguishingFeatures: strings('distinguishing_features'),
+      uncertainAttributes: strings('uncertain_attributes'),
+    );
+
+    List<double>? box;
+    final rawBox = json['item_box_2d'];
+    if (rawBox is List && rawBox.length == 4 && rawBox.every((v) => v is num)) {
+      final b = rawBox.map((v) => ((v as num).toDouble() / 1000).clamp(0.0, 1.0)).toList();
+      if (b[2] > b[0] && b[3] > b[1]) box = b;
+    }
+
     return ProductIdentification(
       status: IdentificationStatus.productDetected,
       reason: reason.isNotEmpty ? reason : 'valid_luxury_product',
@@ -277,14 +361,17 @@ class ProductIdentification {
       productCategory: rawCat,
       brand: cleanBrand,
       product: cleanProduct,
-      model: json['model'] as String?,
+      model: modelAttr.value ?? (json['model'] as String?),
       variant: json['variant'] as String?,
-      categoryCode: categoryCode,
+      categoryCode: code,
       identificationConfidence: conf,
       visibleDetails: details,
       missingEvidence: missing,
       message: message.isNotEmpty ? message : 'Item identified successfully.',
       isIdentified: true,
+      identity: identity,
+      itemBox: box,
+      visiblePart: (json['visible_part'] as String? ?? '').trim(),
     );
   }
 
@@ -303,12 +390,30 @@ class ProductIdentification {
         'missing_evidence': missingEvidence,
         'message': message,
         'is_identified': isIdentified,
+        if (identity != null) 'identity': identity!.toJson(),
+        if (visiblePart.isNotEmpty) 'visible_part': visiblePart,
       };
 
   static const categoryCodes = {
     'WATCH', 'HANDBAG', 'SNEAKER', 'SHOE', 'CLOTHING', 'WALLET',
     'ACCESSORY', 'SUNGLASSES', 'EYEGLASSES', 'OTHER',
   };
+
+  /// Categories the app scans. Anything else (fragrance, electronics,
+  /// household items...) is refused even if the model lets it through.
+  static const supportedCategoryCodes = {
+    'WATCH', 'HANDBAG', 'SNEAKER', 'SHOE', 'CLOTHING', 'WALLET',
+    'ACCESSORY', 'SUNGLASSES', 'EYEGLASSES',
+  };
+
+  static String _codeFromLabel(String label) => ProductIdentification(
+        status: IdentificationStatus.productDetected,
+        reason: '',
+        productDetected: true,
+        productCategory: label,
+        identificationConfidence: 0,
+        message: '',
+      ).resolvedCategoryCode;
 
   /// The inspection code, falling back to keyword matching on the free-text
   /// category for engine v1 responses.
@@ -333,6 +438,16 @@ class ProductIdentification {
     return 'OTHER';
   }
 
+  static String codeForCategory(ProductCategory c) => switch (c) {
+        ProductCategory.watches => 'WATCH',
+        ProductCategory.bags => 'HANDBAG',
+        ProductCategory.sneakers => 'SNEAKER',
+        ProductCategory.clothing => 'CLOTHING',
+        ProductCategory.wallets => 'WALLET',
+        ProductCategory.eyewear => 'SUNGLASSES',
+        ProductCategory.accessories => 'ACCESSORY',
+      };
+
   static ProductCategory categoryForCode(String code) => switch (code) {
         'WATCH' => ProductCategory.watches,
         'HANDBAG' => ProductCategory.bags,
@@ -355,7 +470,8 @@ class ProductIdentification {
     final code = resolvedCategoryCode;
     final stdCat = categoryForCode(code);
     final lower = category.toLowerCase().trim();
-    final bool isStandard = code != 'OTHER' && code != 'ACCESSORY' || lower == 'accessories';
+    const customLabelled = {'OTHER', 'ACCESSORY'};
+    final bool isStandard = !customLabelled.contains(code) || lower == 'accessories';
 
     final custom = !isStandard && category.trim().isNotEmpty && lower != 'unknown'
         ? category.trim()
@@ -364,13 +480,14 @@ class ProductIdentification {
     return Product(
       id: id ?? 'prod_${DateTime.now().millisecondsSinceEpoch}',
       name: product.isNotEmpty ? product : (category.isNotEmpty ? category : 'Luxury Item'),
-      brand: brand.isNotEmpty ? brand : 'Luxury',
-      model: model ?? variant ?? 'Standard',
+      brand: brand.isNotEmpty ? brand : Product.unidentifiedBrand,
+      model: model ?? variant ?? Product.unidentifiedModel,
       category: stdCat,
       customCategory: custom,
       imageAsset: imageAsset,
       identificationConfidence: identificationConfidence,
       categoryCode: code,
+      identity: identity,
     );
   }
 }

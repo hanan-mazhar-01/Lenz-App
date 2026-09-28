@@ -197,7 +197,7 @@ class HistoryScreen extends StatelessWidget {
                                         VerdictBadge(verdict: report.verdict, isSmall: true),
                                         const SizedBox(height: 4),
                                         Text(
-                                          '${report.overallScore}%',
+                                          report.strengthLabel,
                                           style: AppTypography.captionMedium.copyWith(
                                             color: report.verdict == Verdict.likelyAuthentic
                                                 ? AppColors.accent

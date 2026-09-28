@@ -134,11 +134,12 @@ class _DirectScanViewState extends State<DirectScanView>
     _dismissGuidance();
     try {
       final picker = ImagePicker();
+      // Near-original resolution: detail crops need the pixels.
       final picked = await picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 90,
+        maxWidth: 4096,
+        maxHeight: 4096,
+        imageQuality: 95,
       );
       if (picked != null && mounted) {
         if (widget.onCapture != null) {

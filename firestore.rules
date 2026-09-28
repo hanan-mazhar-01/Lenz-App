@@ -24,7 +24,11 @@ service cloud.firestore {
       allow update: if isOwner(uid)
                     && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['isPremium', 'scansRemaining']);
 
-      allow delete: if isOwner(uid);
+      // Clients never delete their own user document: deleting it and
+      // re-creating it (create allows up to 5 scans) would reset scan
+      // credits. Account deletion goes through the deleteAccount function,
+      // which uses the Admin SDK and is not subject to these rules.
+      allow delete: if false;
 
       // Reports subcollection
       match /reports/{reportId} {
@@ -47,6 +51,10 @@ service cloud.firestore {
         allow read, create: if isOwner(uid);
       }
     }
+
+    // Server-only collections (Admin SDK in Cloud Functions). No client
+    // access: rate-limit counters and scan sessions used for billing.
+    match /rate_limits/{doc} { allow read, write: if false; }
+    match /scan_sessions/{doc} { allow read, write: if false; }
   }
 }
-

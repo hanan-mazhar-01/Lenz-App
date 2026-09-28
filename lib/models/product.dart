@@ -1,3 +1,5 @@
+import 'product_identity.dart';
+
 enum ProductCategory {
   sneakers('Shoes'),
   bags('Bags'),
@@ -25,6 +27,12 @@ class Product {
   /// EYEGLASSES or SNEAKER vs SHOE. Null for reports from engine v1.
   final String? categoryCode;
 
+  /// Per-attribute identity with certainty (engine v3). Null for older reports.
+  final ProductIdentity? identity;
+
+  /// Evidence profile used for this product (engine v3).
+  final String? profileId;
+
   const Product({
     required this.id,
     required this.name,
@@ -35,7 +43,39 @@ class Product {
     required this.imageAsset,
     this.identificationConfidence = 0.92,
     this.categoryCode,
+    this.identity,
+    this.profileId,
   });
+
+  Product copyWith({
+    String? name,
+    String? brand,
+    String? model,
+    String? imageAsset,
+    ProductIdentity? identity,
+    String? profileId,
+  }) =>
+      Product(
+        id: id,
+        name: name ?? this.name,
+        brand: brand ?? this.brand,
+        model: model ?? this.model,
+        category: category,
+        customCategory: customCategory,
+        imageAsset: imageAsset ?? this.imageAsset,
+        identificationConfidence: identificationConfidence,
+        categoryCode: categoryCode,
+        identity: identity ?? this.identity,
+        profileId: profileId ?? this.profileId,
+      );
+
+  /// Display placeholders used when identification couldn't read a brand or
+  /// model. They are UI copy only and must never be treated as facts.
+  static const String unidentifiedBrand = 'Luxury';
+  static const String unidentifiedModel = 'Standard';
+
+  bool get hasIdentifiedBrand => brand.trim().isNotEmpty && brand != unidentifiedBrand;
+  bool get hasIdentifiedModel => model.trim().isNotEmpty && model != unidentifiedModel;
 
   String get categoryLabel => customCategory ?? category.label;
 
@@ -52,6 +92,8 @@ class Product {
       'imageAsset': imageAsset,
       'identificationConfidence': identificationConfidence,
       if (categoryCode != null) 'categoryCode': categoryCode,
+      if (identity != null) 'identity': identity!.toJson(),
+      if (profileId != null) 'profileId': profileId,
     };
   }
 
@@ -82,6 +124,10 @@ class Product {
       imageAsset: json['imageAsset'] as String? ?? '',
       identificationConfidence: (json['identificationConfidence'] as num?)?.toDouble() ?? 0.9,
       categoryCode: json['categoryCode'] as String?,
+      identity: json['identity'] is Map
+          ? ProductIdentity.fromJson(Map<String, dynamic>.from(json['identity'] as Map))
+          : null,
+      profileId: json['profileId'] as String?,
     );
   }
 }

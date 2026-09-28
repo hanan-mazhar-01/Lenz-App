@@ -114,6 +114,13 @@ class EvidenceBlueprint {
   /// size tag). Without one, the result's confidence ceiling is lower.
   final bool identityMarking;
 
+  /// Evidence that counterfeiters can't simply copy from the product's
+  /// public design (e.g. a smartwatch's own software/device-info screen).
+  /// When a category defines any, an AUTHENTIC verdict requires a clean
+  /// finding on at least one of them: matching the copied design alone only
+  /// shows what an item imitates.
+  final bool decisive;
+
   const EvidenceBlueprint({
     required this.id,
     required this.title,
@@ -121,6 +128,7 @@ class EvidenceBlueprint {
     required this.why,
     required this.weight,
     this.identityMarking = false,
+    this.decisive = false,
   });
 
   EvidenceItem toEvidenceItem(int index) => EvidenceItem(
@@ -171,6 +179,9 @@ class AuthenticationRuleSet {
   /// Evidence ids that show an identity marking.
   Set<String> get identityEvidenceIds =>
       evidenceBlueprint.where((e) => e.identityMarking).map((e) => e.id).toSet();
+
+  Set<String> get decisiveEvidenceIds =>
+      evidenceBlueprint.where((e) => e.decisive).map((e) => e.id.toLowerCase()).toSet();
 
   List<String> get criticalEvidenceIds => evidenceBlueprint
       .where((e) => e.weight == EvidenceWeight.critical)
@@ -315,10 +326,11 @@ abstract final class AuthenticationRules {
     EvidenceBlueprint(
       id: 'about_screen',
       title: 'About Screen',
-      guide: 'Open Settings > General > About and photograph the screen.',
-      why: "We'll read the model details the watch reports.",
-      weight: EvidenceWeight.high,
+      guide: "Open the watch's Settings > About (Apple Watch: Settings > General > About) and photograph the screen.",
+      why: "Copies look the same outside - the watch's own software shows what it really is.",
+      weight: EvidenceWeight.critical,
       identityMarking: true,
+      decisive: true,
     ),
   ];
 
@@ -668,41 +680,44 @@ abstract final class AuthenticationRules {
     ),
   ];
 
+  /// Brand-neutral smartwatch checks. Everything is judged against the
+  /// IDENTIFIED model: a flat screen, charging pins or pin-style straps are
+  /// normal on many genuine Huawei, Samsung, Garmin etc. watches.
   static const List<InspectionRule> _smartwatchRules = [
     InspectionRule(
       dimension: InspectionDimension.shape,
-      check: 'Case geometry: corner radius, case thickness, curvature of the glass into the case, symmetry.',
-      genuineSignal: 'Case proportions and corner radius match the identified generation and size.',
-      replicaSignal: 'Visibly thicker case, flat glass with a hard edge, or proportions from a different model.',
-      simpleTip: 'Look at the watch from the side. The glass should curve smoothly into the case.',
+      check: 'Case geometry: corner radius, case thickness, glass-to-case transition, symmetry.',
+      genuineSignal: 'Case proportions, corner radius and glass edge match the identified model and size.',
+      replicaSignal: 'Proportions, thickness or glass edge that belong to no real version of the identified model.',
+      simpleTip: 'Look at the watch from the side. The glass and case should meet cleanly and evenly.',
     ),
     InspectionRule(
       dimension: InspectionDimension.display,
-      check: 'Display: bezel width around the active area, screen shape, how the interface fills the screen.',
-      genuineSignal: 'Thin, even black border; interface fills the curved screen as expected for the generation.',
-      replicaSignal: 'Thick uneven bezel, rectangular non-curved screen, or an interface that is not watchOS.',
-      simpleTip: 'Turn the screen on. The black border around it should be thin and even.',
+      check: "Display: bezel width around the active area, screen shape, whether the interface is the brand's own watch software.",
+      genuineSignal: "Even border; the brand's own interface (e.g. watchOS, HarmonyOS, Wear OS) fills the screen as expected.",
+      replicaSignal: "Uneven or oversized border for the model, or an interface that isn't the brand's own watch software.",
+      simpleTip: 'Turn the screen on. The border around it should be even.',
     ),
     InspectionRule(
       dimension: InspectionDimension.hardware,
-      check: 'Digital Crown and side button: position, proportions, crown ridges, red ring on Series models with ECG where applicable.',
-      genuineSignal: 'Crown and button placed and sized as expected for the generation; clean fine ridges on the crown.',
-      replicaSignal: 'Crown or button in the wrong place, oversized, loose-looking, or with coarse moulded ridges.',
-      simpleTip: 'Look at the knob on the side. It should look precise, with fine even ridges.',
+      check: 'Crown and buttons: position, proportions and finish as expected for the identified model (e.g. the red ring on ECG-capable Apple Watch Series).',
+      genuineSignal: 'Crown/buttons placed and sized as expected for the model; clean, precise finish.',
+      replicaSignal: 'Crown or buttons in the wrong place for the model, loose-looking, or coarsely moulded.',
+      simpleTip: 'Look at the buttons on the side. They should look precise and sit evenly.',
     ),
     InspectionRule(
       dimension: InspectionDimension.display,
-      check: 'Back sensor: lens arrangement, sensor window shape, text printed around the sensor.',
-      genuineSignal: 'Sensor layout matches the identified generation; any printed text is crisp and even.',
-      replicaSignal: 'Sensor layout from no real generation, cheap-looking plastic back, blurry or misspelled text.',
+      check: 'Back: sensor lens arrangement, sensor window shape, charging contacts, text printed around the sensor.',
+      genuineSignal: 'Sensor layout and charging contacts match the identified model; any printed text is crisp and even.',
+      replicaSignal: 'Sensor layout or charging contacts that the identified model does not have; blurry or misspelled text.',
       simpleTip: 'Turn it over. The sensor should look precise and any text should be sharp.',
     ),
     InspectionRule(
       dimension: InspectionDimension.hardware,
-      check: 'Band connector slot, band release buttons, speaker and microphone openings.',
-      genuineSignal: 'Clean slot edges, release buttons flush, openings neatly machined and placed as expected.',
-      replicaSignal: 'Rough slot edges, missing release buttons, openings in the wrong place.',
-      simpleTip: 'Check the slot where the band goes in. Its edges should be clean and even.',
+      check: 'Band attachment and openings: slot and release buttons on Apple Watch; lug or quick-release pins on most other brands; speaker/mic openings.',
+      genuineSignal: 'Attachment type is correct for the model; clean edges; openings neatly made and placed as expected.',
+      replicaSignal: 'Attachment type wrong for the model, rough edges, openings in the wrong place.',
+      simpleTip: 'Check where the band meets the watch. It should fit cleanly and evenly.',
     ),
   ];
 
@@ -856,9 +871,16 @@ abstract final class AuthenticationRules {
 
   static const List<String> _smartwatchCautions = [
     'This is a smartwatch: do NOT apply mechanical-watch rules (lume, pad-printed dial text, crown knurling, rehaut, movement).',
-    'Serial numbers cannot be validated against Apple from a photo. Report a visible serial only as observed text.',
+    'Serial numbers cannot be validated with the manufacturer from a photo. Report a visible serial only as observed text.',
     'A dark screen, screen protector or case cover hides details: report as MISSING or AMBIGUOUS.',
     'Generations differ (sensor layout, button shape, case size). Compare only against the generation you identified; if the generation is uncertain, do not count generation-specific differences as counterfeit evidence.',
+    'Brands differ. Flat screens, magnetic charging pins, pin-style strap attachments and a plain back with little text are NORMAL on many genuine Huawei, Samsung, Xiaomi, Amazfit and Garmin watches. Never treat them as counterfeit evidence unless the identified model is known not to have them.',
+    "If no brand is visible on the watch itself, the device-information screen (Settings > About) usually names the manufacturer and model; use it to identify the brand before judging anything brand-specific.",
+  ];
+
+  /// Only for watches identified as Apple Watch.
+  static const List<String> _appleWatchCautions = [
+    'Replica Apple Watches (especially "Ultra"-style clones) copy the case shape, orange crown ring, Action button, speaker/button layout and the full caseback text. None of these separate genuine from replica. What does: the device-information screen (Settings > General > About: model number, serial, watchOS version), the watch face/UI, display and bezel construction, and sensor lens construction on the back. A genuine Apple Watch has no exposed charging pins on the back; replica backs often show charging pins or a light-coloured plastic back. The genuine optical sensor shows a few bright LED points and dark photodiode lenses - that alone is normal, not counterfeit evidence.',
   ];
 
   static const List<String> _bagCautions = [
@@ -974,16 +996,34 @@ abstract final class AuthenticationRules {
         ),
       ],
     ),
-    const AuthenticationRuleSet(
-      category: ProductCategory.watches,
-      brand: 'Apple',
-      model: 'Watch',
-      evidenceBlueprint: _smartwatch,
-      inspectionRules: [..._sharedRules, ..._smartwatchRules],
-      cautions: [..._sharedCautions, ..._smartwatchCautions],
-      replacesBaseRules: true,
-      profileName: 'SMARTWATCH (Apple Watch)',
-    ),
+    _appleWatchOverlay,
+  ];
+
+  static const AuthenticationRuleSet _appleWatchOverlay = AuthenticationRuleSet(
+    category: ProductCategory.watches,
+    brand: 'Apple',
+    model: 'Watch',
+    evidenceBlueprint: _smartwatch,
+    inspectionRules: [..._sharedRules, ..._smartwatchRules],
+    cautions: [..._sharedCautions, ..._smartwatchCautions, ..._appleWatchCautions],
+    replacesBaseRules: true,
+    profileName: 'SMARTWATCH (Apple Watch)',
+  );
+
+  /// Smartwatch whose brand the first photo didn't establish.
+  static const AuthenticationRuleSet _genericSmartwatchOverlay = AuthenticationRuleSet(
+    category: ProductCategory.watches,
+    evidenceBlueprint: _smartwatch,
+    inspectionRules: [..._sharedRules, ..._smartwatchRules],
+    cautions: [..._sharedCautions, ..._smartwatchCautions],
+    replacesBaseRules: true,
+    profileName: 'SMARTWATCH',
+  );
+
+  static const _appleWatchHints = ['apple watch', 'watch ultra', 'watch series', 'watch se', 'watchos'];
+  static const _smartwatchHints = [
+    'smartwatch', 'smart watch', 'galaxy watch', 'pixel watch', 'fitbit', 'amazfit', 'garmin', 'huawei watch',
+    ..._appleWatchHints,
   ];
 
   static AuthenticationRuleSet resolve({
@@ -1004,6 +1044,19 @@ abstract final class AuthenticationRules {
       final modelMatches = om.isEmpty || m.contains(om) || b.contains(om);
       if (brandMatches && modelMatches) {
         base = base.mergedWith(overlay);
+      }
+    }
+
+    // The first photo doesn't always yield a brand (a real Apple Watch Ultra
+    // came back as brand-less "Smartwatch"), which used to silently fall
+    // through to analog-watch rules: dial, lume and rehaut checks on a
+    // screen. Recognise a smartwatch from the name/model text instead.
+    if (category == ProductCategory.watches && !base.profileName.startsWith('SMARTWATCH')) {
+      final text = '$b $m';
+      if (_appleWatchHints.any(text.contains)) {
+        base = base.mergedWith(_appleWatchOverlay);
+      } else if (_smartwatchHints.any(text.contains)) {
+        base = base.mergedWith(_genericSmartwatchOverlay);
       }
     }
     return base;

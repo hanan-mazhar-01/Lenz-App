@@ -1,418 +1,666 @@
+import 'dart:convert';
+
 import '../core/config/authenticity_engine_config.dart';
-import '../data/authentication_rules.dart';
-import '../data/reference_library.dart';
-import '../models/evidence_finding.dart';
-import '../models/product.dart';
+import '../data/evidence_profiles.dart';
+import '../models/evidence_record.dart';
+import '../models/product_reference.dart';
+import '../models/product_identity.dart';
 
-/// All authenticity prompts and their response schemas, in one place and
-/// under one version number ([AuthenticityEngineConfig.promptVersion]).
+/// The five instructions used by the scan pipeline, each with its own
+/// response schema, under one version ([AuthenticityEngineConfig.promptVersion]):
 ///
-/// Schemas use Gemini's `responseSchema` format. The backend forwards them
-/// as `generationConfig.responseSchema`, which makes Gemini emit exactly
-/// these fields with exactly these enum values. The prompts also embed the
-/// schema text, so older backends that ignore `responseSchema` still work.
+/// 1. [identificationPrompt]     product recognition (first photo)
+/// 2. [recommendationPrompt]     evidence recommendation (text only)
+/// 3. [photoCheckPrompt]         image-quality and part check (per photo)
+/// 4. [photoAnalysisPrompt]      product-specific visual analysis (per photo)
+/// 5. [finalEvaluationPrompt]    final evidence evaluation (text only)
+///
+/// The model reports observations; the app's decision engine decides. No
+/// prompt asks for a numeric authenticity confidence, and none may claim
+/// manufacturer verification.
+///
+/// Schemas use Gemini's `responseSchema` subset (type, properties, required,
+/// enum, items, nullable, propertyOrdering). The Cloud Function forwards them
+/// as `generationConfig.responseSchema`.
 abstract final class AuthenticityPrompts {
+  /// The categories the app supports (the same as before engine v3).
   static const categoryCodes = [
-    'WATCH', 'HANDBAG', 'SNEAKER', 'SHOE', 'CLOTHING', 'WALLET',
-    'ACCESSORY', 'SUNGLASSES', 'EYEGLASSES', 'OTHER',
+    'WATCH', 'HANDBAG', 'SNEAKER', 'SHOE', 'CLOTHING', 'WALLET', 'ACCESSORY',
+    'SUNGLASSES', 'EYEGLASSES',
   ];
 
-  static const findingTypes = [
-    'AUTHENTIC_INDICATOR', 'COUNTERFEIT_INDICATOR', 'MISSING', 'AMBIGUOUS', 'UNVERIFIABLE',
-  ];
+  static const attributeStatuses = ['CONFIRMED', 'PROBABLE', 'UNKNOWN'];
 
-  static const strengths = ['WEAK', 'MODERATE', 'STRONG'];
-
-  static const dimensions = [
-    'BRAND_MODEL', 'DESIGN', 'MATERIAL', 'CONSTRUCTION', 'LOGO', 'TYPOGRAPHY', 'STITCHING',
-    'HARDWARE', 'SHAPE', 'COLOR_TEXTURE', 'PRODUCT_SPECIFIC', 'SERIAL_MARKING', 'PACKAGING', 'OTHER',
-  ];
-
-  static const qualityIssues = [
-    'LOW_RESOLUTION', 'BLUR', 'OUT_OF_FOCUS', 'TOO_DARK', 'OVEREXPOSED', 'HARSH_SHADOWS', 'GLARE',
-    'OCCLUSION', 'POOR_ANGLE', 'TOO_FAR', 'PARTIAL_ITEM', 'NONE',
+  /// Where a photo comes from. Only a photo of the item itself (or, for
+  /// device-information requests, a screenshot of that information) is used.
+  static const imageSources = ['PHYSICAL_ITEM', 'DEVICE_SCREENSHOT', 'SCREEN_OR_PRINT', 'INTERNET_IMAGE'];
+  static const identitySources = ['MARKING', 'DESIGN', 'DEVICE_REPORTED', 'NONE'];
+  static const outcomes = ['CONSISTENT', 'INCONSISTENT', 'NOT_VISIBLE', 'UNCLEAR'];
+  static const reliabilities = ['HIGH', 'MEDIUM', 'LOW'];
+  static const bases = ['REFERENCE_PROVIDED', 'MODEL_KNOWLEDGE', 'GENERAL_PRINCIPLE', 'DEVICE_REPORTED'];
+  static const evidenceKinds = ['OBSERVED_FACT', 'AI_INTERPRETATION', 'DEVICE_REPORTED'];
+  static const readability = ['READABLE', 'PARTLY_READABLE', 'NOT_READABLE', 'NA'];
+  static const photoIssues = [
+    'BLUR', 'OUT_OF_FOCUS', 'MOTION_BLUR', 'GLARE', 'TOO_DARK', 'OVEREXPOSED', 'TOO_FAR', 'OCCLUSION',
+    'PARTIAL', 'POOR_ANGLE', 'TEXT_UNREADABLE', 'NONE',
   ];
 
   // =====================================================================
-  // 1. Identification (first photo)
+  // 1. Product recognition
   // =====================================================================
 
-  static const String identificationPrompt = '''You are a strict product presence validator and identifier for an authentication system.
-Before attempting to identify any brand or product, perform an IMAGE VALIDATION & PRODUCT PRESENCE evaluation.
+  static final String identificationPrompt = '''You identify products for an authentication app (prompt v${AuthenticityEngineConfig.promptVersion}).
+You do NOT judge authenticity here. First validate the photo, then identify the product, stating how certain each attribute is.
 
-IMAGE VALIDATION RULES:
-1. USABILITY & BRIGHTNESS:
-   - If the photo is pitch black, extremely dark, or has insufficient lighting:
-     status="unusable_image", reason="image_too_dark", product_detected=false.
-     message="Image is too dark to analyze. Please move to a brighter area and scan the item again."
-   - If the photo is completely blank, solid color, empty wall, or has no visible object:
-     status="unusable_image", reason="no_visible_content", product_detected=false.
-     message="No visible item detected. Please point the camera at a product and try again."
-   - If the photo is heavily blurred, out of focus, or obstructed:
-     status="unusable_image", reason="insufficient_visual_quality", product_detected=false.
-     message="The image isn't clear enough to analyze. Please capture a sharper photo with the item fully visible."
+PHOTO VALIDATION (set status/reason and stop identifying when one applies):
+0. NOT A REAL PHOTO OF THE ITEM: a photo of a computer, phone or TV screen showing a picture of the product (screen edges, pixels or moire, a browser or app interface around it), a printed picture (magazine, poster, box art), or an image from the internet (official product render or marketing photo, store listing, stock photo, watermarks or text overlays, perfect studio render): image_source="SCREEN_OR_PRINT" or "INTERNET_IMAGE", status="unusable_image", reason="not_real_photo", message="This looks like a picture from the internet or a screen, not the item itself. Please take a photo of the actual item with the camera." The item's own display (a watch face, the watch's settings screen) is part of the item: that is image_source="PHYSICAL_ITEM". An ordinary photo the user took of the item, even on a plain background, is PHYSICAL_ITEM.
+1. Pitch black or far too dark: status="unusable_image", reason="image_too_dark".
+2. Blank, solid colour, empty wall, no visible object: status="unusable_image", reason="no_visible_content".
+3. So blurred, obstructed or out of focus that the object type cannot be told: status="unusable_image", reason="insufficient_visual_quality".
+4. Mainly a person, face, body or outfit with no product being shown: status="not_product", reason="human_detected". Never invent a product for a person.
+5. NOT A SUPPORTED CATEGORY: food, drinks, furniture, animals, vehicles, landscapes, household items and clutter, perfume and fragrance bottles, cosmetics, makeup and skincare, phones, earbuds, headphones, laptops, monitors, keyboards, cables and any electronics other than watches, toys, stationery, bottles and containers: status="not_product", reason="unsupported_object", message="No supported item detected. Please scan a watch, bag, shoe, clothing, wallet, eyewear or accessory."
+6. GENERIC / LOCAL UNBRANDED ITEM: a supported kind of object that clearly carries no brand identity at all: no logo, brand name, monogram or signature design of any known brand, and it does not imitate one (for example a plain unbranded bag, shoe, shirt or watch from a local market): status="not_product", reason="unsupported_object", message="This looks like a generic, unbranded item. Lenz checks branded products, for example watches, bags, sneakers and eyewear from known brands." Use this ONLY when enough of the item is visible to be sure there is no branding. If the brand is simply not visible from this angle, or the item imitates a known brand (a replica), identify it normally.
+7. A product is present but mostly hidden or too far to tell what kind of object it is: status="insufficient_evidence", reason="partial_product_insufficient_evidence".
+For 0-7: product_detected=false and every identification field null. Always set image_source.
 
-2. HUMAN DETECTION:
-   - If the photo primarily contains a person, face, selfie, body, hands, or outfit without an obvious product being inspected:
-     status="not_product", reason="human_detected", product_detected=false.
-     message="Please scan an item such as a handbag, watch, shoe, wallet, sunglasses, or other supported product."
-     DO NOT guess or invent a product or brand for a human.
+SUPPORTED PRODUCTS (only these): watches (analogue and smart), handbags, sneakers, shoes, clothing, wallets, belts, jewellery and other fashion accessories (scarves, caps, ties), sunglasses, eyeglasses.
+Classify by OBJECT TYPE, not by how expensive or genuine it looks. Many scanned items are replicas or plain-looking; that is exactly what the user is checking. A branded or brand-imitating watch is a WATCH even when it looks cheap or worn.
+status="product_detected", reason="valid_luxury_product", product_detected=true, and:
+- category_code: exactly one of ${categoryCodes.join(', ')}. SUNGLASSES = tinted or mirrored lenses; EYEGLASSES = clear lenses or optical frames.
+- product_category: short human label ("Watches", "Bags", "Sneakers", "Shoes", "Clothing", "Wallets", "Sunglasses", "Eyeglasses", "Accessories").
+- product_type: a short noun for what the object is, e.g. "smartwatch", "mechanical watch", "sneaker", "loafer", "tote bag", "belt".
+- confidence: 0.0-0.99, how sure you are of the OBJECT CATEGORY only (not brand, model or authenticity).
 
-3. IRRELEVANT OBJECTS:
-   - Food, drinks, furniture, walls, floors, animals, vehicles, landscapes, random electronics (monitor, keyboard, cable), household clutter:
-     status="not_product", reason="unsupported_object", product_detected=false.
-     message="No supported item detected. Please scan a supported product."
+IDENTITY, each with a status:
+- CONFIRMED: established by readable text or a marking in this photo, the device's own information screen, or a design feature that exists on this model only.
+- PROBABLE: the design strongly suggests it, but another model or generation could look alike.
+- UNKNOWN: not established. Use null for the value.
+Fields: brand, model (the model family, e.g. "Apple Watch Ultra", "Submariner", "Air Jordan 4", "Neverfull"), generation (e.g. "Ultra 2", "Series 9", or a range such as "Series 7-9" with PROBABLE), exact_model (a reference, model number or style code, ONLY if readable in the photo). Give a short *_basis for each: the visible feature that established it.
+NEVER invent a model number, reference, SKU, serial, generation or production year. If the generation cannot be told, say so with status UNKNOWN. Copied designs look like the model they copy: design alone is at most PROBABLE unless a feature is exclusive to one model.
+List uncertain_attributes explicitly (e.g. "generation", "case size", "exact colourway").
+visible_part: which part of the product this photo shows (e.g. "front display", "back with sensor", "side with crown", "whole shoe from the side", "interior label").
+item_box_2d: [ymin, xmin, ymax, xmax] of the product in the photo, each 0-1000.
+visible_characteristics: manufacturing characteristics visible (materials, finishes, construction).
+distinguishing_features: visible features that could help authenticate this exact model.
 
-4. PARTIAL / INSUFFICIENT EVIDENCE:
-   - A product is present but heavily cropped, mostly hidden, or too distant to identify:
-     status="insufficient_evidence", reason="partial_product_insufficient_evidence", product_detected=false.
-     message="There isn't enough visible detail to reliably determine the item. Please capture a clearer full-view photo."
+OUTPUT RFC-8259 JSON ONLY matching the schema.''';
 
-5. VALID SUPPORTED PRODUCT:
-   - A handbag, watch (analog or smart), sneaker, shoe, clothing, wallet, belt, jewelry, sunglasses, eyeglasses/optical frames, or other accessory is clearly visible:
-     status="product_detected", reason="valid_luxury_product", product_detected=true.
-   - category_code: exactly one of WATCH, HANDBAG, SNEAKER, SHOE, CLOTHING, WALLET, ACCESSORY, SUNGLASSES, EYEGLASSES, OTHER.
-     Sunglasses = tinted/mirrored lenses. Eyeglasses = clear or prescription lenses, or optical frames.
-   - product_category: a short human label ("Watches", "Bags", "Sneakers", "Shoes", "Clothing", "Wallets", "Sunglasses", "Eyeglasses", "Accessories").
-   - brand ONLY if a logo or unmistakable design is visible; otherwise "not_identifiable".
-   - product_name, model, variant (generation/colourway/size) ONLY if clearly recognizable. If the exact model cannot be confirmed, set model=null and say so in message. NEVER invent a model, reference number, SKU or generation.
-   - Classify by OBJECT TYPE, not by how expensive or genuine it looks. Many scanned items are replicas or plain-looking; that is exactly what the user is checking. A watch is a WATCH even if the brand is unclear.
-   - confidence: realistic 0.0 to 0.99, for the identification only (not authenticity).
-
-CRITICAL INVARIANTS:
-- If product_detected is false: brand, model, product_name, product_category and category_code MUST be null.
-- NEVER output "Unknown Luxury Item".
-
-OUTPUT RFC-8259 JSON ONLY:
-{
-  "status": "product_detected | not_product | unusable_image | insufficient_evidence",
-  "reason": "human_detected | unsupported_object | image_too_dark | no_visible_content | insufficient_visual_quality | partial_product_insufficient_evidence | valid_luxury_product",
-  "product_detected": true,
-  "category_code": "WATCH",
-  "product_category": "Category label or null",
-  "brand": "Brand or null",
-  "product_name": "Product name or null",
-  "model": "Model or null",
-  "variant": "Generation / colourway / size or null",
-  "confidence": 0.92,
-  "visible_details": ["feature 1", "feature 2"],
-  "missing_evidence": ["missing angle"],
-  "message": "User-facing summary"
-}''';
-
-  static Map<String, dynamic> get identificationSchema => {
-        'type': 'OBJECT',
-        'properties': {
-          'status': _enum(['product_detected', 'not_product', 'unusable_image', 'insufficient_evidence']),
-          'reason': _enum([
-            'human_detected', 'unsupported_object', 'image_too_dark', 'no_visible_content',
-            'insufficient_visual_quality', 'partial_product_insufficient_evidence', 'valid_luxury_product',
-          ]),
-          'product_detected': {'type': 'BOOLEAN'},
-          'category_code': {..._enum(categoryCodes), 'nullable': true},
-          'product_category': {'type': 'STRING', 'nullable': true},
-          'brand': {'type': 'STRING', 'nullable': true},
-          'product_name': {'type': 'STRING', 'nullable': true},
-          'model': {'type': 'STRING', 'nullable': true},
-          'variant': {'type': 'STRING', 'nullable': true},
-          'confidence': {'type': 'NUMBER'},
-          'visible_details': {'type': 'ARRAY', 'items': {'type': 'STRING'}},
-          'missing_evidence': {'type': 'ARRAY', 'items': {'type': 'STRING'}},
-          'message': {'type': 'STRING'},
-        },
-        'required': ['status', 'reason', 'product_detected', 'confidence', 'message'],
-        'propertyOrdering': [
-          'status', 'reason', 'product_detected', 'category_code', 'product_category', 'brand',
-          'product_name', 'model', 'variant', 'confidence', 'visible_details', 'missing_evidence', 'message',
-        ],
-      };
-
-  // =====================================================================
-  // 2. Multi-image forensic analysis (final pass)
-  // =====================================================================
-
-  static String forensicAnalysisPrompt({
-    required Product product,
-    required AuthenticationRuleSet rules,
-    required String imageManifest,
-    required String missingNote,
-    required bool overviewOnly,
-    ProductReference? reference,
-  }) {
-    final item = '${product.brand} ${product.name}${product.model.isNotEmpty ? ' (${product.model})' : ''}';
-    final referenceNotes = StringBuffer();
-    if (reference != null) {
-      referenceNotes.writeln('DOCUMENTED CHECKPOINTS for ${reference.brand} ${reference.model} (use only if you confirm this is that model):');
-      for (final f in reference.features) {
-        referenceNotes.writeln('- ${f.title}: ${f.expectedDetail}');
-      }
-      referenceNotes.writeln('Documented replica tells:');
-      for (final flaw in reference.commonReplicaFlaws) {
-        referenceNotes.writeln('- $flaw');
-      }
-    }
-
-    return '''You are the evidence-extraction stage of a product authentication system (prompt v${AuthenticityEngineConfig.promptVersion}).
-You do NOT decide whether the item is real or fake. You extract structured, verifiable evidence; the application applies the decision rules.
-
-All attached images show ONE physical item. Initial identification from the first photo: $item.
-Inspection profile: ${rules.profileName}.
-
-$imageManifest
-Requested photos NOT supplied:
-$missingNote
-${overviewOnly ? '\nNOTE: none of the requested photos were supplied. Report only what the single overview photo shows; list every requested photo under missing_evidence.\n' : ''}
-WORK THROUGH THESE STEPS IN ORDER:
-STEP 1  Category: confirm category (${categoryCodes.join(', ')}).
-STEP 2  Brand: confirm from a visible logo or unmistakable design only.
-STEP 3  Model/family/variant/generation: identify ONLY if the photos support it. If not confirmable, set model=null and model_confirmed=false. Never invent a model, SKU, reference, serial, production year, factory or material.
-STEP 4  Image quality: score 0-100 for how well these photos let a human inspect authentication details; list issues.
-STEP 5  Observable features: for each photo, describe what is physically visible.
-STEP 6  Authenticity indicators: visible details that MATCH the identified product.
-STEP 7  Counterfeit indicators: visible details that CONFLICT with the identified product.
-STEP 8  Missing evidence: details that matter for this product but are not visible in any photo, with the photo that would show them.
-STEP 9  Contradiction check (answer honestly before classifying):
-        - Is each counterfeit indicator actually visible in the image, not inferred?
-        - Is it specific to this product/model, or only a generic "luxury goods" assumption?
-        - Could lighting, angle, reflection, wear, lens distortion or compression explain it?
-        - Is the model identification reliable enough to compare against?
-        - Would another photo resolve the question?
-STEP 10 Sufficiency: decide whether the evidence is sufficient to classify at all.
-STEP 11 Advisory classification (the application makes the final decision):
-        LIKELY_REPLICA only if multiple independent, visible, model-specific counterfeit indicators exist and the contradiction check does not explain them away.
-        LIKELY_AUTHENTIC only if multiple independent authenticity indicators are visible and nothing meaningful contradicts them.
-        Otherwise INCONCLUSIVE.
-STEP 12 Recommended views: the most useful next photos, as short instructions to a normal person.
-
-FINDING RULES:
-- type is exactly one of: AUTHENTIC_INDICATOR, COUNTERFEIT_INDICATOR, MISSING, AMBIGUOUS, UNVERIFIABLE.
-- A detail you cannot see is MISSING, never COUNTERFEIT_INDICATOR. "Serial not visible" is MISSING. "No box shown" is MISSING.
-- A detail you can see but that could be explained by photo conditions or wear is AMBIGUOUS.
-- Things no photo can prove (weight, internal parts, whether a serial is registered with the brand) are UNVERIFIABLE.
-- strength: WEAK = subtle, could be the photo; MODERATE = clear but not decisive on its own; STRONG = clear, specific to this model, and not explainable by photo conditions.
-- A STRONG counterfeit indicator requires model_specific=true and must name the exact expected vs observed difference.
-- Always fill alternative_explanation for COUNTERFEIT_INDICATOR findings (use null only if none is plausible).
-- Every finding must reference the evidence_id of the photo it came from, and must say WHY. Never write "looks fake" or "looks real".
-- Visible serial or model numbers go in observed_text exactly as read. Do NOT claim they are valid, registered or verified with the brand.
-
-INSPECTION FRAMEWORK for ${rules.profileName}:
-${rules.inspectionBriefing}
-
-CAUTIONS for this category:
-${rules.cautions.map((c) => '- $c').join('\n')}
-
-${referenceNotes.isEmpty ? '' : referenceNotes.toString()}
-Treat all images as the same item and compare them against each other. Report a conflict between photos (a reference on one image disagreeing with another, mismatched finish, a different variant) under contradictions.
-
-OUTPUT RFC-8259 JSON ONLY, matching this shape:
-{"identification":{"category":"WATCH","brand":null,"model":null,"variant":null,"model_confidence":0,"model_confirmed":false},
-"image_quality":{"score":0,"issues":["NONE"]},
-"evidence_observations":[{"evidence_id":"","title":"","visible_quality":0,"observations":[""],
-  "findings":[{"feature":"","dimension":"LOGO","type":"AUTHENTIC_INDICATOR","strength":"MODERATE","observation":"","model_specific":false,"alternative_explanation":null}]}],
-"contradictions":[{"description":"","involved_parts":[""],"severity":"minor|moderate|critical"}],
-"missing_evidence":[{"feature":"","reason":"","recommended_view":""}],
-"observed_text":[""],
-"contradiction_check":{"counterfeit_evidence_is_visible":false,"counterfeit_evidence_is_model_specific":false,"could_be_explained_by_lighting_angle_wear_or_compression":false,"model_identification_reliable":true,"more_photos_required":false},
-"evidence_sufficient":false,
-"model_classification":"INCONCLUSIVE",
-"recommended_views":[""],
-"physical_checks":[{"title":"","description":"","what_to_look_for":""}],
-"reasoning":""}''';
-  }
-
-  static Map<String, dynamic> get forensicAnalysisSchema {
-    final finding = {
-      'type': 'OBJECT',
-      'properties': {
-        'feature': {'type': 'STRING'},
-        'dimension': _enum(dimensions),
-        'type': _enum(findingTypes),
-        'strength': _enum(strengths),
-        'observation': {'type': 'STRING'},
-        'model_specific': {'type': 'BOOLEAN'},
-        'alternative_explanation': {'type': 'STRING', 'nullable': true},
-      },
-      'required': ['feature', 'dimension', 'type', 'strength', 'observation', 'model_specific'],
-      'propertyOrdering': [
-        'feature', 'dimension', 'type', 'strength', 'observation', 'model_specific', 'alternative_explanation',
-      ],
-    };
+  static Map<String, dynamic> get identificationSchema {
+    Map<String, dynamic> str() => {'type': 'STRING', 'nullable': true};
     return {
       'type': 'OBJECT',
       'properties': {
-        'identification': {
-          'type': 'OBJECT',
-          'properties': {
-            'category': _enum(categoryCodes),
-            'brand': {'type': 'STRING', 'nullable': true},
-            'model': {'type': 'STRING', 'nullable': true},
-            'variant': {'type': 'STRING', 'nullable': true},
-            'model_confidence': {'type': 'INTEGER'},
-            'model_confirmed': {'type': 'BOOLEAN'},
-          },
-          'required': ['category', 'model_confidence', 'model_confirmed'],
-          'propertyOrdering': ['category', 'brand', 'model', 'variant', 'model_confidence', 'model_confirmed'],
-        },
-        'image_quality': {
-          'type': 'OBJECT',
-          'properties': {
-            'score': {'type': 'INTEGER'},
-            'issues': {'type': 'ARRAY', 'items': _enum(qualityIssues)},
-          },
-          'required': ['score', 'issues'],
-        },
-        'evidence_observations': {
-          'type': 'ARRAY',
-          'items': {
-            'type': 'OBJECT',
-            'properties': {
-              'evidence_id': {'type': 'STRING'},
-              'title': {'type': 'STRING'},
-              'visible_quality': {'type': 'INTEGER'},
-              'observations': {'type': 'ARRAY', 'items': {'type': 'STRING'}},
-              'findings': {'type': 'ARRAY', 'items': finding},
-            },
-            'required': ['evidence_id', 'title', 'visible_quality', 'observations', 'findings'],
-            'propertyOrdering': ['evidence_id', 'title', 'visible_quality', 'observations', 'findings'],
-          },
-        },
-        'contradictions': {
-          'type': 'ARRAY',
-          'items': {
-            'type': 'OBJECT',
-            'properties': {
-              'description': {'type': 'STRING'},
-              'involved_parts': {'type': 'ARRAY', 'items': {'type': 'STRING'}},
-              'severity': _enum(['minor', 'moderate', 'critical']),
-            },
-            'required': ['description', 'severity'],
-          },
-        },
-        'missing_evidence': {
-          'type': 'ARRAY',
-          'items': {
-            'type': 'OBJECT',
-            'properties': {
-              'feature': {'type': 'STRING'},
-              'reason': {'type': 'STRING'},
-              'recommended_view': {'type': 'STRING'},
-            },
-            'required': ['feature', 'reason'],
-          },
-        },
-        'observed_text': {'type': 'ARRAY', 'items': {'type': 'STRING'}},
-        'contradiction_check': {
-          'type': 'OBJECT',
-          'properties': {
-            'counterfeit_evidence_is_visible': {'type': 'BOOLEAN'},
-            'counterfeit_evidence_is_model_specific': {'type': 'BOOLEAN'},
-            'could_be_explained_by_lighting_angle_wear_or_compression': {'type': 'BOOLEAN'},
-            'model_identification_reliable': {'type': 'BOOLEAN'},
-            'more_photos_required': {'type': 'BOOLEAN'},
-          },
-          'required': [
-            'counterfeit_evidence_is_visible', 'counterfeit_evidence_is_model_specific',
-            'could_be_explained_by_lighting_angle_wear_or_compression', 'model_identification_reliable',
-            'more_photos_required',
-          ],
-        },
-        'evidence_sufficient': {'type': 'BOOLEAN'},
-        'model_classification': _enum(['LIKELY_AUTHENTIC', 'LIKELY_REPLICA', 'INCONCLUSIVE']),
-        'recommended_views': {'type': 'ARRAY', 'items': {'type': 'STRING'}},
-        'physical_checks': {
-          'type': 'ARRAY',
-          'items': {
-            'type': 'OBJECT',
-            'properties': {
-              'title': {'type': 'STRING'},
-              'description': {'type': 'STRING'},
-              'what_to_look_for': {'type': 'STRING'},
-            },
-            'required': ['title', 'description', 'what_to_look_for'],
-          },
-        },
-        'reasoning': {'type': 'STRING'},
+        'status': _enum(['product_detected', 'not_product', 'unusable_image', 'insufficient_evidence']),
+        'reason': _enum([
+          'human_detected', 'unsupported_object', 'image_too_dark', 'no_visible_content',
+          'insufficient_visual_quality', 'partial_product_insufficient_evidence', 'valid_luxury_product', 'not_real_photo',
+        ]),
+        'image_source': _enum(imageSources),
+        'product_detected': {'type': 'BOOLEAN'},
+        'category_code': {..._enum(categoryCodes), 'nullable': true},
+        'product_category': str(),
+        'product_type': str(),
+        'confidence': {'type': 'NUMBER'},
+        'brand': str(),
+        'brand_status': _enum(attributeStatuses),
+        'brand_basis': str(),
+        'product_name': str(),
+        'model': str(),
+        'model_status': _enum(attributeStatuses),
+        'model_basis': str(),
+        'generation': str(),
+        'generation_status': _enum(attributeStatuses),
+        'generation_basis': str(),
+        'exact_model': str(),
+        'exact_model_status': _enum(attributeStatuses),
+        'variant': str(),
+        'visible_part': str(),
+        'item_box_2d': {'type': 'ARRAY', 'items': {'type': 'NUMBER'}, 'nullable': true},
+        'visible_characteristics': _strings(),
+        'distinguishing_features': _strings(),
+        'uncertain_attributes': _strings(),
+        'missing_evidence': _strings(),
+        'message': {'type': 'STRING'},
       },
-      'required': [
-        'identification', 'image_quality', 'evidence_observations', 'contradictions', 'missing_evidence',
-        'observed_text', 'contradiction_check', 'evidence_sufficient', 'model_classification',
-        'recommended_views', 'physical_checks', 'reasoning',
-      ],
-      // Evidence first, advisory classification last: the model commits to
-      // its findings before it is asked for any conclusion.
+      'required': ['image_source', 'status', 'reason', 'product_detected', 'confidence', 'message'],
       'propertyOrdering': [
-        'identification', 'image_quality', 'evidence_observations', 'contradictions', 'missing_evidence',
-        'observed_text', 'contradiction_check', 'evidence_sufficient', 'model_classification',
-        'recommended_views', 'physical_checks', 'reasoning',
+        'image_source', 'status', 'reason', 'product_detected', 'category_code', 'product_category', 'product_type', 'confidence',
+        'brand', 'brand_status', 'brand_basis', 'product_name', 'model', 'model_status', 'model_basis',
+        'generation', 'generation_status', 'generation_basis', 'exact_model', 'exact_model_status', 'variant',
+        'visible_part', 'item_box_2d', 'visible_characteristics', 'distinguishing_features',
+        'uncertain_attributes', 'missing_evidence', 'message',
       ],
     };
   }
 
   // =====================================================================
-  // 3. Counterfeit verification (second pass, only before LIKELY_REPLICA)
+  // 2. Evidence recommendation (text only)
   // =====================================================================
 
-  static String verificationPrompt({
-    required Product product,
-    required List<EvidenceFinding> counterfeitFindings,
-    required String imageManifest,
-    required AuthenticationRuleSet rules,
+  static String recommendationPrompt({
+    required ResolvedProfile profile,
+    required Set<String> coveredRequestIds,
   }) {
-    final list = StringBuffer();
-    for (var i = 0; i < counterfeitFindings.length; i++) {
-      final f = counterfeitFindings[i];
-      list.writeln('F$i [photo ${f.evidenceId}] ${f.feature}: ${f.observation} (claimed ${f.strength.code})');
+    final id = profile.identity;
+    final requests = StringBuffer();
+    for (final r in profile.profile.requests) {
+      final cps = profile.checkpointsFor(r.id).map((c) => c.name).join('; ');
+      requests.writeln('- ${r.id}: ${r.title}. Shows: $cps.${coveredRequestIds.contains(r.id) ? ' (ALREADY PHOTOGRAPHED)' : ''}');
     }
-    return '''You are the independent verification stage of a product authentication system (prompt v${AuthenticityEngineConfig.promptVersion}).
-A previous pass flagged the counterfeit indicators below on this item: ${product.brand} ${product.name} (${rules.profileName}).
-Your job is to CHALLENGE them. A false "replica" result on a genuine item is very harmful to its owner.
-
-$imageManifest
-FLAGGED INDICATORS:
-$list
-For EACH indicator, look at the referenced photo again and answer:
-1. Is the exact detail actually visible in the image (not inferred from something missing)?
-2. Is it specific to this product/model, rather than a generic assumption about luxury goods?
-3. Could lighting, angle, reflection, glare, wear, lens distortion or image compression explain it?
-4. Is there another plausible explanation for a genuine item?
-
-outcome is exactly one of:
-- CONFIRMED: clearly visible, model-specific, and not explained by conditions.
-- NOT_VISIBLE: the detail isn't actually visible or readable.
-- EXPLAINED_BY_CONDITIONS: photo conditions or wear plausibly explain it.
-- NOT_MODEL_SPECIFIC: a generic assumption, not a known fact about this model.
-Only keep strength STRONG for CONFIRMED indicators that name an exact expected-vs-observed difference.
-
-CAUTIONS:
-${rules.cautions.map((c) => '- $c').join('\n')}
-
-OUTPUT RFC-8259 JSON ONLY:
-{"verifications":[{"finding_index":0,"outcome":"CONFIRMED","verified_strength":"STRONG","reason":""}],"sufficient_evidence_for_counterfeit":false,"additional_photo_needed":""}''';
+    return '''You plan which photos an authentication app should ask for next (prompt v${AuthenticityEngineConfig.promptVersion}).
+Product: ${_identityText(id)}.
+Evidence profile: ${profile.profile.name}.
+${_generationText(profile)}
+CANDIDATE PHOTOS (use only these ids):
+$requests
+Rank EVERY candidate photo by how well it separates a genuine example of THIS EXACT MODEL from its known counterfeits:
+- discriminative_value HIGH: a feature documented to differ between genuine items of this model and common counterfeits, and hard to copy.
+- MEDIUM: helpful but copied reasonably well by good counterfeits.
+- LOW: mostly copied design, packaging, or not very informative for this model.
+- photo_assessable: false when the feature cannot be judged reliably from an ordinary phone photo.
+- model_specific_checks: up to 3 short, concrete things to look for in that photo on this exact model, ONLY if you know them for this model. Leave empty rather than guessing. Never state measurements.
+- reason: one short sentence.
+If the model or generation is not established, favour photos that establish it (labels, device information, model markings).
+Photos already taken still get a rank, but they will not be requested again.
+model_notes: at most 3 short cautions about legitimate variations of this model (generations, regional versions, editions) that must not be mistaken for counterfeit signs.
+Your knowledge is labelled "AI model knowledge, not independently verified" in the app. Do not present guesses as facts.
+OUTPUT RFC-8259 JSON ONLY matching the schema.''';
   }
 
-  static Map<String, dynamic> get verificationSchema => {
+  static Map<String, dynamic> recommendationSchema(ResolvedProfile profile) => {
         'type': 'OBJECT',
         'properties': {
-          'verifications': {
+          'ranked': {
             'type': 'ARRAY',
             'items': {
               'type': 'OBJECT',
               'properties': {
-                'finding_index': {'type': 'INTEGER'},
-                'outcome': _enum(['CONFIRMED', 'NOT_VISIBLE', 'EXPLAINED_BY_CONDITIONS', 'NOT_MODEL_SPECIFIC']),
-                'verified_strength': _enum(strengths),
+                'request_id': _enum([for (final r in profile.profile.requests) r.id]),
+                'discriminative_value': _enum(['HIGH', 'MEDIUM', 'LOW']),
+                'photo_assessable': {'type': 'BOOLEAN'},
+                'model_specific_checks': _strings(),
                 'reason': {'type': 'STRING'},
               },
-              'required': ['finding_index', 'outcome', 'verified_strength', 'reason'],
-              'propertyOrdering': ['finding_index', 'outcome', 'verified_strength', 'reason'],
+              'required': ['request_id', 'discriminative_value', 'photo_assessable', 'reason'],
+              'propertyOrdering': ['request_id', 'discriminative_value', 'photo_assessable', 'model_specific_checks', 'reason'],
             },
           },
-          'sufficient_evidence_for_counterfeit': {'type': 'BOOLEAN'},
-          'additional_photo_needed': {'type': 'STRING'},
+          'model_notes': _strings(),
         },
-        'required': ['verifications', 'sufficient_evidence_for_counterfeit'],
-        'propertyOrdering': ['verifications', 'sufficient_evidence_for_counterfeit', 'additional_photo_needed'],
+        'required': ['ranked'],
+        'propertyOrdering': ['ranked', 'model_notes'],
       };
 
+  // =====================================================================
+  // 3. Image-quality and part check (per photo)
+  // =====================================================================
+
+  static String photoCheckPrompt({
+    required ResolvedProfile profile,
+    required PhotoRequestTemplate? requested,
+    required List<String> localIssues,
+    String? originHint,
+  }) {
+    final parts = StringBuffer();
+    for (final r in profile.profile.requests) {
+      parts.writeln('- ${r.id}: ${r.title}');
+    }
+    final asked = requested == null
+        ? 'The user added this photo without a specific request.'
+        : 'The user was asked for: "${requested.title}". Instruction given: "${requested.instruction}"';
+    return '''You check one photo for an authentication app before it is analysed (prompt v${AuthenticityEngineConfig.promptVersion}).
+Product: ${_identityText(profile.identity)}.
+$asked
+
+PARTS THE APP CAN USE (ids):
+$parts
+${originHint == null ? '' : 'IMAGE FILE (a hint only; decide image_source from what you see): $originHint\n'}0. image_source: PHYSICAL_ITEM when the photo shows the item itself in front of the camera (its own display, e.g. a watch face or its settings screen, is part of the item); DEVICE_SCREENSHOT for a screenshot of the item's information (e.g. the paired phone's app); SCREEN_OR_PRINT for a photo of a computer, phone or TV screen or of a printed picture showing the product (screen edges, pixels or moire, a browser or app around it); INTERNET_IMAGE for an image from the internet: official render or marketing photo, store listing, stock or professional studio photo (seamless backdrop, studio lighting, no hand, table or room, flawless surfaces), watermarks, labels, codes or coloured shapes laid over the picture. An ordinary photo the user took, even on a plain background, is PHYSICAL_ITEM.
+1. part_shown: which part of the product is actually visible, in a few words (e.g. "front of the watch", "side with the crown", "a person's hand", "a table").
+2. shows_product: false if the photo shows something other than this product.
+3. shows_requested_part: ${requested == null ? 'true if the photo clearly shows one of the listed parts.' : 'true ONLY if "${requested.title}" is clearly visible and large enough to inspect. A good photo of a DIFFERENT part, the whole item from too far away, a blurred or covered view of the part, or an unrelated object is false. Be strict: the app asks again when this is false.'}
+4. requested_part_confidence: 0-100, how clearly ${requested == null ? 'that part' : '"${requested.title}"'} is shown. Under 20 when it is not shown at all.
+5. matched_request_id: the id of the listed part this photo actually shows, so the app can tell the user what they photographed. "none" if it shows no listed part.
+6. detail_box_2d: [ymin, xmin, ymax, xmax] (0-1000) tightly around the key detail of the part shown (e.g. the sensor and the engraving around it, the label, the crown, the tread). The app measures focus and glare inside this region.
+7. detail_readability: can the fine detail of that part (text, engraving, stitching, sensor lenses) actually be read? READABLE, PARTLY_READABLE, NOT_READABLE, or NA if the part has no fine detail.
+8. issues: photo problems that limit inspection. ${localIssues.isEmpty ? '' : 'On-device checks measured: ${localIssues.join(', ')}; confirm or dismiss them from what you see.'}
+9. usable: false if the photo cannot be used to inspect ${requested == null ? 'the part' : '"${requested.title}"'} (wrong part, not this product, or the part cannot be inspected). Small differences in framing or angle are fine when the part is clearly visible.
+10. fix: ONE concrete sentence telling the user exactly what to do. If the wrong part was photographed, say which part to photograph instead. If the part is right but hard to see, say what to change (e.g. "Move closer so the engraving fills the frame.", "Tilt the watch slightly to remove the reflection on the sensor."). Empty if nothing needs fixing.
+11. quality_score: 0-100 for how well this photo lets a person inspect the part shown.
+12. reason: one short everyday sentence about the photo.
+Never use words like entropy, segmentation, artefact or feature extraction.
+OUTPUT RFC-8259 JSON ONLY matching the schema.''';
+  }
+
+  static Map<String, dynamic> photoCheckSchema(ResolvedProfile profile) => {
+        'type': 'OBJECT',
+        'properties': {
+          'image_source': _enum(imageSources),
+          'part_shown': {'type': 'STRING'},
+          'shows_product': {'type': 'BOOLEAN'},
+          'shows_requested_part': {'type': 'BOOLEAN'},
+          'requested_part_confidence': {'type': 'INTEGER'},
+          'matched_request_id': _enum([for (final r in profile.profile.requests) r.id, 'none']),
+          'detail_box_2d': {'type': 'ARRAY', 'items': {'type': 'NUMBER'}, 'nullable': true},
+          'detail_readability': _enum(readability),
+          'issues': {'type': 'ARRAY', 'items': _enum(photoIssues)},
+          'usable': {'type': 'BOOLEAN'},
+          'fix': {'type': 'STRING'},
+          'quality_score': {'type': 'INTEGER'},
+          'reason': {'type': 'STRING'},
+        },
+        'required': [
+          'image_source', 'part_shown', 'shows_product', 'shows_requested_part', 'requested_part_confidence', 'matched_request_id',
+          'detail_readability', 'issues', 'usable', 'fix', 'quality_score', 'reason',
+        ],
+        'propertyOrdering': [
+          'image_source', 'part_shown', 'shows_product', 'shows_requested_part', 'requested_part_confidence', 'matched_request_id',
+          'detail_box_2d', 'detail_readability', 'issues', 'usable', 'fix', 'quality_score', 'reason',
+        ],
+      };
+
+  // =====================================================================
+  // 4. Product-specific visual analysis (per photo)
+  // =====================================================================
+
+  static String photoAnalysisPrompt({
+    required ResolvedProfile profile,
+    required String? requestId,
+    required bool isInitialPhoto,
+    List<String> aiChecks = const [],
+  }) {
+    final req = requestId == null ? null : profile.request(requestId);
+    final primary = req == null ? profile.profile.checkpoints : profile.checkpointsFor(req.id);
+    final primaryIds = {for (final c in primary) c.id};
+    final secondary = profile.profile.checkpoints.where((c) => !primaryIds.contains(c.id)).toList();
+    final generationKnown = profile.identity.generation.isKnown;
+
+    final buf = StringBuffer();
+    for (final c in primary) {
+      buf.writeln('- ${c.id} | ${c.name}: ${c.check}');
+      if (c.genuine != null) buf.writeln('    documented on genuine: ${c.genuine}');
+      if (c.replicaTell != null) buf.writeln('    documented replica tell: ${c.replicaTell}');
+      if (c.generationSpecific) {
+        buf.writeln(generationKnown
+            ? '    generation-specific: compare with ${profile.identity.generation.value} only.'
+            : '    generation-specific and the generation is NOT established: report UNCLEAR, never INCONSISTENT.');
+      }
+      if (c.variationNote != null) buf.writeln('    legitimate variation: ${c.variationNote}');
+    }
+    final secondaryText = secondary.map((c) => '${c.id} (${c.name})').join(', ');
+
+    return '''You are the visual-analysis stage of an authentication app (prompt v${AuthenticityEngineConfig.promptVersion}).
+You report what one photo shows about specific checkpoints. The app decides the verdict; you do not.
+
+PRODUCT BEING EVALUATED: ${_identityText(profile.identity)}.
+${_generationText(profile)}
+PHOTO: ${isInitialPhoto ? 'the first photo the user took (any part of the product).' : 'requested as "${req?.title ?? 'additional photo'}".'}
+The attached image is the user's photo. Look closely at small text, engravings, stitching and small parts.
+
+PRIMARY CHECKPOINTS (report each one; NOT_VISIBLE if it is not shown):
+$buf${aiChecks.isEmpty ? '' : 'Model-specific points to look at (AI suggestions, unverified): ${aiChecks.join('; ')}\n'}
+SECONDARY CHECKPOINTS (report only if clearly visible in this photo): $secondaryText
+Use checkpoint_id "other" only for a clearly relevant detail not covered above, with a short feature name.
+
+FOR EACH ASSESSMENT:
+- observation: ONLY what is literally visible (a fact anyone could confirm from the photo).
+- interpretation: what it means compared with the genuine ${profile.evaluatedModelLabel}.
+- outcome:
+  CONSISTENT - the visible execution matches the genuine model.
+  INCONSISTENT - a clearly visible difference from the genuine model as identified above. A feature that is ABSENT from a clearly visible area where the genuine model has it (e.g. no screws where screws belong) is INCONSISTENT.
+  NOT_VISIBLE - the checkpoint is not shown in this photo. A detail you cannot see is never INCONSISTENT.
+  UNCLEAR - visible but cannot be judged (photo conditions, dirt, unestablished model or generation).
+- reliability: HIGH = clearly visible, sharp and unambiguous; MEDIUM = visible with some limitation; LOW = hard to see. State the limitation.
+- basis: REFERENCE_PROVIDED only when comparing against the documented text given above; DEVICE_REPORTED when reading values from the device's own screen; MODEL_KNOWLEDGE for your own knowledge of this model; GENERAL_PRINCIPLE for generic manufacturing quality.
+- evidence_kind: OBSERVED_FACT when the conclusion needs no interpretation (exposed pins exist, the text reads X); AI_INTERPRETATION when judging quality or comparing with the model; DEVICE_REPORTED for values shown by the device itself.
+- alternative_explanation: ONLY when a benign explanation is genuinely plausible (a legitimate generation or regional variant, an aftermarket or replacement part, wear, photo conditions). Otherwise null. Do not invent one out of caution.
+
+RULES:
+${profile.profile.cautions.map((c) => '- $c').join('\n')}
+- BRAND IMITATION: a marking that abbreviates, misspells or mimics a well-known brand's trademark (e.g. "MK SHOES" with an unrelated logo presented as Michael Kors) is INCONSISTENT on brand_marking with HIGH reliability when clearly readable. An independent budget brand imitating no one is not.
+- Read serial and model numbers into observed_text exactly. Never claim they are valid, registered or verified.
+- Never claim anything was verified with the manufacturer.
+- identity_evidence: fill only when THIS photo shows model information (device screen, label, model number, case-size engraving). status CONFIRMED only for readable text; source DEVICE_REPORTED for device screens (a clone can display false values), MARKING for printed/engraved text, DESIGN otherwise.
+- matched_request_id: which listed photo type this photo corresponds to.
+OUTPUT RFC-8259 JSON ONLY matching the schema.''';
+  }
+
+  static Map<String, dynamic> photoAnalysisSchema(ResolvedProfile profile) {
+    Map<String, dynamic> str() => {'type': 'STRING', 'nullable': true};
+    return {
+      'type': 'OBJECT',
+      'properties': {
+        'photo_summary': {'type': 'STRING'},
+        'matched_request_id': _enum([for (final r in profile.profile.requests) r.id, 'none']),
+        'observed_text': _strings(),
+        'identity_evidence': {
+          'type': 'OBJECT',
+          'properties': {
+            'brand': str(),
+            'model_family': str(),
+            'generation': str(),
+            'exact_model': str(),
+            'status': _enum(attributeStatuses),
+            'source': _enum(identitySources),
+            'basis': str(),
+          },
+          'required': ['status', 'source'],
+          'propertyOrdering': ['brand', 'model_family', 'generation', 'exact_model', 'status', 'source', 'basis'],
+        },
+        'assessments': {
+          'type': 'ARRAY',
+          'items': {
+            'type': 'OBJECT',
+            'properties': {
+              'checkpoint_id': _enum([for (final c in profile.profile.checkpoints) c.id, 'other']),
+              'feature': {'type': 'STRING'},
+              'observation': {'type': 'STRING'},
+              'interpretation': {'type': 'STRING'},
+              'outcome': _enum(outcomes),
+              'reliability': _enum(reliabilities),
+              'limitation': {'type': 'STRING'},
+              'basis': _enum(bases),
+              'evidence_kind': _enum(evidenceKinds),
+              'alternative_explanation': str(),
+            },
+            'required': ['checkpoint_id', 'feature', 'observation', 'interpretation', 'outcome', 'reliability', 'basis', 'evidence_kind'],
+            'propertyOrdering': [
+              'checkpoint_id', 'feature', 'observation', 'interpretation', 'outcome', 'reliability', 'limitation',
+              'basis', 'evidence_kind', 'alternative_explanation',
+            ],
+          },
+        },
+      },
+      'required': ['photo_summary', 'matched_request_id', 'observed_text', 'identity_evidence', 'assessments'],
+      // Observations before any judgement.
+      'propertyOrdering': ['photo_summary', 'matched_request_id', 'observed_text', 'identity_evidence', 'assessments'],
+    };
+  }
+
+  // =====================================================================
+  // 5. Final evidence evaluation (text only)
+  // =====================================================================
+
+  static String finalEvaluationPrompt({
+    required ResolvedProfile profile,
+    required List<PhotoEvidence> photos,
+    required List<EvidenceRecord> mismatches,
+    required List<EvidenceRecord> supporting,
+    required String provisionalVerdict,
+  }) {
+    final photoLines = StringBuffer();
+    for (final p in photos) {
+      photoLines.writeln('- ${p.photoId} (${p.requestTitle}): ${p.summary}'
+          '${p.observedText.isEmpty ? '' : ' | text read: ${p.observedText.join(' / ')}'}'
+          '${p.modelFamily.isKnown || p.generation.isKnown || p.exactModel.isKnown ? ' | identity shown: ${[p.brand.value, p.modelFamily.value, p.generation.value, p.exactModel.value].whereType<String>().join(' ')} (${p.modelFamily.source.code.toLowerCase()})' : ''}');
+    }
+    final mismatchLines = StringBuffer();
+    for (final r in mismatches) {
+      final cp = profile.checkpoint(r.featureId);
+      mismatchLines.writeln('- key "${recordKey(r)}" | ${r.featureName} | photo ${r.photoId} | seen: ${r.observation} | '
+          'meaning: ${r.interpretation} | reliability ${r.reliability.code}'
+          '${cp?.variationNote == null ? '' : ' | known variation: ${cp!.variationNote}'}');
+    }
+    final supportLines = supporting.take(8).map((r) => '- ${r.featureName} (${r.photoId}): ${r.interpretation}').join('\n');
+
+    return '''You are the final evidence-evaluation stage of an authentication app (prompt v${AuthenticityEngineConfig.promptVersion}).
+You receive structured observations already extracted from the user's photos; you do not see the photos.
+Product evaluated: ${_identityText(profile.identity)}.
+${_generationText(profile)}${profile.identity.conflicts.isEmpty ? '' : 'Identity disagreements noted so far: ${profile.identity.conflicts.join('; ')}\n'}
+PHOTOS:
+$photoLines
+OBSERVATIONS THAT DIFFER FROM THE GENUINE MODEL:
+${mismatchLines.isEmpty ? '(none)\n' : mismatchLines}
+OBSERVATIONS CONSISTENT WITH THE GENUINE MODEL (for context only):
+${supportLines.isEmpty ? '(none)' : supportLines}
+The app's provisional reading is: $provisionalVerdict.
+
+TASKS:
+1. cross_photo_contradictions: do the photos contradict each other (different serial or model text, different case size or material, a device screen naming a model the physical item is not)? List only real contradictions with the photo ids. identity_related=true when it is about what the product is. severity: minor (probably a reading error), moderate, critical (cannot both be true of one genuine item).
+2. variation_checks: for EVERY observation listed above as differing (use its key), decide whether a legitimate variation of the genuine product explains it: another generation or edition, a regional version, a production change, an aftermarket or replacement part (bands, straps, lenses), normal wear or repair.
+   LIKELY - a specific legitimate variation clearly explains it (name it).
+   POSSIBLE - a legitimate variation might explain it, but it is not specific or not typical.
+   RULED_OUT - no genuine version of this product has this (e.g. exposed charging pins on an Apple Watch, a misspelled brand name).
+3. identity_consistent: false if the evidence shows the item cannot be the model it is being evaluated as.
+4. remaining_uncertainty: up to 3 short, plain sentences on what the photos could not establish.
+5. notes: one or two sentences summarising your reasoning, for the app's log.
+You may only weaken or explain differences, or report contradictions. Never add evidence of authenticity, never claim manufacturer verification, never give a numeric confidence.
+OUTPUT RFC-8259 JSON ONLY matching the schema.''';
+  }
+
+  static String recordKey(EvidenceRecord r) => '${r.photoId}|${r.featureId}';
+
+  // ===========================================================================
+  // 6. Final combined analysis (engine v4): all photos together, Gemini's own
+  //    knowledge plus the app checklist. No web search or external research.
+  // ===========================================================================
+
+  static const combinedComparisons = ['MATCHES', 'CONFLICTS', 'UNCLEAR', 'NOT_VISIBLE'];
+  static const combinedVisibility = ['CLEAR', 'PARTIAL', 'OBSCURED'];
+  static const combinedBasis = ['CHECKLIST_ITEM', 'MODEL_KNOWLEDGE', 'GENERIC_QUALITY'];
+  static const combinedVariation = ['LIKELY', 'POSSIBLE', 'RULED_OUT', 'NOT_APPLICABLE'];
+  static const combinedVerdicts = ['AUTHENTIC', 'REPLICA', 'NOT_SURE'];
+  static const combinedDetailKinds = ['MARKING', 'MATERIAL', 'CONSTRUCTION', 'LABEL', 'SOFTWARE', 'PACKAGING', 'OTHER'];
+  static const combinedKnowledgeScopes = ['THIS_GENERATION', 'MODEL_FAMILY', 'BRAND_WIDE', 'NOT_SURE'];
+
+  /// [images]: id (P1.., C1..) and what each image is, in upload order.
+  /// [earlierObservations]: per-photo observations from capture, as context.
+  static String combinedAnalysisPrompt({
+    required ResolvedProfile profile,
+    required List<({String id, String description})> images,
+    required ProductReference checklist,
+    required List<String> earlierObservations,
+  }) {
+    final imageLines = images.map((i) => '${i.id}: ${i.description}').join('\n');
+    final checklistLines = checklist.claims
+        .map((c) => '${c.id} ${c.area}: ${c.detail}'
+            '${c.hardToCopy ? ' (hard to copy)' : ''}${c.decisiveIfDifferent ? ' (a genuine unit never differs here)' : ''}'
+            '${c.appliesTo == null ? '' : ' (applies to: ${c.appliesTo})'}')
+        .join('\n');
+    final earlier = earlierObservations.isEmpty ? '(none)' : earlierObservations.take(24).map((o) => '- $o').join('\n');
+    final requests = [for (final r in profile.profile.requests) '${r.id} (${r.title})'].join(', ');
+    final generationKnown = profile.identity.generation.isKnown;
+
+    return """You are the final authentication stage of a product-authentication app (prompt v${AuthenticityEngineConfig.promptVersion}).
+You see ALL photos the user submitted for ONE item, together. Compare them with each other and with what you know about the genuine product.
+ITEM AS IDENTIFIED: ${_identityText(profile.identity)}.
+IMAGES (in the order attached):
+$imageLines
+
+YOUR KNOWLEDGE: use your own knowledge of this exact product and its known counterfeits. No web search is available and none is needed. ${generationKnown ? '' : 'The generation is NOT established: do not use generation-specific details unless the images themselves establish the generation. If physical features match genuine hardware across the model family, evaluate the physical evidence while representing generation uncertainty. '}Say in knowledge_scope how specific each detail from your knowledge is, and use NOT_SURE when you are not confident it applies to this item. Your knowledge is not manufacturer verification.
+
+APP CHECKLIST (the app's own list of parts to check; documented items are guidance, not verified manufacturer data):
+${checklistLines.isEmpty ? '(none)' : checklistLines}
+
+EARLIER PER-PHOTO OBSERVATIONS (context only; check them yourself in the images; [b#] = checklist item):
+$earlier
+
+TASKS
+1. findings: one finding for every checklist item that at least one image lets you check, and for other details you know tell a genuine unit of this product from copies (claim_id "none", basis MODEL_KNOWLEDGE). Give the images that show it, what is literally visible (observed) and the comparison. Several images of the same detail belong in ONE finding.
+2. Rules for findings:
+   - A detail that is not photographed, hidden, blurred, covered by glare or too small to read is UNCLEAR or NOT_VISIBLE, never CONFLICTS. Missing photos are never evidence of a fake.
+   - MATCHES only when you can name the concrete detail that matches (text, shape, position, material, code format). Generic quality ("neat stitching", "premium feel") is basis GENERIC_QUALITY and proves nothing either way.
+   - Never apply details of a different generation, edition or variant.
+   - part_request_id: the part of the item the detail is on, as one of the app's photo parts ($requests) or "other". Details on the same part (e.g. logo, sub-dials and date window on a dial) are ONE part.
+   - detail_kind: MARKING for printed or engraved text and logos; MATERIAL, CONSTRUCTION, LABEL, SOFTWARE, PACKAGING or OTHER otherwise.
+   - hard_to_copy: true only for details counterfeits struggle to reproduce (materials such as ceramic or sapphire, real screws, sensor lenses, stitching method, hardware finish, codes that can be cross-checked). Printed or engraved text, logos and overall shape are copied well: not hard to copy.
+   - counterfeit_tell: true when copies commonly differ in this detail.
+   - difference_kind (CONFLICTS only): DIFFERENT when something visibly different is there (e.g. a plastic back, printed dots instead of screws); ABSENT when a detail the genuine item has is missing from a clearly photographed area. When the brand is not established, a missing logo or missing text is not a conflict. NOT_APPLICABLE for other comparisons.
+   - For every CONFLICTS, consider legitimate explanations (another generation or edition, regional version, production change, replacement part such as a band, strap or lens, wear, repair, photo conditions) and set legitimate_variation; name the explanation in alternative_explanation.
+   - A device screen (settings, "About") shows what the device reports about itself; a copy can show false values. Say so in alternative_explanation when a finding relies on it. A missing device screen does not block authenticity if physical hardware evidence is sufficient.
+   - A close-up (C#) is the same photo as its parent image at higher resolution; it is not independent evidence.
+   - Every EARLIER observation marked "looked different" needs its own finding (use its checklist id when shown): CONFLICTS if you confirm it, otherwise what you see instead and why (e.g. settled by clearer lighting/angle).
+3. cross_image_contradictions: do the images disagree with each other (different serial or model text, sizes, materials, or apparently different items)? Only real contradictions.
+4. identity_established: what the images show the item is; consistent_with_identification=false if it cannot be the identified model.
+5. proposed_verdict:
+   AUTHENTIC when the visual evidence across the submitted photographs is consistent with genuine product specifications for the identified model, showing characteristic construction, materials, and markings with no unresolved material counterfeit discrepancies. Evaluate the holistic diagnostic value of the photos provided (including 2–3 clear, informative photographs) without requiring an arbitrary photo count or missing software screenshot.
+   REPLICA when there is a reliable, clearly visible discrepancy or counterfeit tell that conflicts with genuine specifications and cannot reasonably be explained by normal wear, lighting, photo angle or legitimate product variations.
+   NOT_SURE when the photographs cannot reliably distinguish genuine from counterfeit, the exact model is uncertain, critical diagnostic areas are ambiguous or missing, or the visual evidence is inconclusive. Do not force a definitive answer when evidence is insufficient. This is a visual assessment, not a manufacturer verification. Never give a numeric confidence.
+6. verdict_reasoning: clear, detailed explanation of what model was identified, visible details supporting or contradicting, why this verdict was reached, and limitations. Describe actual visual characteristics rather than generic statements.
+7. summary_points: 2 to 3 short, concise bullet points (under 15 words each) clearly summarizing the core reasons for this verdict to display in the quick summary card.
+8. unresolved: what prevents a definitive answer, each with the photo request that would resolve it (one of the photo parts above, or "none") and, if useful, a check outside the app.
+9. independent_verification: at most two short suggestions for checks outside the app (for example the manufacturer's serial-number lookup), only when relevant.
+OUTPUT RFC-8259 JSON ONLY matching the schema.""";
+  }
+
+  static Map<String, dynamic> combinedAnalysisSchema({
+    required List<String> imageIds,
+    required List<String> claimIds,
+    required List<String> requestIds,
+  }) =>
+      {
+        'type': 'OBJECT',
+        'properties': {
+          'identity_established': {
+            'type': 'OBJECT',
+            'properties': {
+              'brand': {'type': 'STRING', 'nullable': true},
+              'model': {'type': 'STRING', 'nullable': true},
+              'generation': {'type': 'STRING', 'nullable': true},
+              'variant': {'type': 'STRING', 'nullable': true},
+              'basis': {'type': 'STRING'},
+              'consistent_with_identification': {'type': 'BOOLEAN'},
+            },
+            'required': ['basis', 'consistent_with_identification'],
+            'propertyOrdering': ['brand', 'model', 'generation', 'variant', 'basis', 'consistent_with_identification'],
+          },
+          'findings': {
+            'type': 'ARRAY',
+            'items': {
+              'type': 'OBJECT',
+              'properties': {
+                'claim_id': _enum([...claimIds, 'none']),
+                'feature': {'type': 'STRING'},
+                'area': {'type': 'STRING'},
+                'part_request_id': _enum([...requestIds, 'other']),
+                'image_ids': {'type': 'ARRAY', 'items': _enum(imageIds)},
+                'observed': {'type': 'STRING'},
+                'comparison': _enum(combinedComparisons),
+                'difference_kind': _enum(['DIFFERENT', 'ABSENT', 'NOT_APPLICABLE']),
+                'visibility': _enum(combinedVisibility),
+                'reliability': _enum(['HIGH', 'MEDIUM', 'LOW']),
+                'basis': _enum(combinedBasis),
+                'knowledge_scope': _enum(combinedKnowledgeScopes),
+                'detail_kind': _enum(combinedDetailKinds),
+                'hard_to_copy': {'type': 'BOOLEAN'},
+                'counterfeit_tell': {'type': 'BOOLEAN'},
+                'alternative_explanation': {'type': 'STRING', 'nullable': true},
+                'legitimate_variation': _enum(combinedVariation),
+              },
+              'required': [
+                'claim_id', 'feature', 'area', 'part_request_id', 'image_ids', 'observed', 'comparison', 'difference_kind', 'visibility',
+                'reliability', 'basis', 'knowledge_scope', 'detail_kind', 'hard_to_copy', 'counterfeit_tell', 'legitimate_variation',
+              ],
+              'propertyOrdering': [
+                'claim_id', 'feature', 'area', 'part_request_id', 'image_ids', 'observed', 'comparison', 'difference_kind', 'visibility',
+                'reliability', 'basis', 'knowledge_scope', 'detail_kind', 'hard_to_copy', 'counterfeit_tell', 'alternative_explanation',
+                'legitimate_variation',
+              ],
+            },
+          },
+          'cross_image_contradictions': {
+            'type': 'ARRAY',
+            'items': {
+              'type': 'OBJECT',
+              'properties': {
+                'description': {'type': 'STRING'},
+                'image_ids': {'type': 'ARRAY', 'items': _enum(imageIds)},
+                'severity': _enum(['minor', 'moderate', 'critical']),
+                'identity_related': {'type': 'BOOLEAN'},
+              },
+              'required': ['description', 'severity', 'identity_related'],
+              'propertyOrdering': ['description', 'image_ids', 'severity', 'identity_related'],
+            },
+          },
+          'proposed_verdict': _enum(combinedVerdicts),
+          'verdict_reasoning': {'type': 'STRING'},
+          'summary_points': {'type': 'ARRAY', 'items': {'type': 'STRING'}},
+          'unresolved': {
+            'type': 'ARRAY',
+            'items': {
+              'type': 'OBJECT',
+              'properties': {
+                'issue': {'type': 'STRING'},
+                'resolving_photo': _enum([...requestIds, 'none']),
+                'resolving_check': {'type': 'STRING', 'nullable': true},
+              },
+              'required': ['issue', 'resolving_photo'],
+              'propertyOrdering': ['issue', 'resolving_photo', 'resolving_check'],
+            },
+          },
+          'independent_verification': {'type': 'ARRAY', 'items': {'type': 'STRING'}},
+        },
+        'required': ['identity_established', 'findings', 'cross_image_contradictions', 'proposed_verdict', 'verdict_reasoning', 'summary_points', 'unresolved'],
+        'propertyOrdering': [
+          'identity_established', 'findings', 'cross_image_contradictions', 'proposed_verdict', 'verdict_reasoning', 'summary_points', 'unresolved',
+          'independent_verification',
+        ],
+      };
+
+  static Map<String, dynamic> finalEvaluationSchema(List<EvidenceRecord> mismatches) => {
+        'type': 'OBJECT',
+        'properties': {
+          'cross_photo_contradictions': {
+            'type': 'ARRAY',
+            'items': {
+              'type': 'OBJECT',
+              'properties': {
+                'description': {'type': 'STRING'},
+                'photo_ids': _strings(),
+                'severity': _enum(['minor', 'moderate', 'critical']),
+                'identity_related': {'type': 'BOOLEAN'},
+              },
+              'required': ['description', 'severity', 'identity_related'],
+              'propertyOrdering': ['description', 'photo_ids', 'severity', 'identity_related'],
+            },
+          },
+          'variation_checks': {
+            'type': 'ARRAY',
+            'items': {
+              'type': 'OBJECT',
+              'properties': {
+                'key': mismatches.isEmpty ? {'type': 'STRING'} : _enum([for (final r in mismatches) recordKey(r)]),
+                'legitimate_variation': _enum(['RULED_OUT', 'POSSIBLE', 'LIKELY']),
+                'explanation': {'type': 'STRING'},
+              },
+              'required': ['key', 'legitimate_variation', 'explanation'],
+              'propertyOrdering': ['key', 'legitimate_variation', 'explanation'],
+            },
+          },
+          'identity_consistent': {'type': 'BOOLEAN'},
+          'remaining_uncertainty': _strings(),
+          'notes': {'type': 'STRING'},
+        },
+        'required': ['cross_photo_contradictions', 'variation_checks', 'identity_consistent', 'remaining_uncertainty'],
+        'propertyOrdering': ['cross_photo_contradictions', 'variation_checks', 'identity_consistent', 'remaining_uncertainty', 'notes'],
+      };
+
+  // =====================================================================
+  // helpers
+  // =====================================================================
+
+  static String _identityText(ProductIdentity id) {
+    String attr(String label, IdentityAttribute a) =>
+        a.isKnown ? '$label ${a.value} [${a.status.code}${a.basis.isEmpty ? '' : ': ${a.basis}'}]' : '$label not established';
+    return [
+      'category ${id.categoryCode}${id.productType.isEmpty ? '' : ' (${id.productType})'}',
+      attr('brand', id.brand),
+      attr('model', id.modelFamily),
+      attr('generation', id.generation),
+      if (id.exactModel.isKnown) attr('model number', id.exactModel),
+    ].join('; ');
+  }
+
+  static String _generationText(ResolvedProfile p) {
+    if (p.generation == null) return '';
+    final established = p.identity.generation.status == AttributeStatus.confirmed ||
+        p.generation!.id == 'ultra' && p.identity.modelFamily.isKnown;
+    return 'Documented facts for ${p.generation!.label}${established ? '' : ' (generation not confirmed: use only facts shared by the whole family)'}:\n'
+        '${p.generation!.notes.map((n) => '- $n').join('\n')}\n';
+  }
+
   static Map<String, dynamic> _enum(List<String> values) => {'type': 'STRING', 'enum': values};
+  static Map<String, dynamic> _strings() => {'type': 'ARRAY', 'items': {'type': 'STRING'}};
+
+  /// Compact JSON for logs.
+  static String compact(Object o) => jsonEncode(o);
 }

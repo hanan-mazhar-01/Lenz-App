@@ -1,3 +1,4 @@
+import 'capture_guide.dart';
 import 'evidence_validation.dart';
 
 enum EvidenceStatus {
@@ -93,6 +94,34 @@ class EvidenceItem {
   final List<String> inconsistentSignals;
   final List<String> uncertainSignals;
 
+  // ------------------------------------------------------------ engine v3
+  /// Framing overlay for this photo.
+  final CaptureGuideType guideType;
+
+  /// Distance, focus and lighting advice.
+  final CaptureTips tips;
+
+  /// Checkpoints this photo can show.
+  final List<String> checkpointIds;
+
+  /// HIGH / MEDIUM / LOW: how well this photo separates genuine from
+  /// counterfeit for the identified model.
+  final String discriminativeValue;
+
+  /// Why the planner recommends this photo now.
+  final String recommendationReason;
+
+  /// Model-specific things to look for (AI knowledge, unverified).
+  final List<String> aiChecks;
+
+  /// A screenshot is acceptable (device information screens).
+  final bool screenshotOk;
+
+  /// 0-100: share of the details checked on this photo that the final
+  /// analysis could judge clearly (0 = not measured). Shown as the report's
+  /// evidence line; it is not an authenticity score.
+  final int clarity;
+
   const EvidenceItem({
     required this.id,
     required this.index,
@@ -113,6 +142,14 @@ class EvidenceItem {
     this.consistentSignals = const [],
     this.inconsistentSignals = const [],
     this.uncertainSignals = const [],
+    this.guideType = CaptureGuideType.generic,
+    this.tips = CaptureTips.standard,
+    this.checkpointIds = const [],
+    this.discriminativeValue = '',
+    this.recommendationReason = '',
+    this.aiChecks = const [],
+    this.screenshotOk = false,
+    this.clarity = 0,
   });
 
   bool get hasPhoto => capturedImagePath.isNotEmpty;
@@ -147,6 +184,14 @@ class EvidenceItem {
     List<String>? consistentSignals,
     List<String>? inconsistentSignals,
     List<String>? uncertainSignals,
+    CaptureGuideType? guideType,
+    CaptureTips? tips,
+    List<String>? checkpointIds,
+    String? discriminativeValue,
+    String? recommendationReason,
+    List<String>? aiChecks,
+    bool? screenshotOk,
+    int? clarity,
   }) {
     return EvidenceItem(
       id: id ?? this.id,
@@ -168,6 +213,14 @@ class EvidenceItem {
       consistentSignals: consistentSignals ?? this.consistentSignals,
       inconsistentSignals: inconsistentSignals ?? this.inconsistentSignals,
       uncertainSignals: uncertainSignals ?? this.uncertainSignals,
+      guideType: guideType ?? this.guideType,
+      tips: tips ?? this.tips,
+      checkpointIds: checkpointIds ?? this.checkpointIds,
+      discriminativeValue: discriminativeValue ?? this.discriminativeValue,
+      recommendationReason: recommendationReason ?? this.recommendationReason,
+      aiChecks: aiChecks ?? this.aiChecks,
+      screenshotOk: screenshotOk ?? this.screenshotOk,
+      clarity: clarity ?? this.clarity,
     );
   }
 
@@ -192,6 +245,14 @@ class EvidenceItem {
       'consistentSignals': consistentSignals,
       'inconsistentSignals': inconsistentSignals,
       'uncertainSignals': uncertainSignals,
+      'guideType': guideType.name,
+      'tips': tips.toJson(),
+      'checkpointIds': checkpointIds,
+      'discriminativeValue': discriminativeValue,
+      'recommendationReason': recommendationReason,
+      'aiChecks': aiChecks,
+      'screenshotOk': screenshotOk,
+      if (clarity > 0) 'clarity': clarity,
     };
   }
 
@@ -231,6 +292,14 @@ class EvidenceItem {
           (json['inconsistentSignals'] as List?)?.map((e) => e.toString()).toList() ?? const [],
       uncertainSignals:
           (json['uncertainSignals'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+      guideType: CaptureGuideType.parse(json['guideType'] as String?),
+      tips: CaptureTips.fromJson(json['tips'] is Map ? Map<String, dynamic>.from(json['tips'] as Map) : null),
+      checkpointIds: (json['checkpointIds'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+      discriminativeValue: json['discriminativeValue'] as String? ?? '',
+      recommendationReason: json['recommendationReason'] as String? ?? '',
+      aiChecks: (json['aiChecks'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+      screenshotOk: json['screenshotOk'] as bool? ?? false,
+      clarity: (json['clarity'] as num?)?.toInt() ?? 0,
     );
   }
 }

@@ -1083,7 +1083,7 @@ class HomeScreen extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
-                        '${report.overallScore}%',
+                        report.strengthLabel,
                         style: const TextStyle(
                           color: AppColors.nearBlack,
                           fontSize: 10.5,

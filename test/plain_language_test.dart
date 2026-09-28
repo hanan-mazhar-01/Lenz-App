@@ -5,7 +5,10 @@ import 'package:replica_detector/models/evidence.dart';
 import 'package:replica_detector/models/evidence_validation.dart';
 import 'package:replica_detector/models/photo_quality.dart';
 import 'package:replica_detector/models/product.dart';
-import 'package:replica_detector/services/authentication_scoring_engine.dart';
+import 'package:replica_detector/data/evidence_profiles.dart';
+import 'package:replica_detector/models/evidence_record.dart';
+import 'package:replica_detector/services/assessment_builder.dart';
+import 'package:replica_detector/services/evidence_decision_engine.dart';
 
 import 'support/fixtures.dart';
 
@@ -198,80 +201,46 @@ void main() {
   });
 
   group('The report explains itself in plain words (§24)', () {
+    EngineResult run(ResolvedProfile p, List<PhotoEvidence> photos) =>
+        EvidenceDecisionEngine.evaluate(profile: p, photos: photos);
+
+    String explain(ResolvedProfile p, EngineResult r) =>
+        AssessmentBuilder.explanation(result: r, modelLabel: p.evaluatedModelLabel, brand: p.identity.brand.value ?? '');
+
     test('every generated sentence avoids technical vocabulary', () {
-      final evidence = fullWatchEvidence();
-      final result = AuthenticationScoringEngine.evaluate(
-        product: testWatch,
-        rawIdentificationConfidence: 91,
-        requiredEvidence: evidence,
-        capturedImages: imagesFor(evidence),
-        observations: cleanWatchObservations(),
-        contradictions: const [],
-      );
-
-      expectPlain(result.rationale, where: 'rationale');
-      expectPlain(result.evidenceCoverageText, where: 'coverage');
-      for (final n in result.nextChecks) {
-        expectPlain(n, where: 'next check');
+      final p = appleWatch();
+      final r = run(p, [
+        photo('device_info', [assess('aw_device_info', CheckpointOutcome.consistent)]),
+        photo('back_sensor', [assess('aw_sensor_construction', CheckpointOutcome.consistent)]),
+      ]);
+      expectPlain(explain(p, r), where: 'explanation');
+      for (final u in r.remainingUncertainty) {
+        expectPlain(u, where: 'uncertainty');
       }
-      expect(result.evidenceCoverageText, '6 of 6 photos added');
+      for (final g in r.gaps) {
+        expectPlain(g.description, where: 'gap');
+      }
     });
 
-    test('an inconclusive result says what is missing in plain words', () {
-      final evidence = fullWatchEvidence()
-          .map((e) => e.id == 'reference_serial'
-              ? item(
-                  id: 'reference_serial',
-                  title: 'Number / Engraving',
-                  weight: EvidenceWeight.critical,
-                  index: 6,
-                  captured: false,
-                )
-              : e.id == 'dial'
-                  ? item(id: 'dial', title: 'Dial', weight: EvidenceWeight.critical, index: 2, captured: false)
-                  : e)
-          .toList();
-
-      final result = AuthenticationScoringEngine.evaluate(
-        product: testWatch,
-        rawIdentificationConfidence: 91,
-        requiredEvidence: evidence,
-        capturedImages: imagesFor(evidence),
-        observations: cleanWatchObservations(),
-        contradictions: const [],
-      );
-
-      expect(result.verdict, Verdict.inconclusive);
-      expect(result.rationale, contains("We're missing a few important photos"));
-      expect(result.missingEvidenceDescriptions, contains('Number / Engraving — no photo added'));
-      expectPlain(result.rationale);
+    test('an unresolved result says what is missing in plain words', () {
+      final p = appleWatch();
+      final r = run(p, [photo('front_display', [assess('aw_software_ui', CheckpointOutcome.consistent)])]);
+      final text = explain(p, r);
+      expect(r.verdict, Verdict.inconclusive);
+      expect(text, contains('information screen'));
+      expect(text, isNot(contains('Ultra Ultra')));
+      expectPlain(text);
     });
 
-    test('declined evidence is described the way the user said it', () {
-      final evidence = fullWatchEvidence()
-          .map((e) => e.id == 'bracelet_clasp'
-              ? item(
-                  id: 'bracelet_clasp',
-                  title: 'Bracelet / Clasp',
-                  weight: EvidenceWeight.medium,
-                  index: 5,
-                  captured: false,
-                  unavailable: true,
-                )
-              : e)
-          .toList();
-
-      final result = AuthenticationScoringEngine.evaluate(
-        product: testWatch,
-        rawIdentificationConfidence: 91,
-        requiredEvidence: evidence,
-        capturedImages: imagesFor(evidence),
-        observations: cleanWatchObservations(),
-        contradictions: const [],
-      );
-
-      expect(result.missingEvidenceDescriptions.single,
-          "Bracelet / Clasp — you told us you don't have this");
+    test('photo requests and their reasons are written for a person holding the item', () {
+      for (final profile in EvidenceProfileRegistry.profiles) {
+        for (final req in profile.requests) {
+          expectPlain(req.title, where: '${profile.id}/${req.id} title');
+          expectPlain(req.instruction, where: '${profile.id}/${req.id} instruction');
+          expectPlain(req.why, where: '${profile.id}/${req.id} why');
+          expect(req.title.split(' ').length, lessThanOrEqualTo(5), reason: req.title);
+        }
+      }
     });
   });
 

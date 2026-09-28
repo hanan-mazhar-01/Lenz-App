@@ -44,6 +44,13 @@ class EvidenceValidationResult {
   final String reason;
   final List<String> issues;
 
+  /// One concrete sentence telling the user what to change (engine v3).
+  final String fix;
+
+  /// Set when the photo showed a different listed part than the one asked
+  /// for and was accepted as that part instead of being rejected.
+  final String? reassignedFrom;
+
   const EvidenceValidationResult({
     required this.requestedEvidenceId,
     required this.requestedEvidenceTitle,
@@ -55,6 +62,8 @@ class EvidenceValidationResult {
     required this.authenticationUsefulness,
     required this.reason,
     this.issues = const [],
+    this.fix = '',
+    this.reassignedFrom,
   });
 
   EvidenceVerdict get verdict {
@@ -96,8 +105,10 @@ class EvidenceValidationResult {
         if (seen.isEmpty || seen == 'unknown') {
           return "This doesn't look like the $want.";
         }
-        return 'This photo shows the $seen, but we need the $want.';
+        final article = RegExp(r'^(a|an|the|some|someone|something|nothing)\b').hasMatch(seen) ? '' : 'the ';
+        return 'This photo shows $article$seen, but we need the $want.';
       case EvidenceVerdict.rejectedQuality:
+        if (fix.isNotEmpty) return fix;
         if (quality.isBlurry) return "It's too blurry to check properly.";
         if (quality.isTooDark) return "It's too dark to check properly.";
         if (quality.framing > 0 && quality.framing < 45) {
@@ -112,7 +123,7 @@ class EvidenceValidationResult {
   String get callToAction {
     final want = requestedEvidenceTitle.toLowerCase();
     if (verdict == EvidenceVerdict.rejectedWrongEvidence) {
-      return 'We need a clear photo of the $want.';
+      return fix.isNotEmpty ? fix : 'We need a clear photo of the $want.';
     }
     if (quality.isBlurry) return 'Hold steady and try again.';
     if (quality.isTooDark) return 'Move somewhere brighter and try again.';
@@ -234,6 +245,8 @@ class EvidenceValidationResult {
         'authentication_usefulness': authenticationUsefulness,
         'reason': reason,
         'issues': issues,
+        if (fix.isNotEmpty) 'fix': fix,
+        if (reassignedFrom != null) 'reassigned_from': reassignedFrom,
         ...quality.toJson(),
       };
 
@@ -249,6 +262,8 @@ class EvidenceValidationResult {
       authenticationUsefulness: (json['authentication_usefulness'] as num?)?.toInt() ?? 0,
       reason: json['reason'] as String? ?? '',
       issues: (json['issues'] as List?)?.map((e) => e.toString()).toList() ?? const [],
+      fix: json['fix'] as String? ?? '',
+      reassignedFrom: json['reassigned_from'] as String?,
     );
   }
 }

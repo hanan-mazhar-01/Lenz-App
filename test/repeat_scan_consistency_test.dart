@@ -1,25 +1,22 @@
 // Repeat-scan consistency (§17, §32-33).
 //
 // The same physical item scanned repeatedly produces slightly different
-// Gemini output each time: a detail described as "not visible" one run and
-// "missing" the next, glare read as a flaw, a strength over-claimed. These
-// tests replay realistic variants of that output for one genuine item and
-// require the verdict to stay stable. Every variant is also run through the
-// v1 engine (restored from git) so the before/after is measured, not claimed.
+// model output each run: a detail read as unclear once and consistent the
+// next, glare mistaken for a flaw, a reliability over-claimed. These tests
+// replay such variants through the engine and require the verdict to stay
+// stable. They are rule tests on hand-written variants, not a dataset.
+
+import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:replica_detector/data/authentication_rules.dart';
 import 'package:replica_detector/models/authentication_result.dart';
-import 'package:replica_detector/models/evidence.dart';
-import 'package:replica_detector/models/evidence_finding.dart';
-import 'package:replica_detector/models/evidence_observation.dart';
+import 'package:replica_detector/models/evidence_record.dart';
 import 'package:replica_detector/models/product.dart';
 import 'package:replica_detector/models/product_identification.dart';
-import 'package:replica_detector/services/authentication_scoring_engine.dart';
+import 'package:replica_detector/services/evidence_decision_engine.dart';
 import 'package:replica_detector/services/scan_consistency_service.dart';
 
 import 'support/fixtures.dart';
-import 'support/legacy_scoring_engine_v1.dart';
 
 const appleWatch = Product(
   id: 'p_aw',
@@ -43,315 +40,77 @@ const sunglasses = Product(
   categoryCode: 'SUNGLASSES',
 );
 
-// ------------------------------------------------------------ JSON builders
+/// One noisy "run" of the analysis on a genuine Series 9: each checkpoint may
+/// be over- or under-read, and glare sometimes produces a spurious mismatch
+/// that the model itself attributes to reflections.
+List<PhotoEvidence> genuineRun(Random rnd) {
+  Reliability rel() => [Reliability.high, Reliability.medium, Reliability.medium][rnd.nextInt(3)];
+  CheckpointOutcome clean() => rnd.nextInt(5) == 0 ? CheckpointOutcome.unclear : CheckpointOutcome.consistent;
+  return [
+    photo('device_info', [assess('aw_device_info', CheckpointOutcome.consistent, reliability: rel())]),
+    photo('back_sensor', [
+      assess('aw_sensor_construction', clean(), reliability: rel()),
+      assess('aw_back_engraving', clean(), reliability: rel()),
+      if (rnd.nextBool())
+        assess('aw_sensor_layout', CheckpointOutcome.inconsistent,
+            reliability: Reliability.medium, alternative: 'Could be reflections on the sensor glass.'),
+      assess('aw_serial_text', CheckpointOutcome.notVisible),
+    ]),
+    photo('crown_side', [assess('aw_crown_construction', clean(), reliability: rel())]),
+  ];
+}
 
-Map<String, dynamic> f(
-  String type,
-  String strength,
-  String dimension,
-  String feature,
-  String observation, {
-  bool modelSpecific = false,
-  String? alt,
-}) =>
-    {
-      'feature': feature,
-      'dimension': dimension,
-      'type': type,
-      'strength': strength,
-      'observation': observation,
-      'model_specific': modelSpecific,
-      'alternative_explanation': alt,
-    };
-
-Map<String, dynamic> auth(String dim, String feature, String obs) =>
-    f('AUTHENTIC_INDICATOR', 'MODERATE', dim, feature, obs, modelSpecific: true);
-
-Map<String, dynamic> part(String id, String title, List<Map<String, dynamic>> findings, {int quality = 88}) =>
-    {'evidence_id': id, 'title': title, 'visible_quality': quality, 'observations': ['$title visible'], 'findings': findings};
-
-/// What a clean analysis of a genuine Apple Watch looks like.
-List<Map<String, dynamic>> genuineAppleWatchParts() => [
-      part('front_display', 'Front', [
-        auth('SHAPE', 'Display bezel', 'Thin, even black border around the curved display'),
-        auth('DESIGN', 'Interface', 'watchOS watch face fills the screen as expected for Series 9'),
+List<PhotoEvidence> replicaRun(Random rnd) => [
+      photo('back_sensor', [
+        assess('aw_charging_contacts', CheckpointOutcome.inconsistent,
+            reliability: rnd.nextInt(4) == 0 ? Reliability.medium : Reliability.high,
+            observation: 'Two exposed metal charging pins beside the sensor.'),
+        assess('aw_sensor_construction', CheckpointOutcome.inconsistent, reliability: Reliability.medium),
       ]),
-      part('back_sensor', 'Back', [
-        auth('PRODUCT_SPECIFIC', 'Sensor layout', 'Sensor window and lens arrangement match Series 9'),
-        auth('TYPOGRAPHY', 'Back text', 'Printed text around the sensor is crisp and evenly spaced'),
+      photo('front_display', [
+        assess('aw_software_ui', rnd.nextBool() ? CheckpointOutcome.inconsistent : CheckpointOutcome.unclear,
+            reliability: Reliability.medium, observation: 'Android-style settings menu.'),
       ]),
-      part('side_crown', 'Crown Side', [
-        auth('HARDWARE', 'Digital Crown', 'Crown has fine even ridges and sits where expected'),
-        auth('HARDWARE', 'Side button', 'Side button is flush and correctly proportioned'),
-      ]),
-      part('other_side', 'Other Side', [auth('CONSTRUCTION', 'Speaker openings', 'Speaker openings are cleanly machined')]),
-      part('band_connector', 'Band / Connector', [auth('HARDWARE', 'Band slot', 'Band slot edges are clean with flush release button')]),
-      part('about_screen', 'About Screen', [auth('SERIAL_MARKING', 'About screen', 'Model shown matches Series 9 45mm')]),
     ];
 
-List<Map<String, dynamic>> withExtra(String evidenceId, List<Map<String, dynamic>> extra, {int? quality}) {
-  final parts = genuineAppleWatchParts();
-  return [
-    for (final p in parts)
-      if (p['evidence_id'] == evidenceId)
-        {
-          ...p,
-          'findings': [...(p['findings'] as List), ...extra],
-          'visible_quality': ?quality,
-        }
-      else
-        p,
-  ];
-}
+FinalEvaluation checked(EngineResult r) => FinalEvaluation(variationChecks: {
+      for (final rec in r.recordsNeedingVariationCheck)
+        EvidenceDecisionEngine.recordKey(rec.photoId, rec.featureId): const VariationResult(VariationCheck.ruledOut, ''),
+    });
 
-/// One simulated Gemini response variant for the same genuine watch.
-class Variant {
-  final String name;
-  final List<Map<String, dynamic>> parts;
-  final int identification;
-  final Set<String> notSupplied;
-  const Variant(this.name, this.parts, {this.identification = 90, this.notSupplied = const {}});
-}
-
-final genuineVariants = <Variant>[
-  Variant('clean analysis', genuineAppleWatchParts()),
-  Variant('serial "not visible" typed as counterfeit', withExtra('back_sensor', [
-    f('COUNTERFEIT_INDICATOR', 'STRONG', 'SERIAL_MARKING', 'Serial number',
-        'Serial number is not visible on the back, cannot verify authenticity', modelSpecific: true),
-  ])),
-  Variant('glare read as a logo flaw', withExtra('front_display', [
-    f('COUNTERFEIT_INDICATOR', 'MODERATE', 'LOGO', 'Screen edge',
-        'Edge of the display looks uneven, possibly due to glare from the lighting'),
-  ])),
-  Variant('mechanical-watch rule misapplied (v1 prompt)', withExtra('side_crown', [
-    f('COUNTERFEIT_INDICATOR', 'MODERATE', 'HARDWARE', 'Crown knurling',
-        'Crown lacks the machined knurling expected on a genuine watch crown'),
-  ])),
-  Variant('strength over-claimed, not model-specific', withExtra('front_display', [
-    f('COUNTERFEIT_INDICATOR', 'STRONG', 'SHAPE', 'Bezel', 'Bezel appears slightly thicker than typical'),
-  ])),
-  Variant('strong claim with a benign explanation', withExtra('back_sensor', [
-    f('COUNTERFEIT_INDICATOR', 'STRONG', 'PRODUCT_SPECIFIC', 'Sensor ring',
-        'Sensor ring spacing differs from the Series 9 layout', modelSpecific: true,
-        alt: 'Close-up lens distortion can stretch the ring spacing'),
-  ])),
-  Variant('flaw seen only on a blurry photo', withExtra('band_connector', [
-    f('COUNTERFEIT_INDICATOR', 'STRONG', 'HARDWARE', 'Release button',
-        'Band release button edge appears rough', modelSpecific: true),
-  ], quality: 48)),
-  Variant('two complaints about the same area', withExtra('front_display', [
-    f('COUNTERFEIT_INDICATOR', 'MODERATE', 'SHAPE', 'Corner radius', 'Corner radius looks tighter than expected'),
-    f('COUNTERFEIT_INDICATOR', 'MODERATE', 'SHAPE', 'Glass curve', 'Glass curve looks flatter than expected'),
-  ])),
-  Variant('model identification uncertain', withExtra('back_sensor', [
-    f('COUNTERFEIT_INDICATOR', 'STRONG', 'PRODUCT_SPECIFIC', 'Sensor layout',
-        'Sensor layout does not match the Series 9 arrangement', modelSpecific: true),
-  ]), identification: 55),
-  Variant('model returned fewer findings this run', [
-    part('front_display', 'Front', [auth('SHAPE', 'Display bezel', 'Thin, even black border')]),
-    part('back_sensor', 'Back', [auth('PRODUCT_SPECIFIC', 'Sensor layout', 'Sensor layout matches Series 9')]),
-    part('side_crown', 'Crown Side', [auth('HARDWARE', 'Digital Crown', 'Crown ridges are fine and even')]),
-    part('other_side', 'Other Side', const []),
-    part('band_connector', 'Band / Connector', const []),
-    part('about_screen', 'About Screen', const []),
-  ]),
-  Variant('about screen not photographed', genuineAppleWatchParts(), notSupplied: {'about_screen'}),
-  Variant('legacy untyped output with absence wording', [
-    for (final p in genuineAppleWatchParts())
-      {
-        'evidence_id': p['evidence_id'],
-        'title': p['title'],
-        'visible_quality': 88,
-        'observations': ['visible'],
-        'consistent_signals': [for (final x in p['findings'] as List) (x as Map)['observation']],
-        'inconsistent_signals': p['evidence_id'] == 'back_sensor'
-            ? ['Serial number not clearly visible on the caseback']
-            : <String>[],
-        'uncertain_signals': <String>[],
-      },
-  ]),
-];
-
-// ----------------------------------------------------------------- running
-
-List<EvidenceItem> planFor(Product product, {Set<String> notSupplied = const {}}) {
-  final rules = AuthenticationRules.resolve(
-    category: product.category,
-    brand: product.brand,
-    model: product.model,
-    name: product.name,
-  );
-  return [
-    for (final (i, b) in rules.evidenceBlueprint.indexed)
-      item(id: b.id, title: b.title, weight: b.weight, index: i + 1, captured: !notSupplied.contains(b.id)),
-  ];
-}
-
-List<PartObservation> parse(List<Map<String, dynamic>> parts) =>
-    GeminiEvidenceResponse.fromJson({'evidence_observations': parts}).partObservations;
-
-({Verdict v1, Verdict v2, int v2Confidence}) score(Product product, Variant variant) {
-  final evidence = planFor(product, notSupplied: variant.notSupplied);
-  final observations = parse(variant.parts);
-  final v1 = LegacyScoringEngineV1.evaluate(
-    product: product,
-    rawIdentificationConfidence: variant.identification,
-    requiredEvidence: evidence,
-    capturedImages: imagesFor(evidence),
-    observations: observations,
-    contradictions: const [],
-  );
-  final v2 = AuthenticationScoringEngine.evaluate(
-    product: product,
-    rawIdentificationConfidence: variant.identification,
-    requiredEvidence: evidence,
-    capturedImages: imagesFor(evidence),
-    observations: observations,
-    contradictions: const [],
-  );
-  return (v1: v1.verdict, v2: v2.verdict, v2Confidence: v2.authenticationConfidence);
-}
-
-void printTable(String title, List<(String, Verdict, Verdict, int)> rows) {
-  final b = StringBuffer('\n$title\n');
-  b.writeln('| # | Scan variant | Engine v1 | Engine v2 |');
-  b.writeln('|---|---|---|---|');
-  for (final (i, r) in rows.indexed) {
-    b.writeln('| ${i + 1} | ${r.$1} | ${r.$2.label} | ${r.$3.label} (${r.$4}%) |');
-  }
-  // ignore: avoid_print
-  print(b);
+Verdict finalVerdict(List<PhotoEvidence> photos) {
+  final p = appleWatchSeries();
+  final pre = EvidenceDecisionEngine.evaluate(profile: p, photos: photos);
+  return EvidenceDecisionEngine.evaluate(profile: p, photos: photos, finalEvaluation: checked(pre)).verdict;
 }
 
 void main() {
-  group('Same genuine Apple Watch, 12 scans with realistic model variation', () {
-    final rows = [
-      for (final v in genuineVariants)
-        (() {
-          final s = score(appleWatch, v);
-          return (v.name, s.v1, s.v2, s.v2Confidence);
-        })(),
-    ];
+  group('Same genuine Apple Watch, 20 noisy runs', () {
+    final verdicts = [for (var i = 0; i < 20; i++) finalVerdict(genuineRun(Random(i)))];
 
-    test('prints the v1 vs v2 comparison', () {
-      printTable('GENUINE Apple Watch - repeated scans', rows);
+    test('is never called a replica', () {
+      expect(verdicts, isNot(contains(Verdict.likelyReplica)));
     });
 
-    test('engine v2 never calls the genuine watch a replica', () {
-      for (final r in rows) {
-        expect(r.$3, isNot(Verdict.likelyReplica), reason: 'variant "${r.$1}" flipped to replica');
-      }
-    });
-
-    test('engine v2 never alternates between authentic and replica', () {
-      final verdicts = rows.map((r) => r.$3).toSet();
-      expect(verdicts.containsAll({Verdict.likelyAuthentic, Verdict.likelyReplica}), isFalse);
-    });
-
-    test('engine v2: every scan is Appears Authentic or Unable to Verify', () {
-      final authentic = rows.where((r) => r.$3 == Verdict.likelyAuthentic).length;
-      final inconclusive = rows.where((r) => r.$3 == Verdict.inconclusive).length;
-      expect(authentic + inconclusive, rows.length);
-      expect(authentic, greaterThanOrEqualTo(6));
-    });
-
-    test('scanned one after another, the session assessment stays Appears Authentic', () {
-      final history = <AuthenticationReport>[];
-      final start = DateTime(2026, 9, 26, 12);
-      final shown = <Verdict>[];
-      final session = <Verdict?>[];
-      for (final (i, v) in genuineVariants.indexed) {
-        final evidence = planFor(appleWatch, notSupplied: v.notSupplied);
-        final result = AuthenticationScoringEngine.evaluate(
-          product: appleWatch,
-          rawIdentificationConfidence: v.identification,
-          requiredEvidence: evidence,
-          capturedImages: imagesFor(evidence),
-          observations: parse(v.parts),
-          contradictions: const [],
-        );
-        final at = start.add(Duration(minutes: i));
-        final report = ScanConsistencyService.reconcile(
-          report: AuthenticationReport(
-            id: 'scan_$i',
-            product: appleWatch,
-            verdict: result.verdict,
-            overallScore: result.authenticationConfidence,
-            quickSummaryPoints: const [],
-            evidenceItems: const [],
-            rationale: result.rationale,
-            timestamp: at,
-            fingerprint: ScanConsistencyService.fingerprint(appleWatch),
-            engineVersion: '2.0',
-            analysisLog: {'strongCounterfeitCount': result.strongCounterfeitCount},
-          ),
-          history: history,
-          now: at,
-        );
-        history.add(report);
-        shown.add(report.verdict);
-        session.add(report.consistency?.sessionVerdict);
-      }
-      // ignore: avoid_print
-      print('\nSession over 12 scans - shown: ${shown.map((v) => v.code).join(', ')}'
-          '\nSession over 12 scans - session assessment: ${session.map((v) => v?.code ?? '-').join(', ')}');
-      expect(shown, isNot(contains(Verdict.likelyReplica)));
-      expect(session.skip(1).every((v) => v == Verdict.likelyAuthentic), isTrue);
-    });
-
-    test('the same noise did flip engine v1 (the bug being fixed)', () {
-      final v1Replica = rows.where((r) => r.$2 == Verdict.likelyReplica).length;
-      expect(v1Replica, greaterThan(0));
+    test('is consistent with authentic in most runs and never alternates with replica', () {
+      final authentic = verdicts.where((v) => v == Verdict.likelyAuthentic).length;
+      expect(authentic, greaterThanOrEqualTo(15), reason: '$verdicts');
     });
   });
 
-  group('A real replica is still caught', () {
-    List<Map<String, dynamic>> replicaParts({bool dropOne = false, bool addNoise = false}) => [
-          part('front_display', 'Front', [
-            f('COUNTERFEIT_INDICATOR', 'STRONG', 'SHAPE', 'Display', 'Flat rectangular screen with a thick uneven bezel; Series 9 has a curved edge-to-edge display', modelSpecific: true),
-            if (addNoise) f('AMBIGUOUS', 'WEAK', 'COLOR_TEXTURE', 'Case colour', 'Case colour hard to judge'),
-          ]),
-          part('back_sensor', 'Back', [
-            if (!dropOne)
-              f('COUNTERFEIT_INDICATOR', 'STRONG', 'PRODUCT_SPECIFIC', 'Sensor', 'Plastic back with a single green LED; no real generation has this layout', modelSpecific: true),
-          ]),
-          part('side_crown', 'Crown Side', [
-            f('COUNTERFEIT_INDICATOR', 'STRONG', 'HARDWARE', 'Crown', 'Crown is a smooth plastic knob with no ridges and does not match any Apple Watch generation', modelSpecific: true),
-          ]),
-          part('other_side', 'Other Side', [
-            if (addNoise) auth('CONSTRUCTION', 'Openings', 'Speaker openings present'),
-          ]),
-          part('band_connector', 'Band / Connector', const []),
-          part('about_screen', 'About Screen', [
-            f('COUNTERFEIT_INDICATOR', 'STRONG', 'SERIAL_MARKING', 'Interface', 'The About screen is an Android-style menu, not watchOS', modelSpecific: true),
-          ]),
-        ];
+  group('Same replica Apple Watch, 20 noisy runs', () {
+    final verdicts = [for (var i = 0; i < 20; i++) finalVerdict(replicaRun(Random(100 + i)))];
 
-    final variants = [
-      Variant('clear replica', replicaParts()),
-      Variant('one indicator missing this run', replicaParts(dropOne: true)),
-      Variant('with extra ambiguous noise', replicaParts(addNoise: true)),
-      Variant('both variations', replicaParts(dropOne: true, addNoise: true)),
-      Variant('about screen not photographed', replicaParts(), notSupplied: {'about_screen'}),
-    ];
-    final rows = [
-      for (final v in variants)
-        (() {
-          final s = score(appleWatch, v);
-          return (v.name, s.v1, s.v2, s.v2Confidence);
-        })(),
-    ];
+    test('is never called authentic', () {
+      expect(verdicts, isNot(contains(Verdict.likelyAuthentic)));
+    });
 
-    test('prints the comparison', () => printTable('REPLICA Apple Watch - repeated scans', rows));
-
-    test('never Appears Authentic, and consistently Likely Replica', () {
-      for (final r in rows) {
-        expect(r.$3, Verdict.likelyReplica, reason: 'variant "${r.$1}"');
-      }
+    test('is a replica in every run where the decisive detail was read reliably', () {
+      expect(verdicts.where((v) => v == Verdict.likelyReplica).length, greaterThanOrEqualTo(15), reason: '$verdicts');
     });
   });
 
-  group('Eyewear has its own pipeline (§5)', () {
+  group('Eyewear identification', () {
     test('sunglasses and eyeglasses map to the eyewear profile', () {
       for (final label in ['Sunglasses', 'Eyeglasses', 'Optical frames']) {
         final id = ProductIdentification.fromJson({
@@ -365,76 +124,46 @@ void main() {
         });
         expect(id.resolvedProductCategory, ProductCategory.eyewear, reason: label);
       }
-      final coded = ProductIdentification.fromJson({
-        'status': 'product_detected',
-        'product_detected': true,
-        'category_code': 'SUNGLASSES',
-        'product_category': 'Sunglasses',
-        'brand': 'Ray-Ban',
-        'confidence': 0.9,
-      });
-      expect(coded.toProduct(imageAsset: '/tmp/x.jpg').categoryCode, 'SUNGLASSES');
-    });
-
-    test('eyewear checklist covers temples, hinge, markings and lens logo', () {
-      final ids = AuthenticationRules.forCategory(ProductCategory.eyewear).evidenceBlueprint.map((b) => b.id).toList();
-      expect(ids, containsAll(['front_frame', 'temple_outside', 'inside_temple_markings', 'hinge', 'lens_logo']));
-      final rules = AuthenticationRules.forCategory(ProductCategory.eyewear);
-      expect(rules.cautions.join(' ').toLowerCase(), contains('reflection'));
-      expect(rules.identityEvidenceIds, contains('inside_temple_markings'));
-    });
-
-    test('reflections on genuine sunglasses never produce a replica verdict', () {
-      final parts = [
-        part('front_frame', 'Front', [
-          auth('SHAPE', 'Frame', 'Frame shape and symmetry match the RB2140 Wayfarer'),
-          f('COUNTERFEIT_INDICATOR', 'MODERATE', 'COLOR_TEXTURE', 'Lens tint', 'Lens tint looks more blue than G-15 because of reflections'),
-        ]),
-        part('temple_outside', 'Side / Arm', [auth('LOGO', 'Temple logo', 'Metal Ray-Ban plaque is level and cleanly inset')]),
-        part('inside_temple_markings', 'Inside Arms', [
-          auth('SERIAL_MARKING', 'Markings', 'RB2140 901 50-22 printed crisply in the usual layout'),
-        ]),
-        part('hinge', 'Hinge', [auth('HARDWARE', 'Hinge', 'Seven-barrel style hinge with clean screws')]),
-        part('bridge_nose_pads', 'Nose Area', [auth('CONSTRUCTION', 'Bridge', 'Moulded bridge, no pads, as expected')]),
-        part('lens_logo', 'Lens Logo', [
-          f('COUNTERFEIT_INDICATOR', 'STRONG', 'LOGO', 'Lens etching', 'Lens etching is not visible in this photo', modelSpecific: true),
-        ]),
-      ];
-      final s = score(sunglasses, Variant('reflections + unreadable lens etching', parts));
-      expect(s.v2, isNot(Verdict.likelyReplica));
     });
   });
 
-  group('Missing evidence is uncertainty, never counterfeit evidence (§3)', () {
-    for (final text in [
-      'Serial number not visible',
-      'Box not provided',
-      'Engraving cannot be read at this distance',
-      'Stitching is obscured by the strap',
-      'Authentication tag not shown in the photos',
-      'Unable to verify the model code',
-    ]) {
-      test('"$text" is reclassified as missing', () {
-        final r = AuthenticationScoringEngine.evaluate(
-          product: testWatch,
-          rawIdentificationConfidence: 90,
-          requiredEvidence: fullWatchEvidence(),
-          capturedImages: imagesFor(fullWatchEvidence()),
-          observations: [
-            ...cleanWatchObservations().where((o) => o.evidenceId != 'reference_serial'),
-            typedObservation('reference_serial', 'Reference / Serial', [
-              finding('reference_serial', FindingType.counterfeitIndicator,
-                  strength: FindingStrength.strong, dimension: 'SERIAL_MARKING', observation: text, modelSpecific: true),
-            ]),
-          ],
-          contradictions: const [],
+  group('Consistency for engine v3 reports (no numeric confidence)', () {
+    AuthenticationReport v3(String id, Verdict verdict, String strength, {int minutesAgo = 0, int strong = 0}) =>
+        AuthenticationReport(
+          id: id,
+          product: appleWatch,
+          verdict: verdict,
+          overallScore: 0,
+          quickSummaryPoints: const [],
+          evidenceItems: const [],
+          rationale: 'r',
+          timestamp: DateTime(2026, 9, 26, 12).subtract(Duration(minutes: minutesAgo)),
+          fingerprint: ScanConsistencyService.fingerprint(appleWatch),
+          engineVersion: '3.0',
+          evidenceStrength: strength,
+          analysisLog: {'strongCounterfeitCount': strong, 'flaggedEvidenceIds': const [], 'authenticEvidenceIds': const []},
         );
-        expect(r.suspiciousFindings, isEmpty);
-        expect(r.verdict, isNot(Verdict.likelyReplica));
-        final normalized = r.normalizedFindings.firstWhere((f) => f.observation == text);
-        expect(normalized.type, FindingType.missing);
-      });
-    }
+
+    test('a moderate earlier authentic result is protected from a weak flip', () {
+      final r = ScanConsistencyService.reconcile(
+        report: v3('new', Verdict.likelyReplica, 'moderate', strong: 0),
+        history: [v3('old', Verdict.likelyAuthentic, 'moderate', minutesAgo: 10)],
+        now: DateTime(2026, 9, 26, 12),
+      );
+      expect(r.verdict, Verdict.inconclusive);
+      expect(r.consistency!.flipPrevented, isTrue);
+      expect(r.overallScore, 0, reason: 'no percentage is invented for v3 reports');
+      expect(r.evidenceStrength, 'limited');
+    });
+
+    test('an earlier limited result protects nothing', () {
+      final r = ScanConsistencyService.reconcile(
+        report: v3('new', Verdict.likelyReplica, 'moderate'),
+        history: [v3('old', Verdict.likelyAuthentic, 'limited', minutesAgo: 10)],
+        now: DateTime(2026, 9, 26, 12),
+      );
+      expect(r.verdict, Verdict.likelyReplica);
+    });
   });
 
   group('Consistency across scans (§17-19)', () {
@@ -529,6 +258,24 @@ void main() {
       expect(r.consistency!.previousReportId, isNull);
     });
 
+    test('a different physical item of the same model, hours later, is not anchored to it', () {
+      // Neither scan ever reads a serial/marking (the common case for a
+      // phone photo) - same brand/model is only a guess that they're the
+      // same physical watch, and that guess should not hold for long.
+      final earlier = report('a', Verdict.likelyAuthentic, 88, minutesAgo: 200);
+      final differentWatch = report('b', Verdict.inconclusive, 55);
+      final r = ScanConsistencyService.reconcile(report: differentWatch, history: [earlier], now: now);
+      expect(r.verdict, Verdict.inconclusive, reason: 'own raw verdict stands, unaffected by the unrelated earlier scan');
+      expect(r.consistency!.previousReportId, isNull);
+    });
+
+    test('a different physical item of the same model, minutes later (same sitting), is still anchored', () {
+      final earlier = report('a', Verdict.likelyAuthentic, 88, minutesAgo: 10);
+      final second = report('b', Verdict.inconclusive, 55);
+      final r = ScanConsistencyService.reconcile(report: second, history: [earlier], now: now);
+      expect(r.consistency!.previousReportId, 'a');
+    });
+
     test('fingerprint is semantic: angle/lighting-independent, brand and category aware', () {
       final a = ScanConsistencyService.fingerprint(appleWatch);
       final b = ScanConsistencyService.fingerprint(appleWatch, analysedModel: 'Series 9 45mm Aluminium');
@@ -547,23 +294,4 @@ void main() {
     });
   });
 
-  group('No fabricated verification (§28-29)', () {
-    test('a visible serial is reported as observed text only', () {
-      final r = AuthenticationScoringEngine.evaluate(
-        product: appleWatch,
-        rawIdentificationConfidence: 90,
-        requiredEvidence: planFor(appleWatch),
-        capturedImages: imagesFor(planFor(appleWatch)),
-        observations: parse(genuineAppleWatchParts()),
-        contradictions: const [],
-        analysis: GeminiEvidenceResponse.fromJson({
-          'evidence_observations': genuineAppleWatchParts(),
-          'observed_text': ['Serial GH7KL2XQ1'],
-          'identification': {'category': 'WATCH', 'model_confirmed': true, 'model_confidence': 90},
-        }),
-      );
-      expect(r.limitations.join(' '), contains('has not been checked with the brand'));
-      expect(r.rationale.toLowerCase(), isNot(contains('database')));
-    });
-  });
 }

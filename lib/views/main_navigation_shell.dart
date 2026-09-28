@@ -468,6 +468,11 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
           currentItem: scanVm.currentEvidenceItem!,
           currentIndex: scanVm.currentEvidenceIndex,
           totalCount: scanVm.evidenceItems.length,
+          // The indicator counts the checklist photos actually taken.
+          photoNumber: scanVm.currentEvidenceIndex + 1,
+          maxPhotos: scanVm.totalEvidenceCount,
+          evidenceProgress: scanVm.checklistProgress,
+          progressLabel: '${scanVm.acceptedEvidenceCount} of ${scanVm.totalEvidenceCount} photos taken',
           onCapture: ([photoPath]) => scanVm.submitEvidencePhoto(photoPath),
           onSkip: scanVm.skipCurrentEvidence,
           onMarkUnavailable: scanVm.markCurrentEvidenceUnavailable,

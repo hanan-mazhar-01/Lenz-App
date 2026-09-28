@@ -1,20 +1,36 @@
 import 'package:replica_detector/core/errors/app_error.dart';
 import 'package:replica_detector/services/gemini_service.dart';
 import 'package:replica_detector/services/image_preparation_service.dart';
+import 'package:replica_detector/services/native_image_decoder.dart';
 
 /// Stands in for the network. Records every call so tests can assert how many
-/// requests a flow actually makes.
+/// requests a flow makes, with how many images, and against which schema.
 class FakeGeminiService implements GeminiService {
   final List<String> calls = [];
   final List<int> imageCounts = [];
   final List<String> prompts = [];
   final List<Map<String, dynamic>?> schemas = [];
-  final Map<String, Map<String, dynamic>> responses;
+  final List<String?> scanIds = [];
+  final List<String?> thinkingLevels = [];
+
+  /// Responses by label prefix. A list value is consumed in order (last one
+  /// repeats), which lets a test return a malformed answer first.
+  final Map<String, Object> responses;
   final Map<String, Object> errors;
 
   FakeGeminiService({this.responses = const {}, this.errors = const {}});
 
+  final Map<String, int> _served = {};
+
   int callsMatching(String prefix) => calls.where((c) => c.startsWith(prefix)).length;
+
+  int imagesFor(String prefix) {
+    var n = 0;
+    for (var i = 0; i < calls.length; i++) {
+      if (calls[i].startsWith(prefix)) n += imageCounts[i];
+    }
+    return n;
+  }
 
   @override
   Future<Map<String, dynamic>> generateStructuredContent({
@@ -24,18 +40,31 @@ class FakeGeminiService implements GeminiService {
     int? maxOutputTokens,
     Duration? timeout,
     Map<String, dynamic>? responseSchema,
+    String? scanId,
+    String? thinkingLevel,
   }) async {
     final label = requestTypeLabel ?? 'unknown';
     calls.add(label);
     prompts.add(prompt);
     schemas.add(responseSchema);
     imageCounts.add(inlineImages?.length ?? 0);
+    scanIds.add(scanId);
+    thinkingLevels.add(thinkingLevel);
 
     for (final entry in errors.entries) {
       if (label.startsWith(entry.key)) throw entry.value;
     }
-    for (final entry in responses.entries) {
-      if (label.startsWith(entry.key)) return entry.value;
+    // Longest matching prefix wins, so 'photo_analysis:back' can override
+    // a generic 'photo_analysis'.
+    final keys = responses.keys.where(label.startsWith).toList()..sort((a, b) => b.length.compareTo(a.length));
+    if (keys.isNotEmpty) {
+      final v = responses[keys.first]!;
+      if (v is List) {
+        final i = _served[keys.first] ?? 0;
+        _served[keys.first] = i + 1;
+        return Map<String, dynamic>.from(v[i.clamp(0, v.length - 1)] as Map);
+      }
+      return Map<String, dynamic>.from(v as Map);
     }
     throw AppError.invalidResponse();
   }
@@ -53,19 +82,26 @@ class FakeImagePreparationService implements ImagePreparationService {
   @override
   Future<PreparedImage> prepareImage(String pathOrAsset, {ImagePreset preset = ImagePreset.evidence}) async {
     prepared.add('$pathOrAsset|${preset.name}');
-    return const PreparedImage(
-      base64Data: 'ZmFrZQ==',
-      mimeType: 'image/jpeg',
-      byteSize: 4,
-      width: 1024,
-      height: 768,
-    );
+    return const PreparedImage(base64Data: 'ZmFrZQ==', mimeType: 'image/jpeg', byteSize: 4, width: 1024, height: 768);
   }
+
+  @override
+  void warm(String pathOrAsset, ImagePreset preset) {}
+
+  /// Origin hints the tests set per path (none by default).
+  final Map<String, String> originHints = {};
+
+  @override
+  String? originHint(String storedPath) => originHints[storedPath];
+
+  @override
+  Future<PreparedImage> encodePixels(PixelBuffer pixels, {int maxDimension = 1024, int jpegQuality = 90}) async =>
+      const PreparedImage(base64Data: 'Y3JvcA==', mimeType: 'image/jpeg', byteSize: 4, width: 512, height: 512);
 
   @override
   Future<String> persistCapturedImage(String tempPath, {String prefix = 'scan', bool stripExif = false}) async {
     persisted.add(tempPath);
-    return '/documents/vericheck_evidence/${prefix}_stored.jpg';
+    return '/documents/vericheck_evidence/${prefix}_${persisted.length}.jpg';
   }
 
   @override
@@ -84,169 +120,216 @@ Map<String, dynamic> identificationJson({
   String status = 'product_detected',
   String reason = 'valid_luxury_product',
   bool productDetected = true,
+  String categoryCode = 'WATCH',
   String category = 'Watches',
-  String brand = 'Rolex',
-  String product = 'Submariner Date',
-  String model = '126610LN',
-  double confidence = 0.91,
+  String type = 'smartwatch',
+  String? brand = 'Apple',
+  String brandStatus = 'CONFIRMED',
+  String? model = 'Apple Watch Ultra',
+  String modelStatus = 'PROBABLE',
+  String? generation,
+  String generationStatus = 'UNKNOWN',
+  double confidence = 0.93,
+  List<num>? box = const [200, 250, 800, 750],
+  String source = 'PHYSICAL_ITEM',
 }) =>
     {
+      'image_source': source,
       'status': status,
       'reason': reason,
       'product_detected': productDetected,
+      'category_code': categoryCode,
       'product_category': category,
-      'category': category,
+      'product_type': type,
+      'confidence': confidence,
       'brand': brand,
-      'product': product,
+      'brand_status': brandStatus,
+      'brand_basis': 'logo',
+      'product_name': model,
       'model': model,
-      'identification_confidence': confidence,
-      'visible_details': ['black dial', 'steel bracelet'],
+      'model_status': modelStatus,
+      'model_basis': 'case design',
+      'generation': generation,
+      'generation_status': generationStatus,
+      'exact_model': null,
+      'exact_model_status': 'UNKNOWN',
+      'visible_part': 'front display',
+      'item_box_2d': box,
+      'visible_characteristics': ['titanium case'],
+      'distinguishing_features': ['raised case edge'],
+      'uncertain_attributes': ['generation'],
       'message': 'Item identified successfully.',
     };
 
-Map<String, dynamic> evidencePlanJson() => {
-      'requiredEvidence': [
-        {'id': 'full_watch', 'title': 'Full Watch', 'guide': 'Whole watch straight on', 'reason': 'proportions', 'weight': 'high'},
-        {'id': 'dial', 'title': 'Dial', 'guide': 'Flat, glare free', 'reason': 'printing', 'weight': 'critical'},
-        {'id': 'crown', 'title': 'Crown', 'guide': 'Side close-up', 'reason': 'machining', 'weight': 'high'},
-        {'id': 'caseback', 'title': 'Caseback', 'guide': 'Whole back', 'reason': 'finishing', 'weight': 'high'},
-        {'id': 'bracelet_clasp', 'title': 'Bracelet & Clasp', 'guide': 'Clasp engraving', 'reason': 'stamping', 'weight': 'medium'},
-        {'id': 'reference_serial', 'title': 'Reference / Serial', 'guide': 'Macro of serial', 'reason': 'format', 'weight': 'critical'},
+Map<String, dynamic> recommendationJson(List<String> order, {String value = 'HIGH'}) => {
+      'ranked': [
+        for (final (i, id) in order.indexed)
+          {
+            'request_id': id,
+            'discriminative_value': i == 0 ? value : 'MEDIUM',
+            'photo_assessable': true,
+            'model_specific_checks': ['fixture check'],
+            'reason': 'fixture',
+          },
       ],
+      'model_notes': ['Bands are interchangeable.'],
     };
 
-Map<String, dynamic> validationJson({
-  String detected = 'dial',
-  bool matches = true,
-  int matchConfidence = 96,
-  int quality = 91,
-  int usefulness = 89,
+Map<String, dynamic> photoCheckJson({
+  String matched = 'back_sensor',
+  bool usable = true,
+  bool showsProduct = true,
+  bool showsRequested = true,
+  int requestedConfidence = 90,
+  String? partShown,
+  String readability = 'READABLE',
+  List<String> issues = const ['NONE'],
+  String fix = '',
+  List<num>? box = const [250, 250, 750, 750],
+  int quality = 85,
+  String source = 'PHYSICAL_ITEM',
 }) =>
     {
-      'evidence_type_detected': detected,
-      'match_to_requested_evidence': matches,
-      'match_confidence': matchConfidence,
-      'photo_quality_score': quality,
-      'quality_status': 'EXCELLENT',
-      'sharpness': quality,
-      'lighting': quality,
-      'framing': quality,
-      'detail': quality,
-      'usability_score': quality,
-      'authentication_usefulness': usefulness,
-      'reason': 'Clear and well framed.',
+      'image_source': source,
+      'part_shown': partShown ?? matched.replaceAll('_', ' '),
+      'shows_product': showsProduct,
+      'shows_requested_part': showsRequested,
+      'requested_part_confidence': requestedConfidence,
+      'matched_request_id': matched,
+      'detail_box_2d': box,
+      'detail_readability': readability,
+      'issues': issues,
+      'usable': usable,
+      'fix': fix,
+      'quality_score': quality,
+      'reason': 'Clear photo.',
     };
 
-Map<String, dynamic> observationsJson({bool suspicious = false}) => {
-      'evidence_observations': [
-        {
-          'evidence_id': 'full_watch',
-          'title': 'Full Watch',
-          'observations': ['Case and bracelet visible'],
-          'consistent_signals': ['Proportions match the reference', 'End links sit flush'],
-          'inconsistent_signals': <String>[],
-          'uncertain_signals': <String>[],
-          'visible_quality': 90,
-        },
-        {
-          'evidence_id': 'dial',
-          'title': 'Dial',
-          'observations': ['Dial printing visible'],
-          'consistent_signals': suspicious ? <String>[] : ['Kerning is even', 'Lume fills the markers'],
-          'inconsistent_signals': <String>[],
-          'uncertain_signals': <String>[],
-          if (suspicious)
-            'findings': [
-              {
-                'feature': 'Coronet',
-                'dimension': 'TYPOGRAPHY',
-                'type': 'COUNTERFEIT_INDICATOR',
-                'strength': 'STRONG',
-                'observation': 'Coronet has a filled centre; the 126610LN coronet has open tines',
-                'model_specific': true,
-                'alternative_explanation': null,
-              },
-            ],
-          'visible_quality': 92,
-        },
-        {
-          'evidence_id': 'crown',
-          'title': 'Crown',
-          'observations': ['Crown profile visible'],
-          'consistent_signals': ['Knurling is cleanly machined'],
-          if (suspicious)
-            'findings': [
-              {
-                'feature': 'Triplock dots',
-                'dimension': 'HARDWARE',
-                'type': 'COUNTERFEIT_INDICATOR',
-                'strength': 'STRONG',
-                'observation': 'Two dots under the crown logo; this reference uses three',
-                'model_specific': true,
-                'alternative_explanation': null,
-              },
-            ],
-          'inconsistent_signals': <String>[],
-          'uncertain_signals': <String>[],
-          'visible_quality': 88,
-        },
-        {
-          'evidence_id': 'caseback',
-          'title': 'Caseback',
-          'observations': ['Caseback visible'],
-          'consistent_signals': ['Uniform brushing, no engraving'],
-          'inconsistent_signals': <String>[],
-          'uncertain_signals': <String>[],
-          'visible_quality': 89,
-        },
-        {
-          'evidence_id': 'bracelet_clasp',
-          'title': 'Bracelet & Clasp',
-          'observations': ['Clasp visible'],
-          'consistent_signals': ['Stamping is crisp'],
-          'inconsistent_signals': <String>[],
-          'uncertain_signals': <String>[],
-          'visible_quality': 87,
-        },
-        {
-          'evidence_id': 'reference_serial',
-          'title': 'Reference / Serial',
-          'observations': ['Serial visible'],
-          'consistent_signals': suspicious ? <String>[] : ['Serial format matches the model', 'Etch depth consistent'],
-          'inconsistent_signals': <String>[],
-          if (suspicious)
-            'findings': [
-              {
-                'feature': 'Rehaut serial',
-                'dimension': 'SERIAL_MARKING',
-                'type': 'COUNTERFEIT_INDICATOR',
-                'strength': 'STRONG',
-                'observation': 'Rehaut serial has 6 characters; this model uses 8',
-                'model_specific': true,
-                'alternative_explanation': null,
-              },
-            ],
-          'uncertain_signals': <String>[],
-          'visible_quality': 90,
-        },
-      ],
-      'contradictions': <Map<String, dynamic>>[],
-      'missing_critical_checks': <String>[],
-      'model_classification': suspicious ? 'LIKELY_REPLICA' : 'LIKELY_AUTHENTIC',
-      'physical_checks': [
-        {
-          'title': 'Crown tactile check',
-          'description': 'Unscrew and feel the crown action.',
-          'what_to_look_for': 'Smooth threading without grit',
-        },
-      ],
+Map<String, dynamic> assessmentJson(
+  String id,
+  String outcome, {
+  String reliability = 'HIGH',
+  String observation = 'fixture observation',
+  String interpretation = 'fixture interpretation',
+  String? alternative,
+  String basis = 'MODEL_KNOWLEDGE',
+  String kind = 'AI_INTERPRETATION',
+  String feature = '',
+}) =>
+    {
+      'checkpoint_id': id,
+      'feature': feature,
+      'observation': observation,
+      'interpretation': interpretation,
+      'outcome': outcome,
+      'reliability': reliability,
+      'limitation': '',
+      'basis': basis,
+      'evidence_kind': kind,
+      'alternative_explanation': alternative,
     };
 
-/// Second-pass verification response.
-Map<String, dynamic> verificationJson({String outcome = 'CONFIRMED', bool sufficient = true, int count = 3}) => {
-      'verifications': [
-        for (var i = 0; i < count; i++)
-          {'finding_index': i, 'outcome': outcome, 'verified_strength': 'STRONG', 'reason': 'fixture'},
-      ],
-      'sufficient_evidence_for_counterfeit': sufficient,
+Map<String, dynamic> photoAnalysisJson(
+  List<Map<String, dynamic>> assessments, {
+  String matched = 'front_display',
+  List<String> observedText = const [],
+  Map<String, dynamic>? identity,
+}) =>
+    {
+      'photo_summary': 'fixture summary',
+      'matched_request_id': matched,
+      'observed_text': observedText,
+      'identity_evidence': identity ?? {'status': 'UNKNOWN', 'source': 'NONE'},
+      'assessments': assessments,
     };
+
+Map<String, dynamic> finalEvaluationJson({
+  List<Map<String, dynamic>> variations = const [],
+  List<Map<String, dynamic>> contradictions = const [],
+  bool identityConsistent = true,
+}) =>
+    {
+      'cross_photo_contradictions': contradictions,
+      'variation_checks': variations,
+      'identity_consistent': identityConsistent,
+      'remaining_uncertainty': <String>[],
+      'notes': 'fixture',
+    };
+
+// ------------------------------------------------ engine v4 (combined stage)
+
+/// One finding of the combined analysis. Fixture data, not model output.
+/// [claimId] is a checklist id (b#) or "none" for Gemini's own knowledge.
+Map<String, dynamic> findingJson(
+  String claimId,
+  String comparison, {
+  List<String> images = const ['P1'],
+  String? area,
+  String visibility = 'CLEAR',
+  String reliability = 'HIGH',
+  String? basis,
+  String variation = 'NOT_APPLICABLE',
+  String? alternative,
+  String observed = 'fixture observation',
+  String part = 'other',
+  String? differenceKind,
+  String detailKind = 'CONSTRUCTION',
+  bool hard = false,
+  bool tell = false,
+  String scope = 'MODEL_FAMILY',
+}) =>
+    {
+      'claim_id': claimId,
+      'feature': area ?? claimId,
+      'area': area ?? claimId,
+      'part_request_id': part,
+      'image_ids': images,
+      'observed': observed,
+      'comparison': comparison,
+      'difference_kind': differenceKind ?? (comparison == 'CONFLICTS' ? 'DIFFERENT' : 'NOT_APPLICABLE'),
+      'visibility': visibility,
+      'reliability': reliability,
+      'basis': basis ?? (claimId == 'none' ? 'MODEL_KNOWLEDGE' : 'CHECKLIST_ITEM'),
+      'knowledge_scope': scope,
+      'detail_kind': detailKind,
+      'hard_to_copy': hard,
+      'counterfeit_tell': tell,
+      'alternative_explanation': alternative,
+      'legitimate_variation': variation,
+    };
+
+Map<String, dynamic> combinedJson({
+  List<Map<String, dynamic>> findings = const [],
+  List<Map<String, dynamic>> contradictions = const [],
+  String verdict = 'NOT_SURE',
+  bool consistent = true,
+  List<Map<String, dynamic>> unresolved = const [],
+  List<String> verification = const [],
+  String? brand = 'Apple',
+  List<String> summaryPoints = const ['Fixture summary point 1', 'Fixture summary point 2'],
+}) =>
+    {
+      'identity_established': {
+        'brand': brand,
+        'model': 'Apple Watch Ultra',
+        'generation': null,
+        'variant': null,
+        'basis': 'fixture',
+        'consistent_with_identification': consistent,
+      },
+      'findings': findings,
+      'cross_image_contradictions': contradictions,
+      'proposed_verdict': verdict,
+      'verdict_reasoning': 'fixture reasoning',
+      'summary_points': summaryPoints,
+      'unresolved': unresolved,
+      'independent_verification': verification,
+    };
+
+/// Findings that satisfy the Authentic rules: three different parts, one
+/// hard-to-copy physical detail, seen in two photos (Gemini's knowledge).
+List<Map<String, dynamic>> authenticFindings() => [
+      findingJson('none', 'MATCHES', images: ['P2'], area: 'back', part: 'back_sensor', detailKind: 'MATERIAL', hard: true),
+      findingJson('none', 'MATCHES', images: ['P1'], area: 'crown', part: 'crown_side'),
+      findingJson('none', 'MATCHES', images: ['P1'], area: 'display', part: 'front_display'),
+    ];

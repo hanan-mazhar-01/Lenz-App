@@ -3,14 +3,17 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
-import '../../data/authentication_rules.dart';
 import '../../models/evidence.dart';
 import '../../viewmodels/scan_flow_viewmodel.dart';
 import '../../widgets/animations/bounce_button.dart';
 import '../../widgets/camera/android_zoom_slider.dart';
+import '../../widgets/camera/capture_guide_overlay.dart';
 import 'camera_preview_widget.dart';
 import '../../services/haptics.dart';
 
+/// Camera screen for one requested photo. Shows the part to photograph, why,
+/// a framing overlay, and distance / focus / lighting advice. The overlay is
+/// only a framing aid: capture is always allowed and nothing checks alignment.
 class GuidedCaptureView extends StatefulWidget {
   final EvidenceItem currentItem;
   final int currentIndex;
@@ -19,6 +22,14 @@ class GuidedCaptureView extends StatefulWidget {
   final VoidCallback? onSkip;
   final VoidCallback? onMarkUnavailable;
   final VoidCallback onBack;
+
+  /// Which photo of the scan this will be (1-based), and the maximum.
+  final int photoNumber;
+  final int maxPhotos;
+
+  /// 0-1 share of the evidence the leading result still needs.
+  final double evidenceProgress;
+  final String progressLabel;
 
   const GuidedCaptureView({
     super.key,
@@ -29,6 +40,10 @@ class GuidedCaptureView extends StatefulWidget {
     this.onSkip,
     this.onMarkUnavailable,
     required this.onBack,
+    this.photoNumber = 1,
+    this.maxPhotos = 6,
+    this.evidenceProgress = 0,
+    this.progressLabel = '',
   });
 
   @override
@@ -46,11 +61,7 @@ class _GuidedCaptureViewState extends State<GuidedCaptureView> {
   Future<void> _toggleFlash() async {
     Haptics.lightImpact();
     final isTorch = await _cameraKey.currentState?.toggleFlash() ?? false;
-    if (mounted) {
-      setState(() {
-        _isFlashOn = isTorch;
-      });
-    }
+    if (mounted) setState(() => _isFlashOn = isTorch);
   }
 
   void _handleZoomChanged(double zoom) {
@@ -58,411 +69,360 @@ class _GuidedCaptureViewState extends State<GuidedCaptureView> {
     _cameraKey.currentState?.setZoom(zoom);
   }
 
+  void _submit(String? path) {
+    if (widget.onCapture != null) {
+      widget.onCapture!(path);
+    } else {
+      context.read<ScanFlowViewModel>().submitEvidencePhoto(path);
+    }
+  }
+
   Future<void> _handleCapture() async {
     if (_isCapturing) return;
     Haptics.mediumImpact();
     setState(() => _isCapturing = true);
-
     String? capturedPath;
     try {
-      final xFile = await _cameraKey.currentState?.takePicture();
-      if (xFile != null) {
-        capturedPath = xFile.path;
-      }
+      capturedPath = (await _cameraKey.currentState?.takePicture())?.path;
     } catch (e) {
       debugPrint('[GuidedCaptureView] takePicture error: $e');
     }
-
     if (mounted) {
       setState(() => _isCapturing = false);
-      if (widget.onCapture != null) {
-        widget.onCapture!(capturedPath);
-      } else {
-        context.read<ScanFlowViewModel>().submitEvidencePhoto(capturedPath);
-      }
+      _submit(capturedPath);
     }
   }
 
   Future<void> _pickFromGallery() async {
     Haptics.lightImpact();
     try {
-      final picker = ImagePicker();
-      final picked = await picker.pickImage(
+      // Keep close to the original resolution: small engravings and label
+      // text are lost if the photo is shrunk to 1920 px and recompressed.
+      final picked = await ImagePicker().pickImage(
         source: ImageSource.gallery,
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 88,
+        maxWidth: 4096,
+        maxHeight: 4096,
+        imageQuality: 95,
       );
-      if (picked != null && mounted) {
-        if (widget.onCapture != null) {
-          widget.onCapture!(picked.path);
-        } else {
-          context.read<ScanFlowViewModel>().submitEvidencePhoto(picked.path);
-        }
-      }
+      if (picked != null && mounted) _submit(picked.path);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gallery error: $e')),
+          const SnackBar(content: Text("Couldn't open your photos. Check the Photos permission in Settings.")),
         );
       }
     }
   }
 
+  void _showExample() {
+    final item = widget.currentItem;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.warmIvory,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (_) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CaptureGuideIllustration(type: item.guideType, size: 96),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(item.title,
+                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.nearBlack)),
+                        const SizedBox(height: 4),
+                        Text(item.guide, style: const TextStyle(fontSize: 13.5, height: 1.35, color: AppColors.charcoalGray)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'This drawing shows what to frame. It is not a reference image of your model; no verified reference photo is available for it yet.',
+                style: TextStyle(fontSize: 12, height: 1.35, color: AppColors.softGray),
+              ),
+              if (item.aiChecks.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                const Text('What we will look at', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                for (final c in item.aiChecks)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text('• $c', style: const TextStyle(fontSize: 13, color: AppColors.charcoalGray)),
+                  ),
+                const Text('Suggested by AI for this model; not independently verified.',
+                    style: TextStyle(fontSize: 11.5, color: AppColors.softGray)),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final item = widget.currentItem;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final viewfinderWidth = (screenWidth * 0.80).clamp(280.0, 360.0);
-    final viewfinderHeight = viewfinderWidth * 1.06;
-
     return Scaffold(
       backgroundColor: AppColors.warmIvory,
       body: SafeArea(
         bottom: false,
         child: Column(
           children: [
-            // ─── Top bar: Back, Title, Skip + Flash
-            _buildTopBar(context),
-
-            // ─── Middle: Viewfinder + Progress + Guidance
+            _buildTopBar(),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: _buildProgress(),
+            ),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 22),
+              child: Column(
+                children: [
+                  Text(
+                    item.title,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        color: AppColors.nearBlack, fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: -0.2),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    item.guide,
+                    textAlign: TextAlign.center,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppColors.charcoalGray, fontSize: 12.5, height: 1.3),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
             Expanded(
-              child: SingleChildScrollView(
-                physics: const NeverScrollableScrollPhysics(),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 6),
-
-                      // ─── Progress indicator line
-                      _buildProgressIndicator(),
-
-                      const SizedBox(height: 10),
-
-                      // ─── Current evidence text
-                      Text(
-                        item.title,
-                        style: const TextStyle(
-                          color: AppColors.nearBlack,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.2,
+              child: LayoutBuilder(builder: (context, constraints) {
+                final w = (constraints.maxWidth * 0.86).clamp(240.0, 380.0);
+                final h = (constraints.maxHeight - 64).clamp(200.0, w * 1.15);
+                return Column(
+                  children: [
+                    Center(
+                      child: Container(
+                        width: w,
+                        height: h,
+                        decoration: BoxDecoration(
+                          color: AppColors.veryLightWarmGray,
+                          borderRadius: BorderRadius.circular(26),
+                          boxShadow: [
+                            BoxShadow(color: AppColors.nearBlack.withOpacity(0.08), blurRadius: 20, offset: const Offset(0, 6)),
+                          ],
                         ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        item.guide,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: AppColors.charcoalGray,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w400,
-                          height: 1.3,
-                        ),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      // Viewfinder Card with camera preview + reticle
-                      Center(
-                        child: Container(
-                          width: viewfinderWidth,
-                          height: viewfinderHeight,
-                          decoration: BoxDecoration(
-                            color: AppColors.veryLightWarmGray,
-                            borderRadius: BorderRadius.circular(28),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.nearBlack.withOpacity(0.08),
-                                blurRadius: 20,
-                                offset: const Offset(0, 6),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(26),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              CameraPreviewWidget(
+                                key: _cameraKey,
+                                onZoomChanged: (zoom) {
+                                  if (mounted) setState(() => _zoomLevel = zoom);
+                                },
+                                onControllerReady: (_) {
+                                  if (mounted) {
+                                    setState(() {
+                                      _zoomLevel = _cameraKey.currentState?.currentZoom ?? 1.0;
+                                      _minZoom = _cameraKey.currentState?.minZoom ?? 1.0;
+                                      _maxZoom = _cameraKey.currentState?.maxZoom ?? 4.0;
+                                    });
+                                  }
+                                },
+                              ),
+                              CaptureGuideOverlay(
+                                type: item.guideType,
+                                label: 'Line up the part inside the guide. It is a framing aid only.',
                               ),
                             ],
                           ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(28),
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                CameraPreviewWidget(
-                                  key: _cameraKey,
-                                  onZoomChanged: (zoom) {
-                                    if (mounted) setState(() => _zoomLevel = zoom);
-                                  },
-                                  onControllerReady: (_) {
-                                    if (mounted) {
-                                      setState(() {
-                                        _zoomLevel = _cameraKey.currentState?.currentZoom ?? 1.0;
-                                        _minZoom = _cameraKey.currentState?.minZoom ?? 1.0;
-                                        _maxZoom = _cameraKey.currentState?.maxZoom ?? 4.0;
-                                      });
-                                    }
-                                  },
-                                ),
-
-                                // Framing guide
-                                Center(
-                                  child: Builder(
-                                    builder: (context) {
-                                      final frame = CaptureFrame.forEvidence(item.id, title: item.title);
-                                      final width = viewfinderWidth * 0.65;
-                                      final height = width * frame.aspect;
-                                      final isCircle = frame == CaptureFrame.circle;
-                                      return Container(
-                                        width: width,
-                                        height: height,
-                                        decoration: BoxDecoration(
-                                          shape: isCircle ? BoxShape.circle : BoxShape.rectangle,
-                                          borderRadius: isCircle ? null : BorderRadius.circular(16),
-                                          border: Border.all(
-                                            color: Colors.white.withOpacity(0.55),
-                                            width: 1.6,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-
-                                // "Place the item inside the frame" pill at bottom
-                                Positioned(
-                                  bottom: 12,
-                                  left: 14,
-                                  right: 14,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.55),
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                    child: Text(
-                                      'Place the item inside the frame',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        color: Colors.white.withOpacity(0.9),
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
                         ),
                       ),
-
-                      const SizedBox(height: 8),
-                    ],
-                  ),
-                ),
-              ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(height: 56, width: w, child: _buildTips(item)),
+                  ],
+                );
+              }),
             ),
-
-            // ─── Bottom controls: Zoom + Shutter row
-            _buildBottomControlCard(context),
+            _buildBottomControlCard(),
           ],
         ),
       ),
     );
   }
 
-  /// Top bar: [←] [Capture Evidence + step count] [Skip] [Flash]
-  Widget _buildTopBar(BuildContext context) {
+  Widget _buildTips(EvidenceItem item) {
+    Widget tip(IconData icon, String text) => Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(icon, size: 13, color: AppColors.deepForestGreen),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(text,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 10.5, height: 1.2, color: AppColors.charcoalGray)),
+              ),
+            ],
+          ),
+        );
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: _showExample,
+          child: Column(
+            children: [
+              CaptureGuideIllustration(type: item.guideType, size: 40),
+              const SizedBox(height: 2),
+              const Text('Example', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.nearBlack)),
+            ],
+          ),
+        ),
+        const SizedBox(width: 10),
+        tip(CupertinoIcons.arrow_up_left_arrow_down_right, item.tips.distance),
+        const SizedBox(width: 8),
+        tip(CupertinoIcons.scope, item.tips.focus),
+        const SizedBox(width: 8),
+        tip(CupertinoIcons.sun_max, item.tips.lighting),
+      ],
+    );
+  }
+
+  Widget _circleButton({required VoidCallback onTap, required Widget child, Color? color}) => BounceButton(
+        onTap: onTap,
+        child: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: color ?? AppColors.veryLightWarmGray,
+            shape: BoxShape.circle,
+            border: Border.all(color: AppColors.nearBlack.withOpacity(0.06)),
+          ),
+          child: Center(child: child),
+        ),
+      );
+
+  Widget _buildTopBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Back button
-          BounceButton(
+          _circleButton(
             onTap: widget.onBack,
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: AppColors.veryLightWarmGray,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: AppColors.nearBlack.withOpacity(0.06),
-                ),
-              ),
-              child: const Center(
-                child: Icon(
-                  CupertinoIcons.chevron_back,
-                  color: AppColors.nearBlack,
-                  size: 18,
-                ),
-              ),
-            ),
+            child: const Icon(CupertinoIcons.chevron_back, color: AppColors.nearBlack, size: 18),
           ),
-
-          // Center title + step counter
           Expanded(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.camera_alt_rounded,
-                      size: 18,
-                      color: AppColors.deepForestGreen,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Capture Evidence',
-                      style: const TextStyle(
-                        color: AppColors.nearBlack,
-                        fontSize: 16.5,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                  ],
-                ),
+                const Text('Capture Evidence',
+                    style: TextStyle(color: AppColors.nearBlack, fontSize: 16.5, fontWeight: FontWeight.w800, letterSpacing: -0.3)),
                 const SizedBox(height: 3),
                 Text(
-                  '${widget.currentIndex + 1} of ${widget.totalCount}',
-                  style: const TextStyle(
-                    color: AppColors.charcoalGray,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w500,
-                  ),
+                  'Photo ${widget.photoNumber} of up to ${widget.maxPhotos}',
+                  style: const TextStyle(color: AppColors.charcoalGray, fontSize: 11.5, fontWeight: FontWeight.w500),
                 ),
               ],
             ),
           ),
-
-          // Flash button (Skip removed)
-          BounceButton(
+          _circleButton(
             onTap: _toggleFlash,
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: _isFlashOn ? AppColors.deepForestGreen : AppColors.veryLightWarmGray,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: AppColors.nearBlack.withOpacity(0.06),
-                ),
-              ),
-              child: Center(
-                child: Icon(
-                  _isFlashOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
-                  color: _isFlashOn ? Colors.white : AppColors.nearBlack,
-                  size: 18,
-                ),
-              ),
-            ),
+            color: _isFlashOn ? AppColors.deepForestGreen : null,
+            child: Icon(_isFlashOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
+                color: _isFlashOn ? Colors.white : AppColors.nearBlack, size: 18),
           ),
         ],
       ),
     );
   }
 
-  /// Progress indicator: small segments for each evidence item
-  Widget _buildProgressIndicator() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Row(
-        children: List.generate(widget.totalCount, (i) {
-          final isActive = i == widget.currentIndex;
-          final isCompleted = i < widget.currentIndex;
-          return Expanded(
-            child: Container(
-              height: 3.5,
-              margin: EdgeInsets.only(right: i < widget.totalCount - 1 ? 4 : 0),
-              decoration: BoxDecoration(
-                color: isCompleted
-                    ? AppColors.deepForestGreen
-                    : isActive
-                        ? AppColors.deepForestGreen.withOpacity(0.5)
-                        : AppColors.nearBlack.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          );
-        }),
-      ),
+  /// Progress of useful evidence, not of photos taken.
+  Widget _buildProgress() {
+    return Column(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: LinearProgressIndicator(
+            value: widget.evidenceProgress.clamp(0.0, 1.0),
+            minHeight: 4,
+            backgroundColor: AppColors.nearBlack.withOpacity(0.08),
+            valueColor: const AlwaysStoppedAnimation(AppColors.deepForestGreen),
+          ),
+        ),
+        if (widget.progressLabel.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Text(widget.progressLabel,
+              style: const TextStyle(fontSize: 11, color: AppColors.charcoalGray, fontWeight: FontWeight.w500)),
+        ],
+      ],
     );
   }
 
-  /// Bottom control card: zoom row + shutter + gallery/info
-  Widget _buildBottomControlCard(BuildContext context) {
+  Widget _labelledButton({required IconData icon, required String label, required VoidCallback onTap}) => BounceButton(
+        onTap: onTap,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: AppColors.pureWhite,
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.nearBlack.withOpacity(0.07)),
+              ),
+              child: Center(child: Icon(icon, size: 22, color: AppColors.nearBlack)),
+            ),
+            const SizedBox(height: 5),
+            Text(label, style: const TextStyle(color: AppColors.charcoalGray, fontSize: 11, fontWeight: FontWeight.w500)),
+          ],
+        ),
+      );
+
+  Widget _buildBottomControlCard() {
+    final item = widget.currentItem;
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
         color: AppColors.veryLightWarmGray,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(36)),
-        border: Border(
-          top: BorderSide(
-            color: AppColors.nearBlack.withOpacity(0.05),
-            width: 1.0,
-          ),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.nearBlack.withOpacity(0.04),
-            blurRadius: 16,
-            offset: const Offset(0, -4),
-          ),
-        ],
+        border: Border(top: BorderSide(color: AppColors.nearBlack.withOpacity(0.05))),
+        boxShadow: [BoxShadow(color: AppColors.nearBlack.withOpacity(0.04), blurRadius: 16, offset: const Offset(0, -4))],
       ),
-      padding: const EdgeInsets.fromLTRB(28, 18, 28, 38),
+      padding: const EdgeInsets.fromLTRB(28, 14, 28, 30),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Android Camera Zoom Slider above shutter
-          _buildZoomSlider(),
-          const SizedBox(height: 16),
-
-          // Camera controls row
+          AndroidCameraZoomSlider(
+            currentZoom: _zoomLevel,
+            minZoom: _minZoom,
+            maxZoom: _maxZoom,
+            onZoomChanged: _handleZoomChanged,
+          ),
+          const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Gallery button
-              BounceButton(
+              _labelledButton(
+                icon: item.screenshotOk ? Icons.screenshot_outlined : Icons.image_outlined,
+                label: item.screenshotOk ? 'Screenshot' : 'Gallery',
                 onTap: _pickFromGallery,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        color: AppColors.pureWhite,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: AppColors.nearBlack.withOpacity(0.07),
-                        ),
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.image_outlined,
-                          size: 23,
-                          color: AppColors.nearBlack,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    const Text(
-                      'Gallery',
-                      style: TextStyle(
-                        color: AppColors.charcoalGray,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
               ),
-
-              // Shutter button
               BounceButton(
                 scaleLower: 0.92,
                 onTap: _handleCapture,
@@ -472,136 +432,32 @@ class _GuidedCaptureViewState extends State<GuidedCaptureView> {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: AppColors.pureWhite,
-                    border: Border.all(
-                      color: AppColors.deepForestGreen,
-                      width: 3.5,
-                    ),
+                    border: Border.all(color: AppColors.deepForestGreen, width: 3.5),
                     boxShadow: [
-                      BoxShadow(
-                        color: AppColors.deepForestGreen.withOpacity(0.18),
-                        blurRadius: 14,
-                        offset: const Offset(0, 4),
-                      ),
+                      BoxShadow(color: AppColors.deepForestGreen.withOpacity(0.18), blurRadius: 14, offset: const Offset(0, 4)),
                     ],
                   ),
                   padding: const EdgeInsets.all(5),
                   child: Container(
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.deepForestGreen,
-                    ),
+                    decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.deepForestGreen),
                     child: _isCapturing
-                        ? const Center(
-                            child: CupertinoActivityIndicator(
-                              color: Colors.white,
-                              radius: 12,
-                            ),
-                          )
+                        ? const Center(child: CupertinoActivityIndicator(color: Colors.white, radius: 12))
                         : null,
                   ),
                 ),
               ),
-
-              // "I don't have this" button
-              if (widget.onMarkUnavailable != null)
-                BounceButton(
-                  onTap: () {
-                    Haptics.lightImpact();
-                    widget.onMarkUnavailable!();
-                  },
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: AppColors.pureWhite,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: AppColors.nearBlack.withOpacity(0.07),
-                          ),
-                        ),
-                        child: const Center(
-                          child: Icon(
-                            CupertinoIcons.nosign,
-                            size: 20,
-                            color: AppColors.nearBlack,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      const Text(
-                        "Don't have",
-                        style: TextStyle(
-                          color: AppColors.charcoalGray,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              else
-                BounceButton(
-                  onTap: () {
-                    Haptics.lightImpact();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(widget.currentItem.reason.isNotEmpty
-                            ? widget.currentItem.reason
-                            : widget.currentItem.guide),
-                        duration: const Duration(seconds: 2),
-                      ),
-                    );
-                  },
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: AppColors.pureWhite,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: AppColors.nearBlack.withOpacity(0.07),
-                          ),
-                        ),
-                        child: const Center(
-                          child: Icon(
-                            CupertinoIcons.info,
-                            size: 20,
-                            color: AppColors.nearBlack,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      const Text(
-                        'Tip',
-                        style: TextStyle(
-                          color: AppColors.charcoalGray,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              _labelledButton(
+                icon: CupertinoIcons.nosign,
+                label: "Can't take",
+                onTap: () {
+                  Haptics.lightImpact();
+                  (widget.onMarkUnavailable ?? widget.onSkip ?? widget.onBack)();
+                },
+              ),
             ],
           ),
         ],
       ),
-    );
-  }
-
-  /// Android-style Horizontal Zoom Slider: Quick Presets + Swipe Ruler
-  Widget _buildZoomSlider() {
-    return AndroidCameraZoomSlider(
-      currentZoom: _zoomLevel,
-      minZoom: _minZoom,
-      maxZoom: _maxZoom,
-      onZoomChanged: _handleZoomChanged,
     );
   }
 }

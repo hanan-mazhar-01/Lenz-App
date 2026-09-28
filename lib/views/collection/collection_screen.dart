@@ -101,7 +101,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
               const SizedBox(height: 10),
               _detailRow(ctx, 'Result', item.verdict.label),
               const SizedBox(height: 8),
-              _detailRow(ctx, 'Authentication Confidence', '${item.authenticationConfidence}%'),
+              _detailRow(ctx, item.strengthLabel != null ? 'Evidence' : 'Authentication Confidence', item.confidenceLabel),
               if (item.evidenceCoverageText.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 _detailRow(ctx, 'Evidence Coverage', item.evidenceCoverageText),
@@ -320,7 +320,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
                                                 borderRadius: BorderRadius.circular(6),
                                               ),
                                               child: Text(
-                                                '${item.authenticationConfidence}%',
+                                                item.confidenceLabel,
                                                 style: TextStyle(
                                                   color: _verdictColor(item.verdict),
                                                   fontSize: 9.5,

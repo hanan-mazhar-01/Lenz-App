@@ -20,6 +20,8 @@ class GeminiService {
     int? maxOutputTokens,
     Duration? timeout,
     Map<String, dynamic>? responseSchema,
+    String? scanId,
+    String? thinkingLevel,
   }) async {
     final label = requestTypeLabel ?? 'inference';
     final startTime = DateTime.now();
@@ -44,6 +46,8 @@ class GeminiService {
           maxOutputTokens ?? GeminiConfig.maxOutputTokens,
           timeout ?? GeminiConfig.timeout,
           responseSchema,
+          scanId,
+          thinkingLevel,
         );
         final elapsed = DateTime.now().difference(startTime).inMilliseconds;
         if (kDebugMode) {
@@ -113,6 +117,8 @@ class GeminiService {
     int maxOutputTokens,
     Duration timeout,
     Map<String, dynamic>? responseSchema,
+    String? scanId,
+    String? thinkingLevel,
   ) async {
     try {
       final callable = _functions.httpsCallable(
@@ -134,6 +140,11 @@ class GeminiService {
       if (responseSchema != null) {
         payload['responseSchema'] = responseSchema;
       }
+      // Correlation id (joins app and function logs; also the billing
+      // session) and the thinking level. Older deployed functions ignore
+      // both fields.
+      if (scanId != null) payload['scanId'] = scanId;
+      if (thinkingLevel != null) payload['thinkingLevel'] = thinkingLevel;
 
       final result = await callable.call<dynamic>(payload).timeout(timeout);
 

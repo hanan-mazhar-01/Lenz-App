@@ -24,6 +24,13 @@ class CollectionItem {
 
   final String? notes;
 
+  /// Engine v3 qualitative evidence label ("Strong evidence"). Null for
+  /// items saved from older reports, which show their percentage instead.
+  final String? strengthLabel;
+
+  /// What the list shows next to the verdict.
+  String get confidenceLabel => strengthLabel ?? '$authenticationConfidence%';
+
   const CollectionItem({
     required this.id,
     required this.name,
@@ -38,6 +45,7 @@ class CollectionItem {
     this.evidenceCoverageText = '',
     this.sourceReportId,
     this.notes,
+    this.strengthLabel,
   });
 
   factory CollectionItem.fromReport(AuthenticationReport report) {
@@ -55,6 +63,7 @@ class CollectionItem {
       scannedDate: report.timestamp,
       sourceReportId: report.id,
       notes: report.rationale,
+      strengthLabel: report.usesQualitativeStrength ? report.strengthLabel : null,
     );
   }
 
@@ -72,6 +81,7 @@ class CollectionItem {
     DateTime? scannedDate,
     String? sourceReportId,
     String? notes,
+    String? strengthLabel,
   }) {
     return CollectionItem(
       id: id ?? this.id,
@@ -87,6 +97,7 @@ class CollectionItem {
       scannedDate: scannedDate ?? this.scannedDate,
       sourceReportId: sourceReportId ?? this.sourceReportId,
       notes: notes ?? this.notes,
+      strengthLabel: strengthLabel ?? this.strengthLabel,
     );
   }
 
@@ -104,6 +115,7 @@ class CollectionItem {
         'scannedDate': scannedDate.toIso8601String(),
         'sourceReportId': sourceReportId,
         'notes': notes,
+        if (strengthLabel != null) 'strengthLabel': strengthLabel,
       };
 
   factory CollectionItem.fromJson(Map<String, dynamic> json) {
@@ -138,6 +150,7 @@ class CollectionItem {
       scannedDate: DateTime.tryParse(json['scannedDate'] as String? ?? '') ?? DateTime.now(),
       sourceReportId: json['sourceReportId'] as String?,
       notes: json['notes'] as String?,
+      strengthLabel: json['strengthLabel'] as String?,
     );
   }
 }

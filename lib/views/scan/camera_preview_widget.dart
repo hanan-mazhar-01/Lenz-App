@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -124,14 +126,17 @@ class CameraPreviewWidgetState extends State<CameraPreviewWidget>
       await oldController.dispose();
     }
 
-    // "HD Multi-Angle Inspection" setting: veryHigh when on, medium when
-    // off, so the toggle actually changes what gets captured instead of
-    // always shooting at a single hardcoded preset regardless of its value.
+    // The resolution preset also sets the still-photo size. veryHigh is
+    // 1080p: real scans (2026-09-26) arrived as 1080x1920, where a watch
+    // crown or engraving spans only ~150 px. "HD Multi-Angle Inspection" (on
+    // by default) now captures at the sensor's full resolution so detail
+    // crops keep real detail; off falls back to 1080p (previously 480p,
+    // too small for authentication).
     if (!mounted) return;
     final hdQuality = context.read<StorageService>().getBool('hd_quality', defaultValue: true);
     final newController = CameraController(
       _cameras[cameraIndex],
-      hdQuality ? ResolutionPreset.veryHigh : ResolutionPreset.medium,
+      hdQuality ? ResolutionPreset.max : ResolutionPreset.veryHigh,
       enableAudio: false,
       imageFormatGroup: ImageFormatGroup.jpeg,
     );
@@ -235,11 +240,19 @@ class CameraPreviewWidgetState extends State<CameraPreviewWidget>
       return null;
     }
     try {
-      final file = await _controller!.takePicture();
+      // Some Android camera stacks stop answering after several open/close
+      // cycles; without a bound the shutter spins forever.
+      final file = await _controller!.takePicture().timeout(const Duration(seconds: 12));
       if (mounted && context.read<StorageService>().getBool('camera_sound', defaultValue: true)) {
         SystemSound.play(SystemSoundType.click);
       }
       return file;
+    } on TimeoutException {
+      if (kDebugMode) {
+        debugPrint('[CameraPreviewWidget] takePicture timed out after 12s - restarting camera');
+      }
+      if (mounted) unawaited(_initCameraController(_selectedCameraIndex));
+      return null;
     } catch (e) {
       if (kDebugMode) {
         debugPrint('[CameraPreviewWidget] takePicture error: $e');

@@ -1,3 +1,5 @@
+import '../core/config/authenticity_engine_config.dart';
+import 'authentication_assessment.dart';
 import 'evidence.dart';
 import 'product.dart';
 
@@ -162,6 +164,12 @@ class AuthenticationReport {
   /// Debug record of the analysis (§34). No personal data.
   final Map<String, dynamic> analysisLog;
 
+  /// Engine v3 structured assessment (§8). Null for older reports.
+  final AuthenticationAssessment? assessment;
+
+  /// Engine v3 qualitative evidence strength: strong / moderate / limited.
+  final String? evidenceStrength;
+
   const AuthenticationReport({
     required this.id,
     required this.product,
@@ -195,10 +203,29 @@ class AuthenticationReport {
     this.engineVersion = '1.0',
     this.promptVersion = '1.0',
     this.analysisLog = const {},
+    this.assessment,
+    this.evidenceStrength,
   }) : authenticationConfidence = authenticationConfidence ?? overallScore;
 
   /// Evidence items the user actually supplied and the app accepted.
   List<EvidenceItem> get acceptedEvidence => evidenceItems.where((e) => e.hasPhoto).toList();
+
+  int get engineMajor => int.tryParse(engineVersion.split('.').first) ?? 1;
+
+  /// Engine v3+ reports carry no numeric confidence (never calibrated);
+  /// screens show [strengthLabel] instead.
+  bool get usesQualitativeStrength => engineMajor >= AuthenticityEngineConfig.structuredAssessmentMajor;
+
+  /// "Strong evidence" / "Moderate evidence" / "Limited evidence" for v3,
+  /// or the old percentage for earlier reports.
+  String get strengthLabel {
+    if (!usesQualitativeStrength) return '$overallScore%';
+    final s = evidenceStrength ?? 'limited';
+    return '${s[0].toUpperCase()}${s.substring(1)} evidence';
+  }
+
+  /// Privacy-safe verdict diagnostics (§8).
+  Map<String, dynamic>? get diagnostics => analysisLog['diagnostics'] as Map<String, dynamic>?;
 
   AuthenticationReport copyWith({
     String? id,
@@ -233,6 +260,8 @@ class AuthenticationReport {
     String? engineVersion,
     String? promptVersion,
     Map<String, dynamic>? analysisLog,
+    AuthenticationAssessment? assessment,
+    String? evidenceStrength,
   }) {
     return AuthenticationReport(
       id: id ?? this.id,
@@ -267,6 +296,8 @@ class AuthenticationReport {
       engineVersion: engineVersion ?? this.engineVersion,
       promptVersion: promptVersion ?? this.promptVersion,
       analysisLog: analysisLog ?? this.analysisLog,
+      assessment: assessment ?? this.assessment,
+      evidenceStrength: evidenceStrength ?? this.evidenceStrength,
     );
   }
 
@@ -304,6 +335,8 @@ class AuthenticationReport {
       'engineVersion': engineVersion,
       'promptVersion': promptVersion,
       'analysisLog': analysisLog,
+      if (assessment != null) 'assessment': assessment!.toJson(),
+      if (evidenceStrength != null) 'evidenceStrength': evidenceStrength,
     };
   }
 
@@ -360,6 +393,10 @@ class AuthenticationReport {
       engineVersion: json['engineVersion'] as String? ?? '1.0',
       promptVersion: json['promptVersion'] as String? ?? '1.0',
       analysisLog: json['analysisLog'] is Map ? Map<String, dynamic>.from(json['analysisLog'] as Map) : const {},
+      assessment: json['assessment'] is Map
+          ? AuthenticationAssessment.fromJson(Map<String, dynamic>.from(json['assessment'] as Map))
+          : null,
+      evidenceStrength: json['evidenceStrength'] as String?,
     );
   }
 }

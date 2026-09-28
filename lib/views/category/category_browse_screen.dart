@@ -465,7 +465,7 @@ class CategoryBrowseScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    '${r.overallScore}% match',
+                    r.usesQualitativeStrength ? r.strengthLabel : '${r.overallScore}% match',
                     style: const TextStyle(
                       color: AppColors.nearBlack,
                       fontSize: 10.5,

@@ -60,7 +60,7 @@ class PartDetailView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isLowScore = item.status == EvidenceStatus.suspicious || item.score < 60;
+    final isLowScore = item.status == EvidenceStatus.suspicious || (item.score > 0 && item.score < 60);
     final displayImg = item.displayImage;
 
     return Scaffold(
@@ -217,6 +217,7 @@ class PartDetailView extends StatelessWidget {
                   ),
                   child: Row(
                     children: [
+                      if (item.score > 0) ...[
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.baseline,
                         textBaseline: TextBaseline.alphabetic,
@@ -246,6 +247,7 @@ class PartDetailView extends StatelessWidget {
                         color: AppColors.nearBlack.withOpacity(0.08),
                       ),
                       const SizedBox(width: 16),
+                      ],
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(

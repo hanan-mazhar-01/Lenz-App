@@ -287,9 +287,24 @@ class _AuthenticationReportViewState extends State<AuthenticationReportView> {
     // while everywhere else said "Likely Replica"/"Inconclusive".
     final String badgeText = report.verdict.label;
 
+    // Engine v3 reports carry no percentage: the same ring shows the
+    // evidence strength word instead of "0%".
+    final bool qualitative = report.usesQualitativeStrength;
+    final String strengthWord = (() {
+      final s = report.evidenceStrength ?? 'limited';
+      return '${s[0].toUpperCase()}${s.substring(1)}';
+    })();
+    final double ringProgress = qualitative
+        ? (report.evidenceStrength == 'strong' ? 1.0 : report.evidenceStrength == 'moderate' ? 0.66 : 0.33)
+        : (score / 100).clamp(0.0, 1.0);
+
     // 1-line reason explaining the confidence percentage clearly
     String singleLineReason;
-    if (isAuthentic) {
+    if (qualitative && (isAuthentic || isReplica)) {
+      singleLineReason = report.rationale.isNotEmpty
+          ? report.rationale.split('.').first
+          : (isAuthentic ? 'Based on the details visible in your photos.' : 'Based on product-specific inconsistencies.');
+    } else if (isAuthentic) {
       singleLineReason = '$score% confidence, based on the details visible in your photos.';
     } else if (isReplica) {
       singleLineReason = '$score% confidence, based on multiple product-specific inconsistencies.';
@@ -308,7 +323,7 @@ class _AuthenticationReportViewState extends State<AuthenticationReportView> {
           height: 88,
           child: CustomPaint(
             painter: _ScoreRingPainter(
-              progress: (score / 100).clamp(0.0, 1.0),
+              progress: ringProgress,
               color: ringColor,
             ),
             child: Center(
@@ -316,10 +331,10 @@ class _AuthenticationReportViewState extends State<AuthenticationReportView> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    '$score%',
-                    style: const TextStyle(
+                    qualitative ? strengthWord : '$score%',
+                    style: TextStyle(
                       color: AppColors.nearBlack,
-                      fontSize: 22.5,
+                      fontSize: qualitative ? 16 : 22.5,
                       fontWeight: FontWeight.w800,
                       height: 1.0,
                       letterSpacing: -0.5,
@@ -327,7 +342,7 @@ class _AuthenticationReportViewState extends State<AuthenticationReportView> {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    isReplica ? 'Replica' : (isAuthentic ? 'Authentic' : 'Confidence'),
+                    qualitative ? 'Evidence' : (isReplica ? 'Replica' : (isAuthentic ? 'Authentic' : 'Confidence')),
                     style: const TextStyle(
                       color: AppColors.charcoalGray,
                       fontSize: 9.5,
@@ -681,9 +696,25 @@ class _AuthenticationReportViewState extends State<AuthenticationReportView> {
                         ? item.score
                         : (item.photoQualityScore > 0 ? item.photoQualityScore : report.authenticationConfidence);
 
-                    final Color progressColor = itemPercent >= 75
-                        ? AppColors.deepForestGreen
-                        : (itemPercent >= 45 ? const Color(0xFFD97706) : const Color(0xFFDC2626));
+                    // v3 parts have no percentage: colour and label by status.
+                    final bool qualitative = report.usesQualitativeStrength;
+                    final Color progressColor = qualitative
+                        ? (item.status == EvidenceStatus.consistent
+                            ? AppColors.deepForestGreen
+                            : item.status == EvidenceStatus.suspicious
+                                ? const Color(0xFFDC2626)
+                                : const Color(0xFFD97706))
+                        : itemPercent >= 75
+                            ? AppColors.deepForestGreen
+                            : (itemPercent >= 45 ? const Color(0xFFD97706) : const Color(0xFFDC2626));
+                    final String badge = qualitative ? item.status.label : '$itemPercent%';
+                    // Qualitative parts: how much of the photo's detail could be
+                    // judged clearly (measured per report), not a fixed bar.
+                    final double bar = qualitative
+                        ? (item.clarity > 0
+                            ? (item.clarity / 100.0).clamp(0.05, 1.0)
+                            : (item.status == EvidenceStatus.inconclusive ? 0.4 : 1.0))
+                        : (itemPercent / 100.0).clamp(0.03, 1.0);
 
                     return InkWell(
                       onTap: () => widget.onSelectPart(item),
@@ -757,7 +788,7 @@ class _AuthenticationReportViewState extends State<AuthenticationReportView> {
                                       const SizedBox(width: 8),
                                       // Percentage badge text
                                       Text(
-                                        '$itemPercent%',
+                                        badge,
                                         style: TextStyle(
                                           color: progressColor,
                                           fontSize: 13,
@@ -777,7 +808,7 @@ class _AuthenticationReportViewState extends State<AuthenticationReportView> {
                                       child: Align(
                                         alignment: Alignment.centerLeft,
                                         child: FractionallySizedBox(
-                                          widthFactor: (itemPercent / 100.0).clamp(0.03, 1.0),
+                                          widthFactor: bar,
                                           child: Container(
                                             decoration: BoxDecoration(
                                               color: progressColor,

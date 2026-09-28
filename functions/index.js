@@ -1,6 +1,9 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 
+const gemini = require("./lib/gemini");
+const limits = require("./lib/limits");
+
 if (!admin.apps.length) {
   admin.initializeApp();
 }
@@ -10,20 +13,78 @@ if (!admin.apps.length) {
 // permissions instead of a cached pre-fix credential.
 const db = admin.firestore();
 
+// App Check: the Flutter app now sends App Check tokens. Enforcement stays
+// off until the Android/iOS apps are registered in Firebase Console -> App
+// Check (Play Integrity / App Attest) and debug tokens are added; then set
+// ENFORCE_APP_CHECK=true in functions/.env and redeploy. Until then the
+// verification result is only logged.
+const ENFORCE_APP_CHECK = process.env.ENFORCE_APP_CHECK === "true";
+
+function logEvent(event, fields, severity = "INFO") {
+  const entry = { severity, message: event, evt: event, ...fields };
+  if (severity === "ERROR") console.error(JSON.stringify(entry));
+  else if (severity === "WARNING") console.warn(JSON.stringify(entry));
+  else console.log(JSON.stringify(entry));
+}
+
+function httpsErrorFor(err) {
+  if (err instanceof functions.https.HttpsError) return err;
+  if (err instanceof limits.RequestError) return new functions.https.HttpsError(err.code, err.message);
+  if (err instanceof gemini.GeminiError) {
+    const map = {
+      rate_limited: "resource-exhausted",
+      auth: "unauthenticated",
+      unavailable: "unavailable",
+      network: "unavailable",
+      bad_request: "internal",
+      truncated: "internal",
+      blocked: "internal",
+      empty: "internal",
+      malformed: "internal",
+    };
+    // The client checks the reason word to decide whether to retry.
+    return new functions.https.HttpsError(map[err.code] || "internal", err.message, { reason: err.code });
+  }
+  return new functions.https.HttpsError("internal", "Unexpected server error.");
+}
+
+function requireAuth(context) {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "The function must be called while authenticated.");
+  }
+}
+
+function geminiKey() {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) {
+    console.error("[ai] GEMINI_API_KEY secret is not configured.");
+    throw new functions.https.HttpsError("failed-precondition", "AI service is not configured. Please contact support.");
+  }
+  return key;
+}
+
+const AI_RUNTIME = {
+  timeoutSeconds: 120,
+  memory: "512MB",
+  // Bound to Secret Manager. Set/update with:
+  //   firebase functions:secrets:set GEMINI_API_KEY
+  // then redeploy. Never hardcode a fallback key here.
+  secrets: ["GEMINI_API_KEY"],
+  enforceAppCheck: ENFORCE_APP_CHECK,
+};
+
 /**
  * Callable Cloud Function: generateStructuredContent
  *
- * Proxies Gemini 3.1 Flash Lite inference requests securely behind Firebase.
- * Enforces authentication, credit checks, and atomic quota decrements for scan finalization.
+ * Proxies gemini-3.1-flash-lite requests behind Firebase Auth. Validates and
+ * bounds every request, applies per-user rate limits, and charges scan
+ * credits per scan session independently of the request label (see
+ * lib/limits.js). Malformed, truncated or blocked AI responses are errors,
+ * never results.
  */
 exports.generateStructuredContent = functions
   .runWith({
-    timeoutSeconds: 120,
-    memory: "512MB",
-    // Bound to Secret Manager. Set/update with:
-    //   firebase functions:secrets:set GEMINI_API_KEY
-    // then redeploy. Never hardcode a fallback key here.
-    secrets: ["GEMINI_API_KEY"],
+    ...AI_RUNTIME,
     // Keep one instance warm at all times. This is the scan-finalization
     // and identification path the whole app depends on, so cold starts here
     // (Admin SDK + Secret Manager init, worse right after any redeploy) show
@@ -33,305 +94,92 @@ exports.generateStructuredContent = functions
     minInstances: 1,
   })
   .https.onCall(async (data, context) => {
-    // 0. Fail loudly (not with a bogus key) if the secret isn't configured.
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (!GEMINI_API_KEY) {
-      console.error(
-        "[generateStructuredContent] GEMINI_API_KEY secret is not configured."
-      );
-      throw new functions.https.HttpsError(
-        "failed-precondition",
-        "AI service is not configured. Please contact support."
-      );
-    }
-
-    // 1. Verify caller authentication
-    if (!context.auth) {
-      throw new functions.https.HttpsError(
-        "unauthenticated",
-        "The function must be called while authenticated."
-      );
-    }
-
+    const apiKey = geminiKey();
+    requireAuth(context);
     const uid = context.auth.uid;
-    const { prompt, inlineImages, requestTypeLabel, maxOutputTokens } = data;
-    // Optional Gemini responseSchema (engine v2). Bounded so a caller can't
-    // push an arbitrarily large object through the proxy.
-    const responseSchema =
-      data.responseSchema && typeof data.responseSchema === "object" &&
-      JSON.stringify(data.responseSchema).length < 30000
-        ? data.responseSchema
-        : null;
+    const started = Date.now();
 
-    if (!prompt || typeof prompt !== "string") {
-      throw new functions.https.HttpsError(
-        "invalid-argument",
-        "The function must be called with a valid 'prompt' string."
-      );
+    let req;
+    try {
+      req = limits.validateGenerateRequest(data);
+    } catch (e) {
+      throw httpsErrorFor(e);
     }
+    const cid = req.scanId || "no-scan-id";
 
-    const userRef = db.collection("users").doc(uid);
-
-    // 2. Transactional credit check/decrement for scan finalization
-    const isScanFinalization =
-      requestTypeLabel === "multi_image_forensic_observations";
-
-    // Tracks whether this request actually took a credit, so it can be
-    // refunded if the AI call below ends up failing (see the catch around
-    // step 3) - otherwise a Gemini-side outage silently burns a user's
-    // limited free scans for a result they never got.
-    let creditDecremented = false;
-
-    if (isScanFinalization) {
-      await db.runTransaction(async (transaction) => {
-        const userDoc = await transaction.get(userRef);
-
-        const isAnon =
-          context.auth.token.firebase &&
-          context.auth.token.firebase.sign_in_provider === "anonymous";
-
-        let isPremium = false;
-        let scansRemaining = 5;
-
-        if (userDoc.exists) {
-          const userData = userDoc.data();
-          isPremium = Boolean(userData.isPremium);
-          scansRemaining =
-            typeof userData.scansRemaining === "number"
-              ? userData.scansRemaining
-              : 5;
-        } else {
-          // Initialize document if it doesn't exist yet
-          scansRemaining = isAnon ? 3 : 5;
-          transaction.set(userRef, {
-            name: context.auth.token.name || (isAnon ? "Guest Collector" : "Collector"),
-            email: context.auth.token.email || "",
-            planName: isAnon ? "Guest Plan" : "Free Plan",
-            isPremium: false,
-            scansRemaining: scansRemaining,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
-        }
-
-        // Credit cap/decrement temporarily applies to guests only - signed-in
-        // free accounts are uncapped for now (paywall disabled client-side
-        // too, see main_navigation_shell.dart). Left scoped to isAnon rather
-        // than removed outright so re-enabling for real accounts later is a
-        // one-line change back to unconditional.
-        if (isAnon) {
-          if (!isPremium && scansRemaining <= 0) {
-            throw new functions.https.HttpsError(
-              "resource-exhausted",
-              "No scan credits remaining. Please upgrade to premium."
-            );
-          }
-
-          if (!isPremium) {
-            transaction.update(userRef, {
-              scansRemaining: scansRemaining - 1,
-              lastScanAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
-            creditDecremented = true;
-          }
-        }
-      });
+    let admission;
+    try {
+      admission = await limits.admitCall({ db, admin, uid, token: context.auth.token, scanId: req.scanId, imageCount: req.images.length });
+    } catch (e) {
+      logEvent("ai_call_rejected", { cid, user: limits.logId(uid), label: req.label, reason: e.message }, "WARNING");
+      throw httpsErrorFor(e);
     }
 
     try {
-      return await callGeminiAndParse({ inlineImages, prompt, maxOutputTokens, responseSchema, GEMINI_API_KEY });
+      const decoded = await gemini.generateContent({
+        apiKey,
+        parts: [...req.images, { text: req.prompt }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          // Determinism for repeat scans: temperature 0 always takes the most
+          // likely token, and a fixed seed pins any remaining sampling.
+          temperature: 0,
+          seed: 20260926,
+          maxOutputTokens: req.maxOutputTokens,
+          ...(req.responseSchema ? { responseSchema: req.responseSchema } : {}),
+          thinkingConfig: gemini.thinkingConfigFor(req.thinkingLevel),
+        },
+        timeoutMs: 100000,
+      });
+      const candidate = gemini.finishedCandidate(decoded);
+      const parsed = gemini.parseJsonAnswer(gemini.answerText(candidate));
+      const usage = gemini.usageSummary(decoded);
+      parsed._meta = {
+        model: gemini.MODEL,
+        finishReason: candidate.finishReason || "STOP",
+        schemaEnforced: Boolean(req.responseSchema),
+        thinkingLevel: req.thinkingLevel || "none",
+        correlationId: cid,
+        creditCharged: admission.charged,
+        // Token counts, so the app can record actual usage and cost.
+        usage: decoded.usageMetadata || null,
+      };
+      logEvent("ai_call", {
+        cid,
+        user: limits.logId(uid),
+        label: req.label,
+        images: req.images.length,
+        imageKB: Math.round((req.imageChars * 3) / 4 / 1024),
+        thinking: req.thinkingLevel || "none",
+        finish: parsed._meta.finishReason,
+        ms: Date.now() - started,
+        charged: admission.charged,
+        appCheck: context.app ? "valid" : "missing",
+        ...usage,
+      });
+      return parsed;
     } catch (err) {
-      if (creditDecremented) {
+      if (admission.charged) {
         try {
-          await userRef.update({
-            scansRemaining: admin.firestore.FieldValue.increment(1),
-          });
-          console.warn(
-            `[generateStructuredContent] Refunded 1 scan credit to uid=${uid} after AI call failure.`
-          );
+          await limits.refundCall({ db, admin, sessionRef: admission.sessionRef, userRef: admission.userRef });
+          logEvent("credit_refunded", { cid, user: limits.logId(uid) }, "WARNING");
         } catch (refundErr) {
-          console.error(
-            `[generateStructuredContent] Failed to refund scan credit to uid=${uid}:`,
-            refundErr
-          );
+          logEvent("credit_refund_failed", { cid, user: limits.logId(uid), error: refundErr.message }, "ERROR");
         }
       }
-      throw err;
+      // Content-free: never log prompts, images or model output (they can
+      // contain serial numbers read from the user's photos).
+      logEvent("ai_call_failed", {
+        cid,
+        user: limits.logId(uid),
+        label: req.label,
+        reason: err.code || "unknown",
+        error: String(err.message || err).slice(0, 200),
+        ms: Date.now() - started,
+      }, "ERROR");
+      throw httpsErrorFor(err);
     }
   });
-
-/**
- * Calls Gemini (with model failover) and parses the structured JSON response.
- * Split out from the main handler so the credit-refund catch above can wrap
- * it without duplicating the request/parsing logic.
- */
-async function callGeminiAndParse({ inlineImages, prompt, maxOutputTokens, responseSchema, GEMINI_API_KEY }) {
-    // 3. Construct Gemini API request payload matching client shape
-    const parts = [];
-    if (Array.isArray(inlineImages) && inlineImages.length > 0) {
-      parts.push(...inlineImages);
-    }
-    parts.push({ text: prompt });
-
-    const basePayload = {
-      contents: [{ parts }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        // Determinism for repeat scans: temperature 0 always takes the most
-        // likely token, and a fixed seed pins any remaining sampling. The
-        // same photos should produce the same findings.
-        temperature: 0,
-        seed: 20260926,
-        maxOutputTokens: maxOutputTokens || 2048,
-        ...(responseSchema ? { responseSchema } : {}),
-      },
-    };
-
-    // Gemini returns transient 429/5xx errors (e.g. "model experiencing high
-    // demand") fairly often, sometimes for many minutes straight on one
-    // model (observed 2026-09-23: gemini-3.1-flash-lite down ~45+ min).
-    // Retry server-side, and fail over to a sibling model with a separate
-    // capacity pool if the primary stays down. thinkingConfig is a
-    // gemini-3.1-flash-lite-specific hint - gemini-3.5-flash-lite rejected
-    // it outright with 400 INVALID_ARGUMENT, so it's added per-model, not
-    // globally.
-    const modelCandidates = [
-      { name: "gemini-3.1-flash-lite", thinkingConfig: { thinkingBudget: 0 } },
-      { name: "gemini-3.5-flash-lite", thinkingConfig: null },
-    ];
-    // Keep this tight: the client's own request timeout for these calls is
-    // as low as 30s (see gemini_authentication_repository.dart), and the
-    // observed worst case with attemptsPerModel=2 blew past that (42-77s),
-    // so the client gave up and showed a false "Request Timed Out" even on
-    // a call that later succeeded server-side. One quick try per model,
-    // fail over fast - sustained resilience comes from the client's own
-    // retry loop across separate invocations, not from padding this one.
-    const attemptsPerModel = 1;
-    let response;
-    let usedModel = null;
-    modelLoop: for (let m = 0; m < modelCandidates.length; m++) {
-      const { name: modelName, thinkingConfig } = modelCandidates[m];
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GEMINI_API_KEY}`;
-      const payload = thinkingConfig
-        ? { ...basePayload, generationConfig: { ...basePayload.generationConfig, thinkingConfig } }
-        : basePayload;
-      for (let attempt = 1; attempt <= attemptsPerModel; attempt++) {
-        const isLastOverallAttempt = m === modelCandidates.length - 1 && attempt === attemptsPerModel;
-        try {
-          response = await fetch(geminiUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "x-goog-api-key": GEMINI_API_KEY,
-            },
-            body: JSON.stringify(payload),
-          });
-        } catch (networkError) {
-          if (isLastOverallAttempt) {
-            throw new functions.https.HttpsError(
-              "unavailable",
-              "Failed to connect to AI analysis service: " + networkError.message
-            );
-          }
-          console.warn(`[Gemini network error] model=${modelName} attempt ${attempt}/${attemptsPerModel}: ${networkError.message}`);
-          await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
-          continue;
-        }
-
-        if (response.ok) {
-          usedModel = modelName;
-          break modelLoop;
-        }
-
-        const status = response.status;
-        const isTransient = status === 429 || status >= 500;
-        if (isTransient && !isLastOverallAttempt) {
-          const errText = await response.text();
-          console.warn(`[Gemini HTTP Error ${status}] model=${modelName} attempt ${attempt}/${attemptsPerModel}, retrying...`, errText);
-          await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
-          continue;
-        }
-
-        const errText = await response.text();
-        console.error(`[Gemini HTTP Error ${status}] model=${modelName} attempt ${attempt}/${attemptsPerModel}, giving up`, errText);
-
-        if (status === 429) {
-          throw new functions.https.HttpsError(
-            "resource-exhausted",
-            "AI service rate limit reached. Please retry in a moment."
-          );
-        } else if (status === 401 || status === 403) {
-          throw new functions.https.HttpsError(
-            "unauthenticated",
-            "AI service authorization error."
-          );
-        } else if (status >= 500) {
-          throw new functions.https.HttpsError(
-            "unavailable",
-            `AI service temporarily unavailable (status ${status}).`
-          );
-        } else {
-          throw new functions.https.HttpsError(
-            "internal",
-            `AI service returned status ${status}`
-          );
-        }
-      }
-    }
-
-    const decoded = await response.json();
-    const candidates = decoded.candidates;
-    if (!candidates || candidates.length === 0) {
-      throw new functions.https.HttpsError(
-        "internal",
-        "No candidates returned by AI service."
-      );
-    }
-
-    const content = candidates[0].content;
-    const partList = content && content.parts;
-    const textPart =
-      partList && partList.length > 0 ? partList[0].text : null;
-
-    if (!textPart || !textPart.trim()) {
-      throw new functions.https.HttpsError(
-        "internal",
-        "Empty response content received from AI service."
-      );
-    }
-
-    // Strip markdown code fences if present
-    let cleanJson = textPart.trim();
-    if (cleanJson.startsWith("```json")) {
-      cleanJson = cleanJson.substring(7);
-    } else if (cleanJson.startsWith("```")) {
-      cleanJson = cleanJson.substring(3);
-    }
-    if (cleanJson.endsWith("```")) {
-      cleanJson = cleanJson.substring(0, cleanJson.length - 3);
-    }
-    cleanJson = cleanJson.trim();
-
-    try {
-      const parsed = JSON.parse(cleanJson);
-      // Which model actually answered. The two failover models don't give
-      // identical findings, so the client records this in every report's
-      // analysis log to explain any result differences.
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        parsed._meta = {
-          model: usedModel,
-          finishReason: candidates[0].finishReason || null,
-          schemaEnforced: Boolean(responseSchema),
-        };
-      }
-      return parsed;
-    } catch (parseError) {
-      console.error("Failed to parse JSON response:", cleanJson);
-      throw new functions.https.HttpsError(
-        "internal",
-        "Malformed JSON response from AI service: " + parseError.message
-      );
-    }
-}
 
 /**
  * Auth onCreate Trigger: onUserCreated

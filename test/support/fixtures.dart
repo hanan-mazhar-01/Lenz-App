@@ -1,9 +1,14 @@
-import 'package:replica_detector/models/evidence_finding.dart';
+import 'package:replica_detector/data/evidence_profiles.dart';
 import 'package:replica_detector/models/evidence.dart';
-import 'package:replica_detector/models/evidence_observation.dart';
+import 'package:replica_detector/models/evidence_record.dart';
 import 'package:replica_detector/models/evidence_validation.dart';
 import 'package:replica_detector/models/photo_quality.dart';
 import 'package:replica_detector/models/product.dart';
+import 'package:replica_detector/models/product_identity.dart';
+
+// These are unit-test fixtures: hand-written inputs that exercise specific
+// decision rules. They are NOT a dataset and say nothing about accuracy on
+// real products.
 
 const testWatch = Product(
   id: 'p_test_watch',
@@ -55,61 +60,33 @@ EvidenceValidationResult validation({
   );
 }
 
-/// One requested angle, optionally already supplied.
+/// One requested angle, optionally already supplied (legacy report shape).
 EvidenceItem item({
   required String id,
   required String title,
-  required EvidenceWeight weight,
+  EvidenceWeight weight = EvidenceWeight.medium,
   int index = 1,
   bool captured = true,
   int quality = 90,
   bool keptLowQuality = false,
-  bool unavailable = false,
+  EvidenceStatus? status,
 }) {
   return EvidenceItem(
     id: id,
     index: index,
     title: title,
-    guide: 'Capture the $title.',
-    reason: 'Needed to verify the $title.',
-    isRequired: weight == EvidenceWeight.critical || weight == EvidenceWeight.high,
+    guide: 'fixture guide',
     weight: weight,
+    isRequired: weight == EvidenceWeight.critical || weight == EvidenceWeight.high,
     capturedImagePath: captured ? '/tmp/$id.jpg' : '',
-    status: unavailable
-        ? EvidenceStatus.unavailable
-        : captured
-            ? EvidenceStatus.captured
-            : EvidenceStatus.pending,
-    keptDespiteLowQuality: keptLowQuality,
+    status: status ?? (captured ? EvidenceStatus.captured : EvidenceStatus.pending),
     validation: captured ? validation(id: id, title: title, quality: quality) : null,
+    keptDespiteLowQuality: keptLowQuality,
   );
 }
 
-PartObservation observation({
-  required String id,
-  required String title,
-  List<String> consistent = const [],
-  List<String> inconsistent = const [],
-  List<String> uncertain = const [],
-  int quality = 90,
-}) {
-  return PartObservation(
-    evidenceId: id,
-    title: title,
-    observations: ['observed $title'],
-    consistentSignals: consistent,
-    inconsistentSignals: inconsistent,
-    uncertainSignals: uncertain,
-    visibleQuality: quality,
-  );
-}
-
-Map<String, String> imagesFor(List<EvidenceItem> items) => {
-      for (final i in items)
-        if (i.capturedImagePath.isNotEmpty) i.id: i.capturedImagePath,
-    };
-
-/// A full, clean six-angle watch submission.
+/// A complete legacy (engine v2) watch checklist, for persistence tests of
+/// reports saved before engine v3.
 List<EvidenceItem> fullWatchEvidence({int quality = 90}) => [
       item(id: 'full_watch', title: 'Full Watch', weight: EvidenceWeight.high, index: 1, quality: quality),
       item(id: 'dial', title: 'Dial', weight: EvidenceWeight.critical, index: 2, quality: quality),
@@ -119,70 +96,92 @@ List<EvidenceItem> fullWatchEvidence({int quality = 90}) => [
       item(id: 'reference_serial', title: 'Reference / Serial', weight: EvidenceWeight.critical, index: 6, quality: quality),
     ];
 
-List<PartObservation> cleanWatchObservations() => [
-      observation(id: 'full_watch', title: 'Full Watch', consistent: ['Case proportions match the reference', 'Bracelet sits flush to the lugs']),
-      observation(id: 'dial', title: 'Dial', consistent: ['Dial printing is sharp with even kerning', 'Lume fills the markers evenly']),
-      observation(id: 'crown', title: 'Crown', consistent: ['Crown knurling is cleanly machined']),
-      observation(id: 'caseback', title: 'Caseback', consistent: ['Caseback is unengraved with uniform brushing']),
-      observation(id: 'bracelet_clasp', title: 'Bracelet & Clasp', consistent: ['Clasp stamping is crisp']),
-      observation(id: 'reference_serial', title: 'Reference / Serial', consistent: ['Serial format matches the model', 'Etch depth is consistent']),
-    ];
+// ------------------------------------------------------------ engine v3
 
-/// A typed engine-v2 finding.
-EvidenceFinding finding(
-  String evidenceId,
-  FindingType type, {
-  FindingStrength strength = FindingStrength.moderate,
-  String dimension = 'OTHER',
-  String feature = 'detail',
-  String observation = 'observed detail',
-  bool modelSpecific = false,
-  String? alternative,
+IdentityAttribute attr(String? value, [AttributeStatus status = AttributeStatus.confirmed, IdentitySource source = IdentitySource.design]) =>
+    value == null ? IdentityAttribute.unknown : IdentityAttribute(value: value, status: status, source: source, basis: 'fixture');
+
+ProductIdentity identity({
+  String category = 'WATCH',
+  String type = '',
+  String? brand,
+  String? family,
+  String? generation,
+  AttributeStatus brandStatus = AttributeStatus.confirmed,
+  AttributeStatus familyStatus = AttributeStatus.confirmed,
+  AttributeStatus generationStatus = AttributeStatus.confirmed,
 }) =>
-    EvidenceFinding(
-      evidenceId: evidenceId,
+    ProductIdentity(
+      categoryCode: category,
+      productType: type,
+      brand: attr(brand, brandStatus),
+      modelFamily: attr(family, familyStatus),
+      generation: attr(generation, generationStatus),
+    );
+
+ResolvedProfile appleWatch({String? generation = 'Ultra 2', AttributeStatus genStatus = AttributeStatus.confirmed}) =>
+    EvidenceProfileRegistry.resolve(identity(
+      type: 'smartwatch',
+      brand: 'Apple',
+      family: 'Apple Watch Ultra',
+      generation: generation,
+      generationStatus: genStatus,
+    ));
+
+ResolvedProfile appleWatchSeries({String? generation = 'Series 9', AttributeStatus genStatus = AttributeStatus.confirmed}) =>
+    EvidenceProfileRegistry.resolve(identity(
+      type: 'smartwatch',
+      brand: 'Apple',
+      family: 'Apple Watch Series',
+      generation: generation,
+      generationStatus: genStatus,
+    ));
+
+CheckpointAssessment assess(
+  String checkpointId,
+  CheckpointOutcome outcome, {
+  Reliability reliability = Reliability.high,
+  String observation = 'fixture observation',
+  String interpretation = 'fixture interpretation',
+  String feature = '',
+  String? alternative,
+  ReferenceBasis basis = ReferenceBasis.modelKnowledge,
+  EvidenceKind kind = EvidenceKind.aiInterpretation,
+}) =>
+    CheckpointAssessment(
+      checkpointId: checkpointId,
       feature: feature,
-      dimension: dimension,
-      type: type,
-      strength: strength,
       observation: observation,
-      modelSpecific: modelSpecific,
+      interpretation: interpretation,
+      outcome: outcome,
+      reliability: reliability,
+      basis: basis,
+      kind: kind,
       alternativeExplanation: alternative,
     );
 
-/// An observation carrying typed findings.
-PartObservation typedObservation(String id, String title, List<EvidenceFinding> findings, {int quality = 90}) =>
-    PartObservation(evidenceId: id, title: title, observations: ['observed $title'], findings: findings, visibleQuality: quality);
-
-/// Strong, specific, model-level counterfeit evidence on three independent
-/// aspects of the watch: what a real replica verdict needs.
-List<PartObservation> strongReplicaWatchObservations() => [
-      observation(id: 'full_watch', title: 'Full Watch', consistent: ['Case shape is close to reference']),
-      typedObservation('dial', 'Dial', [
-        finding('dial', FindingType.counterfeitIndicator,
-            strength: FindingStrength.strong,
-            dimension: 'TYPOGRAPHY',
-            feature: 'Coronet',
-            observation: 'Coronet has a filled centre; the 126610LN coronet has open tines',
-            modelSpecific: true),
-      ]),
-      typedObservation('crown', 'Crown', [
-        finding('crown', FindingType.counterfeitIndicator,
-            strength: FindingStrength.strong,
-            dimension: 'HARDWARE',
-            feature: 'Triplock dots',
-            observation: 'Two dots under the crown logo; this reference uses three',
-            modelSpecific: true),
-      ]),
-      observation(id: 'caseback', title: 'Caseback', consistent: ['Caseback is unengraved']),
-      observation(id: 'bracelet_clasp', title: 'Bracelet & Clasp', consistent: ['Clasp closes flush']),
-      typedObservation('reference_serial', 'Reference / Serial', [
-        finding('reference_serial', FindingType.counterfeitIndicator,
-            strength: FindingStrength.strong,
-            dimension: 'SERIAL_MARKING',
-            feature: 'Rehaut serial',
-            observation: 'Rehaut serial has 6 characters; this model uses 8',
-            modelSpecific: true),
-      ]),
-    ];
-
+PhotoEvidence photo(
+  String requestId,
+  List<CheckpointAssessment> assessments, {
+  String? photoId,
+  PhotoQualitySummary quality = const PhotoQualitySummary(detailReadability: 'READABLE'),
+  bool kept = false,
+  String hash = '',
+  bool initial = false,
+  IdentityAttribute generation = IdentityAttribute.unknown,
+  IdentityAttribute family = IdentityAttribute.unknown,
+}) =>
+    PhotoEvidence(
+      photoId: photoId ?? requestId,
+      requestId: requestId,
+      requestTitle: requestId.replaceAll('_', ' '),
+      imagePath: '/tmp/$requestId.jpg',
+      isInitialPhoto: initial,
+      keptDespiteLowQuality: kept,
+      quality: quality,
+      assessments: assessments,
+      summary: 'fixture $requestId',
+      imageHash: hash,
+      generation: generation,
+      modelFamily: family,
+    );

@@ -2,20 +2,23 @@ import '../core/config/gemini_config.dart';
 import '../core/errors/app_error.dart';
 import '../models/authentication_result.dart';
 import '../models/evidence.dart';
-import '../models/evidence_validation.dart';
+import '../models/evidence_record.dart';
 import '../models/product.dart';
 import '../models/product_identification.dart';
+import '../services/evidence_decision_engine.dart';
+import '../services/evidence_planner.dart';
 import 'gemini_authentication_repository.dart';
+
+export 'gemini_authentication_repository.dart' show ScanContext, PhotoCheckResult;
 
 /// Single entry point for the scan pipeline.
 ///
 /// There is no mock or demo path: if inference is unavailable the caller gets
-/// a real error, never a fabricated product, score or report (§30, §46).
+/// a real error, never a fabricated product, observation or report.
 class AuthenticationRepository {
   final GeminiAuthenticationRepository _gemini;
 
-  AuthenticationRepository({required GeminiAuthenticationRepository geminiRepo})
-      : _gemini = geminiRepo;
+  AuthenticationRepository({required GeminiAuthenticationRepository geminiRepo}) : _gemini = geminiRepo;
 
   bool get isConfigured => GeminiConfig.hasValidKey;
 
@@ -23,48 +26,67 @@ class AuthenticationRepository {
     if (!isConfigured) throw AppError.apiUnauthorized();
   }
 
-  /// Step 1 — identify what the item is from the user's first photo.
+  /// Stage A: what is this, and how sure are we of each attribute?
   Future<ProductIdentification> identifyProduct(String imagePath) {
     _requireConfigured();
     return _gemini.identifyProduct(imagePath);
   }
 
-  /// Step 2 — the product-specific 5-6 angle capture plan.
-  Future<List<EvidenceItem>> getRequiredEvidence(Product product) {
+  ScanContext createContext(Product product) => _gemini.createContext(product);
+
+  /// Stage B: model-specific ranking of the photos worth asking for.
+  Future<AiEvidenceRanking> recommendEvidence(ScanContext ctx, {Set<String> covered = const {}}) {
     _requireConfigured();
-    return _gemini.getRequiredEvidence(product);
+    return _gemini.recommendEvidence(ctx, covered: covered);
   }
 
-  /// Step 3 — does this photo actually show the requested area, and is it usable?
-  Future<EvidenceValidationResult> validateEvidencePhoto({
+  Future<PhotoEvidence> analyzeInitialPhoto({required ScanContext ctx, required String imagePath, List<double>? itemBox}) {
+    _requireConfigured();
+    return _gemini.analyzeInitialPhoto(ctx: ctx, imagePath: imagePath, itemBox: itemBox);
+  }
+
+  /// Quality and part check for one submitted photo.
+  Future<PhotoCheckResult> checkPhoto({
+    required ScanContext ctx,
     required String imagePath,
-    required EvidenceItem requestedItem,
-    required Product product,
+    required String? requestedId,
+    List<PhotoEvidence> existing = const [],
   }) {
     _requireConfigured();
-    return _gemini.validateEvidencePhoto(
-      imagePathOrAsset: imagePath,
-      requestedItem: requestedItem,
-      product: product,
-    );
+    return _gemini.checkPhoto(ctx: ctx, imagePath: imagePath, requestedId: requestedId, existing: existing);
   }
 
-  /// Step 4 — analyse every accepted image together and score locally.
+  /// Product-specific analysis of one accepted photo.
+  Future<PhotoEvidence> analyzePhoto({required ScanContext ctx, required PhotoCheckResult check, bool keptDespiteLowQuality = false}) {
+    _requireConfigured();
+    return _gemini.analyzePhoto(ctx: ctx, check: check, keptDespiteLowQuality: keptDespiteLowQuality);
+  }
+
+  ScanContext absorbPhoto(ScanContext ctx, PhotoEvidence photo) => _gemini.absorbPhoto(ctx, photo);
+
+  EngineResult evaluate(ScanContext ctx, List<PhotoEvidence> photos) => _gemini.evaluate(ctx, photos);
+
+  EvidencePlan plan(ScanContext ctx, List<PhotoEvidence> photos, EngineResult result,
+          {Set<String> skipped = const {}, Map<String, int> retakeSuggestions = const {}}) =>
+      _gemini.plan(ctx, photos, result, skipped: skipped, retakeSuggestions: retakeSuggestions);
+
+  List<EvidenceItem> requestItems(ScanContext ctx, EvidencePlan plan, List<PhotoEvidence> photos, Set<String> skipped) =>
+      GeminiAuthenticationRepository.requestItems(ctx, plan, photos, skipped);
+
+  /// Final evidence evaluation and the structured report.
   Future<AuthenticationReport> finalizeReport({
-    required Product product,
-    required List<EvidenceItem> evidenceItems,
-    required Map<String, String> capturedImages,
-    String? overviewImagePath,
-    int identificationConfidence = 0,
+    required ScanContext ctx,
+    required List<PhotoEvidence> photos,
+    Set<String> skipped = const {},
+    Map<String, int> retakeSuggestions = const {},
     String? scanId,
   }) {
     _requireConfigured();
     return _gemini.finalizeReport(
-      product: product,
-      evidenceItems: evidenceItems,
-      capturedImages: capturedImages,
-      overviewImagePath: overviewImagePath,
-      identificationConfidence: identificationConfidence,
+      ctx: ctx,
+      photos: photos,
+      skipped: skipped,
+      retakeSuggestions: retakeSuggestions,
       scanId: scanId,
     );
   }
@@ -72,23 +94,18 @@ class AuthenticationRepository {
   /// Moves a camera/gallery temp file into permanent app storage so reports
   /// keep resolving their images after a restart. [stripExif] mirrors the
   /// "Anonymous Scanning" privacy setting.
-  Future<String> persistCapturedImage(
-    String tempPath, {
-    String prefix = 'evidence',
-    bool stripExif = false,
-  }) {
+  void prewarmPhoto(String imagePath, {bool initial = false}) => _gemini.prewarmPhoto(imagePath, initial: initial);
+
+  Future<String> persistCapturedImage(String tempPath, {String prefix = 'evidence', bool stripExif = false}) {
     return _gemini.imagePrep.persistCapturedImage(tempPath, prefix: prefix, stripExif: stripExif);
   }
 
-  Future<void> deleteStoredImages(Iterable<String> paths) {
-    return _gemini.imagePrep.deleteStoredImages(paths);
-  }
+  Future<void> deleteStoredImages(Iterable<String> paths) => _gemini.imagePrep.deleteStoredImages(paths);
 
   void clearScanCaches() => _gemini.clearScanCaches();
 
   /// Frees the in-memory decoded/resized image cache (used by "Clear Image
-  /// Cache" in Settings). Does not delete the underlying files on disk -
-  /// those are only removed when a report/item is actually deleted.
+  /// Cache" in Settings). Does not delete the underlying files on disk.
   void clearImageMemoryCache() => _gemini.imagePrep.clearCache();
 
   /// Real current size of that cache, in bytes.

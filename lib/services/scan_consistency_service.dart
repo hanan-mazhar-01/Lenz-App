@@ -2,6 +2,18 @@ import '../core/config/authenticity_engine_config.dart';
 import '../models/authentication_result.dart';
 import '../models/product.dart';
 
+/// How confidently two fingerprints identify the same physical item.
+enum ProductMatch {
+  /// Different products, or a marking mismatch proves different units.
+  none,
+
+  /// Same brand/model, no marking evidence either way — a guess.
+  modelOnly,
+
+  /// A serial/marking read off both scans agrees — real identity evidence.
+  markingConfirmed,
+}
+
 /// Keeps repeat scans of the same product stable (§17-19).
 ///
 /// Previous results are *context*, not truth:
@@ -61,11 +73,19 @@ abstract final class ScanConsistencyService {
   /// Same product model, and not provably a different physical item.
   /// If both scans read serial-like markings and none of them match, they
   /// are different items even if they are the same model.
-  static bool isSameProduct(String a, String b) {
-    if (_productKey(a) != _productKey(b)) return false;
+  static bool isSameProduct(String a, String b) => matchConfidence(a, b) != ProductMatch.none;
+
+  /// How sure two fingerprints refer to the same physical item, not just the
+  /// same model. A serial/marking match is real identity evidence; matching
+  /// on model alone is a guess that gets weaker the longer ago the earlier
+  /// scan was (see [AuthenticityEngineConfig.sameSessionWindow]).
+  static ProductMatch matchConfidence(String a, String b) {
+    if (_productKey(a) != _productKey(b)) return ProductMatch.none;
     final ma = _markings(a), mb = _markings(b);
-    if (ma.isNotEmpty && mb.isNotEmpty && ma.intersection(mb).isEmpty) return false;
-    return true;
+    if (ma.isNotEmpty && mb.isNotEmpty) {
+      return ma.intersection(mb).isNotEmpty ? ProductMatch.markingConfirmed : ProductMatch.none;
+    }
+    return ProductMatch.modelOnly;
   }
 
   /// Reconciles [report] (already scored on its own evidence) with earlier
@@ -81,14 +101,18 @@ abstract final class ScanConsistencyService {
 
     final clock = now ?? DateTime.now();
     final matches = history
-        .where((r) =>
-            r.id != report.id &&
-            r.fingerprint != null &&
-            // Results from engine v1 came from the logic being replaced and
-            // must not anchor new results.
-            _isV2(r) &&
-            clock.difference(r.timestamp) <= AuthenticityEngineConfig.consistencyWindow &&
-            isSameProduct(fp, r.fingerprint!))
+        .where((r) {
+          if (r.id == report.id || r.fingerprint == null) return false;
+          // Results from engine v1 came from the logic being replaced and
+          // must not anchor new results.
+          if (!_isV2(r)) return false;
+          final match = matchConfidence(fp, r.fingerprint!);
+          if (match == ProductMatch.none) return false;
+          final window = match == ProductMatch.markingConfirmed
+              ? AuthenticityEngineConfig.consistencyWindow
+              : AuthenticityEngineConfig.sameSessionWindow;
+          return clock.difference(r.timestamp) <= window;
+        })
         .toList()
       ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
@@ -97,8 +121,7 @@ abstract final class ScanConsistencyService {
     // The most recent confident, decisive result that was actually shown.
     AuthenticationReport? stable;
     for (final r in matches) {
-      if (r.verdict != Verdict.inconclusive &&
-          r.authenticationConfidence >= AuthenticityEngineConfig.minConfidenceToProtect) {
+      if (r.verdict != Verdict.inconclusive && _isProtectable(r)) {
         stable = r;
         break;
       }
@@ -122,7 +145,8 @@ abstract final class ScanConsistencyService {
       } else {
         flipPrevented = true;
         verdict = Verdict.inconclusive;
-        confidence = confidence.clamp(20, 60);
+        // v3 reports carry no numeric confidence.
+        if (!report.usesQualitativeStrength) confidence = confidence.clamp(20, 60);
         note = stable.verdict == Verdict.likelyAuthentic
             ? 'An earlier scan of this item appeared authentic. This scan did not find strong enough new evidence to change that, so it is shown as unable to verify.'
             : 'An earlier scan of this item found strong replica evidence. This scan did not clearly show the flagged details again, so it is shown as unable to verify.';
@@ -154,12 +178,19 @@ abstract final class ScanConsistencyService {
       verdict: verdict,
       overallScore: confidence,
       authenticationConfidence: confidence,
+      evidenceStrength: flipPrevented && report.usesQualitativeStrength ? 'limited' : null,
       consistency: info,
       rationale: note.isEmpty ? report.rationale : '${report.rationale} $note',
       quickSummaryPoints: note.isEmpty ? report.quickSummaryPoints : [note, ...report.quickSummaryPoints],
       analysisLog: {...report.analysisLog, 'consistency': info.toJson()},
     );
   }
+
+  /// A decisive earlier result worth protecting from an unsupported flip:
+  /// confidence >= threshold for v2 reports, non-limited evidence for v3.
+  static bool _isProtectable(AuthenticationReport r) => r.usesQualitativeStrength
+      ? (r.evidenceStrength ?? 'limited') != 'limited'
+      : r.authenticationConfidence >= AuthenticityEngineConfig.minConfidenceToProtect;
 
   static bool _isV2(AuthenticationReport r) {
     final major = int.tryParse(r.engineVersion.split('.').first) ?? 1;

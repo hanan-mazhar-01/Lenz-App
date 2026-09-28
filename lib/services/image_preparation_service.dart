@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -5,19 +6,21 @@ import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 import '../core/errors/app_error.dart';
+import 'image_origin.dart';
+import 'native_image_decoder.dart';
 
-/// Sizing presets. Identification runs on a smaller image because it only has
-/// to recognise the object; evidence keeps more pixels because the verdict
-/// depends on fine detail.
+/// Sizing presets. Only the user's own photo is ever sent, resized; the app
+/// creates no additional images from it.
 enum ImagePreset {
-  /// First photo -> "what is this?". Small and fast (§3).
-  identification(maxDimension: 768, jpegQuality: 80),
+  /// First photo -> "what is this?".
+  identification(maxDimension: 1024, jpegQuality: 85),
 
-  /// Per-photo validation -> "is this the right area, is it sharp?".
-  validation(maxDimension: 1024, jpegQuality: 82),
+  /// Per-photo quality and part check.
+  validation(maxDimension: 1024, jpegQuality: 85),
 
-  /// Final multi-image forensic pass -> needs the most detail.
-  evidence(maxDimension: 1280, jpegQuality: 86);
+  /// The photo for the product-specific analysis. Kept large enough that
+  /// engravings and small text survive.
+  evidence(maxDimension: 1536, jpegQuality: 90);
 
   final int maxDimension;
   final int jpegQuality;
@@ -65,7 +68,30 @@ class _ResizeResult {
   const _ResizeResult(this.bytes, this.width, this.height);
 }
 
-/// Runs off the UI isolate: decoding a 12MP JPEG blocks for hundreds of ms.
+class _EncodeRequest {
+  final PixelBuffer pixels;
+  final int maxDimension;
+  final int jpegQuality;
+  const _EncodeRequest(this.pixels, this.maxDimension, this.jpegQuality);
+}
+
+/// Runs off the UI isolate: resizes an already decoded (upright) photo and
+/// encodes it. Much cheaper than decoding the full-resolution original.
+_ResizeResult _encodeDecoded(_EncodeRequest req) {
+  final src = req.pixels.toImage();
+  img.Image out = src;
+  final longest = src.width > src.height ? src.width : src.height;
+  if (longest > req.maxDimension) {
+    out = src.width >= src.height
+        ? img.copyResize(src, width: req.maxDimension, interpolation: img.Interpolation.average)
+        : img.copyResize(src, height: req.maxDimension, interpolation: img.Interpolation.average);
+  }
+  final encoded = img.encodeJpg(out, quality: req.jpegQuality);
+  return _ResizeResult(Uint8List.fromList(encoded), out.width, out.height);
+}
+
+/// Fallback when the native decoder can't be used. Runs off the UI isolate;
+/// on a low-end phone this takes seconds for a full-resolution photo.
 _ResizeResult _resizeInIsolate(_ResizeRequest req) {
   final decoded = img.decodeImage(req.bytes);
   if (decoded == null) {
@@ -103,6 +129,23 @@ Uint8List _stripExifInIsolate(Uint8List bytes) {
 class ImagePreparationService {
   final Map<String, PreparedImage> _memoryCache = {};
 
+  /// Origin hints by stored path, read from the ORIGINAL file before any
+  /// EXIF stripping (see [ImageOrigin]).
+  final Map<String, String?> _originHints = {};
+
+  /// Where the photo seems to come from, or null for an ordinary camera
+  /// photo (or when unknown).
+  String? originHint(String storedPath) => _originHints[storedPath];
+  final Map<String, Future<PreparedImage>> _inFlight = {};
+
+  /// Starts preparing [pathOrAsset] for [preset] in the background, so the
+  /// upload is ready by the time it is needed (for example the analysis
+  /// upload is prepared while the photo check is still with Gemini).
+  /// Errors are ignored here; the real call reports them.
+  void warm(String pathOrAsset, ImagePreset preset) {
+    unawaited(prepareImage(pathOrAsset, preset: preset).then((_) {}, onError: (Object _) {}));
+  }
+
   /// Real total size of the in-memory decoded-image cache, for display in
   /// Settings' "Clear Image Cache" row instead of a hardcoded number.
   int get cacheSizeBytes => _memoryCache.values.fold(0, (sum, img) => sum + img.byteSize);
@@ -120,6 +163,57 @@ class ImagePreparationService {
     final cacheKey = '$pathOrAsset|${preset.name}';
     final cached = _memoryCache[cacheKey];
     if (cached != null) return cached;
+    final pending = _inFlight[cacheKey];
+    if (pending != null) return pending;
+
+    final future = _prepare(pathOrAsset, preset);
+    _inFlight[cacheKey] = future;
+    try {
+      final prepared = await future;
+      _memoryCache[cacheKey] = prepared;
+      return prepared;
+    } finally {
+      _inFlight.remove(cacheKey);
+    }
+  }
+
+  Future<PreparedImage> _prepare(String pathOrAsset, ImagePreset preset) async {
+    final watch = Stopwatch()..start();
+    final isAsset = pathOrAsset.startsWith('assets/');
+    if (!isAsset) {
+      if (!await File(pathOrAsset).exists()) {
+        throw AppError.unknown(
+          detail: 'The photo for this step is no longer available on the device. Please recapture it.',
+        );
+      }
+      // Fast path: the photo decoded once natively, shared with the
+      // quality checks and the other upload size.
+      final decoded = await NativeImageDecoder.decode(pathOrAsset);
+      if (decoded != null) {
+        final _ResizeResult resized;
+        try {
+          resized = await compute(
+            _encodeDecoded,
+            _EncodeRequest(decoded.forMaxDimension(preset.maxDimension), preset.maxDimension, preset.jpegQuality),
+          );
+        } catch (e) {
+          throw AppError.unknown(detail: 'That image could not be processed. Please retake the photo.', original: e);
+        }
+        if (kDebugMode) {
+          debugPrint('[ImagePrep] ${preset.name}: ${decoded.originalWidth}x${decoded.originalHeight} -> '
+              '${resized.bytes.length ~/ 1024}KB (${resized.width}x${resized.height}) in '
+              '${watch.elapsedMilliseconds}ms (native decode)');
+        }
+        return PreparedImage(
+          base64Data: base64Encode(resized.bytes),
+          mimeType: 'image/jpeg',
+          byteSize: resized.bytes.length,
+          width: resized.width,
+          height: resized.height,
+          localFilePath: pathOrAsset,
+        );
+      }
+    }
 
     final Uint8List raw;
     try {
@@ -161,19 +255,30 @@ class ImagePreparationService {
       byteSize: resized.bytes.length,
       width: resized.width,
       height: resized.height,
-      localFilePath: pathOrAsset.startsWith('assets/') ? null : pathOrAsset,
+      localFilePath: isAsset ? null : pathOrAsset,
     );
 
     if (kDebugMode) {
       final savedPct = raw.isEmpty ? 0 : (100 - (resized.bytes.length / raw.length * 100)).round();
       debugPrint(
         '[ImagePrep] ${preset.name}: ${raw.length ~/ 1024}KB -> ${resized.bytes.length ~/ 1024}KB '
-        '(${resized.width}x${resized.height}, -$savedPct%)',
+        '(${resized.width}x${resized.height}, -$savedPct%) in ${watch.elapsedMilliseconds}ms (Dart decode)',
       );
     }
-
-    _memoryCache[cacheKey] = prepared;
     return prepared;
+  }
+
+  /// Encodes pixels already in memory (e.g. an in-memory detail crop) as an
+  /// upload-ready JPEG. Nothing is written to disk.
+  Future<PreparedImage> encodePixels(PixelBuffer pixels, {int maxDimension = 1024, int jpegQuality = 90}) async {
+    final resized = await compute(_encodeDecoded, _EncodeRequest(pixels, maxDimension, jpegQuality));
+    return PreparedImage(
+      base64Data: base64Encode(resized.bytes),
+      mimeType: 'image/jpeg',
+      byteSize: resized.bytes.length,
+      width: resized.width,
+      height: resized.height,
+    );
   }
 
   /// Copies a camera/gallery temp file into app documents so the report still
@@ -201,6 +306,13 @@ class ImagePreparationService {
       // persisted once; re-stripping here would be a no-op at best).
       if (tempPath.startsWith(reportDir.path)) return tempPath;
 
+      String? origin;
+      try {
+        origin = ImageOrigin.hint(await file.readAsBytes());
+      } catch (_) {
+        // Unknown origin: no hint.
+      }
+
       final ext = tempPath.contains('.') ? tempPath.substring(tempPath.lastIndexOf('.')) : '.jpg';
       final safeExt = ext.length <= 5 ? ext : '.jpg';
       final fileName = '${prefix}_${DateTime.now().microsecondsSinceEpoch}$safeExt';
@@ -211,6 +323,7 @@ class ImagePreparationService {
           final rawBytes = await file.readAsBytes();
           final stripped = await compute(_stripExifInIsolate, rawBytes);
           await permanentFile.writeAsBytes(stripped);
+          _originHints[permanentFile.path] = origin;
           return permanentFile.path;
         } catch (e) {
           if (kDebugMode) debugPrint('[ImagePrep] EXIF strip failed, falling back to plain copy: $e');
@@ -219,6 +332,7 @@ class ImagePreparationService {
       }
 
       await file.copy(permanentFile.path);
+      _originHints[permanentFile.path] = origin;
       return permanentFile.path;
     } catch (e) {
       if (kDebugMode) debugPrint('[ImagePrep] persist failed: $e');
@@ -230,10 +344,15 @@ class ImagePreparationService {
   Future<void> deleteStoredImages(Iterable<String> paths) async {
     for (final p in paths) {
       if (p.isEmpty || p.startsWith('assets/')) continue;
-      try {
-        final f = File(p);
-        if (await f.exists()) await f.delete();
-      } catch (_) {}
+      // Also removes "_detail.jpg" copies left by an earlier test build.
+      final dot = p.lastIndexOf('.');
+      final leftover = '${dot > 0 ? p.substring(0, dot) : p}_detail.jpg';
+      for (final path in {p, leftover}) {
+        try {
+          final f = File(path);
+          if (await f.exists()) await f.delete();
+        } catch (_) {}
+      }
       _memoryCache.removeWhere((k, _) => k.startsWith('$p|'));
     }
   }
