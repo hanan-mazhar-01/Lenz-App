@@ -1,12 +1,9 @@
 import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../models/authentication_result.dart';
-import '../../models/collection_item.dart';
 import '../../models/evidence.dart';
-import '../../repositories/collection_repository.dart';
 import '../../widgets/animations/bounce_button.dart';
 import '../../widgets/animations/fade_slide_transition.dart';
 import '../../widgets/cards/animated_favorite_button.dart';
@@ -36,29 +33,6 @@ class AuthenticationReportView extends StatefulWidget {
 }
 
 class _AuthenticationReportViewState extends State<AuthenticationReportView> {
-  bool _savedToCollection = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _savedToCollection =
-        context.read<CollectionRepository>().containsReport(widget.report.id);
-  }
-
-  void _saveToCollection() {
-    Haptics.mediumImpact();
-    context.read<CollectionRepository>().addItem(
-          CollectionItem.fromReport(widget.report),
-        );
-    setState(() => _savedToCollection = true);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Saved to My Collection'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final report = widget.report;
@@ -88,15 +62,6 @@ class _AuthenticationReportViewState extends State<AuthenticationReportView> {
           ),
         ),
         actions: [
-          IconButton(
-            tooltip: _savedToCollection ? 'Saved to Collection' : 'Save to Collection',
-            icon: Icon(
-              _savedToCollection ? CupertinoIcons.bookmark_fill : CupertinoIcons.bookmark,
-              color: _savedToCollection ? AppColors.deepForestGreen : AppColors.nearBlack,
-              size: 22,
-            ),
-            onPressed: _saveToCollection,
-          ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: AnimatedFavoriteButton(

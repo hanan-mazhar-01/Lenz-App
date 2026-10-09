@@ -43,8 +43,6 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Lenz uses your camera to capture product photos for AI-powered authenticity assessment.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Lenz requires microphone access if recording evidence video.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Lenz requires photo library access to analyze product images from your library.</string>
 	<key>UIApplicationSceneManifest</key>

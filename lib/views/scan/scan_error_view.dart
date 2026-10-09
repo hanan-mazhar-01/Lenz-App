@@ -53,6 +53,11 @@ class ScanErrorView extends StatelessWidget {
         iconColor = AppColors.accent;
         mascotState = MascotState.inconclusive;
         break;
+      case AppErrorType.aiBillingUnavailable:
+        errorIcon = CupertinoIcons.clock_fill;
+        iconColor = AppColors.accent;
+        mascotState = MascotState.inconclusive;
+        break;
       case AppErrorType.apiUnauthorized:
         errorIcon = CupertinoIcons.lock_shield_fill;
         iconColor = AppColors.danger;

@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
-import '../../core/config/revenue_cat_config.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
 import '../../services/haptics.dart';
@@ -41,7 +41,12 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
 
   Offerings? _offerings;
   Package? _selectedPackage;
-  int _fallbackSelectedIndex = 1; // 0 = monthly, 1 = annual
+
+  /// Per-product-id real introductory-offer eligibility, fetched live from
+  /// StoreKit/RevenueCat — never assumed. Only a product this map marks
+  /// `true` for (and that actually has an `introductoryPrice`) shows trial
+  /// copy anywhere on this screen.
+  Map<String, bool> _introEligibility = {};
 
   @override
   void initState() {
@@ -49,20 +54,54 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
     _loadOfferings();
   }
 
+  /// Returns e.g. "3-Day" when [pkg] genuinely has a free introductory offer
+  /// this Apple ID is still eligible for — read from the real StoreProduct
+  /// plus a live `checkTrialOrIntroductoryPriceEligibility` call, so trial
+  /// copy always matches whatever is actually configured in App Store
+  /// Connect (and only ever on the product it's configured for).
+  String? _trialLabelFor(Package pkg) {
+    final intro = pkg.storeProduct.introductoryPrice;
+    if (intro == null || intro.price > 0) return null;
+    if (_introEligibility[pkg.storeProduct.identifier] != true) return null;
+    final n = intro.periodNumberOfUnits;
+    final unit = switch (intro.periodUnit) {
+      PeriodUnit.day => n == 1 ? 'Day' : 'Days',
+      PeriodUnit.week => n == 1 ? 'Week' : 'Weeks',
+      PeriodUnit.month => n == 1 ? 'Month' : 'Months',
+      PeriodUnit.year => n == 1 ? 'Year' : 'Years',
+      PeriodUnit.unknown => null,
+    };
+    if (unit == null) return null;
+    return '$n-$unit';
+  }
+
   Future<void> _loadOfferings() async {
     setState(() => _isLoadingOfferings = true);
     try {
       final offerings = await RevenueCatService.getOfferings();
-      if (mounted) {
-        setState(() {
-          _offerings = offerings;
-          final current = offerings?.current;
-          if (current != null) {
-            _selectedPackage = current.annual ?? current.monthly ?? current.availablePackages.firstOrNull;
-          }
-          _isLoadingOfferings = false;
-        });
+      final current = offerings?.current;
+      final packages = current?.availablePackages ?? <Package>[];
+
+      final eligibility = <String, bool>{};
+      for (final pkg in packages) {
+        eligibility[pkg.storeProduct.identifier] =
+            await RevenueCatService.isEligibleForIntroOffer(pkg.storeProduct.identifier);
       }
+
+      if (!mounted) return;
+      setState(() {
+        _offerings = offerings;
+        _introEligibility = eligibility;
+        // Prefer whichever package actually has an eligible free trial
+        // right now; otherwise fall back to monthly, then annual.
+        _selectedPackage = packages.isEmpty
+            ? null
+            : packages.firstWhere(
+                (p) => _trialLabelFor(p) != null,
+                orElse: () => current?.monthly ?? current?.annual ?? packages.first,
+              );
+        _isLoadingOfferings = false;
+      });
     } catch (e) {
       if (kDebugMode) debugPrint('[PremiumPaywall] Error loading offerings: $e');
       if (mounted) setState(() => _isLoadingOfferings = false);
@@ -78,32 +117,19 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
   }
 
   Future<void> _handlePurchase() async {
-    if (_isProcessingPurchase || _isRestoring) return;
+    if (_isProcessingPurchase || _isRestoring || _selectedPackage == null) return;
 
     setState(() => _isProcessingPurchase = true);
     Haptics.mediumImpact();
 
     try {
-      bool success = false;
-      if (_selectedPackage != null) {
-        success = await RevenueCatService.purchasePackage(_selectedPackage!);
-      } else {
-        // Fallback: Purchase directly by configured Apple Product ID
-        final productId = _fallbackSelectedIndex == 1
-            ? RevenueCatConfig.yearlySubscriptionId
-            : RevenueCatConfig.monthlySubscriptionId;
-        success = await RevenueCatService.purchaseProduct(productId);
-      }
-
+      final success = await RevenueCatService.purchasePackage(_selectedPackage!);
       if (!mounted) return;
 
       final isProNow = success || RevenueCatService.isPremiumNotifier.value;
       if (isProNow) {
         final chosenPlan = RevenueCatService.activePlanNotifier.value ??
-            ((_selectedPackage?.packageType == PackageType.annual ||
-                    (_selectedPackage == null && _fallbackSelectedIndex == 1))
-                ? 'Yearly Pro'
-                : 'Monthly Pro');
+            (_selectedPackage!.packageType == PackageType.annual ? 'Yearly Pro' : 'Monthly Pro');
         try {
           final profileVm = context.read<ProfileViewModel>();
           profileVm.setPremiumStatus(true, planName: chosenPlan);
@@ -122,7 +148,7 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Purchase could not be completed: $e'),
+            content: Text(RevenueCatService.friendlyErrorMessage(e)),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -170,13 +196,26 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Restore error: $e'),
+            content: Text(RevenueCatService.friendlyErrorMessage(e)),
             backgroundColor: Colors.redAccent,
           ),
         );
       }
     } finally {
       if (mounted) setState(() => _isRestoring = false);
+    }
+  }
+
+  Future<void> _openManageSubscription() async {
+    Haptics.lightImpact();
+    final url = await RevenueCatService.getManagementUrl();
+    final uri = Uri.parse(url);
+    try {
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[PremiumPaywall] Could not open manage subscription: $e');
     }
   }
 
@@ -202,6 +241,14 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final profileVm = context.watch<ProfileViewModel>();
+    if (profileVm.isPremium) {
+      // Never show the purchase flow to someone who already has an active
+      // plan — that's how a tap on your own plan ends up offering to sell
+      // it to you again. Show the current plan + a way to manage it instead.
+      return _buildCurrentPlanView(profileVm);
+    }
+
     final currentOffering = _offerings?.current;
     final availablePackages = currentOffering?.availablePackages ?? [];
 
@@ -253,6 +300,116 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
                     // Legal Disclaimer & Terms / Privacy Links
                     _buildLegalFooter(),
 
+                    const SizedBox(height: 12),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCurrentPlanView(ProfileViewModel profileVm) {
+    final planName = profileVm.user.planName.isNotEmpty ? profileVm.user.planName : 'Lenz Pro';
+
+    return Scaffold(
+      backgroundColor: AppColors.warmIvory,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  IconButton(
+                    icon: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.05),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.close_rounded, size: 20, color: AppColors.nearBlack),
+                    ),
+                    onPressed: () {
+                      Haptics.lightImpact();
+                      _dismiss(false);
+                    },
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.deepForestGreen.withOpacity(0.1),
+                      ),
+                      child: const Icon(
+                        Icons.workspace_premium_rounded,
+                        color: AppColors.deepForestGreen,
+                        size: 40,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      planName,
+                      style: AppTypography.titleLarge.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Active • Unlimited scans unlocked',
+                      style: AppTypography.bodyMedium.copyWith(color: AppColors.charcoalGray),
+                    ),
+                    const SizedBox(height: 28),
+                    BounceButton(
+                      onTap: _openManageSubscription,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        decoration: BoxDecoration(
+                          color: AppColors.deepForestGreen,
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                        child: const Center(
+                          child: Text(
+                            'Manage Subscription',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextButton(
+                      onPressed: _isRestoring ? null : _handleRestore,
+                      child: _isRestoring
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(
+                              'Restore Purchases',
+                              style: AppTypography.bodyMedium.copyWith(
+                                color: AppColors.nearBlack.withOpacity(0.7),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                    ),
+                    const SizedBox(height: 20),
+                    _buildLegalFooter(),
                     const SizedBox(height: 12),
                   ],
                 ),
@@ -485,16 +642,19 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
         final title = isAnnual ? 'Yearly Membership' : 'Monthly Membership';
         final price = pkg.storeProduct.priceString;
         final period = isAnnual ? '/ year' : '/ month';
-        final subtitle = isAnnual
-            ? '3-Day Free Trial, then $price/yr • Cancel anytime'
-            : 'Flexible • Cancel anytime';
+        final trialLabel = _trialLabelFor(pkg);
+        final subtitle = trialLabel != null
+            ? '$trialLabel Free Trial, then $price$period • Cancel anytime'
+            : (isAnnual ? 'Best value • Cancel anytime' : 'Flexible • Cancel anytime');
 
         return _buildPlanCard(
           isSelected: isSelected,
           title: title,
           priceText: '$price $period',
           subtitle: subtitle,
-          badgeText: isAnnual ? '3-DAY FREE TRIAL • BEST VALUE' : null,
+          badgeText: trialLabel != null
+              ? '$trialLabel FREE TRIAL'
+              : (isAnnual ? 'BEST VALUE' : null),
           onTap: () {
             Haptics.lightImpact();
             setState(() => _selectedPackage = pkg);
@@ -504,32 +664,57 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
     );
   }
 
+  /// Shown only when offerings genuinely failed to load (e.g. no network) —
+  /// never a guessed/hardcoded price, since that price could differ from
+  /// what StoreKit actually charges (App Store Guideline 3.1.1).
   Widget _buildFallbackPlanSelector() {
-    return Column(
-      children: [
-        _buildPlanCard(
-          isSelected: _fallbackSelectedIndex == 1,
-          title: 'Yearly Membership',
-          priceText: r'$49.99 / year',
-          subtitle: r'3-Day Free Trial, then $49.99/yr (~$4.16/mo)',
-          badgeText: '3-DAY FREE TRIAL • BEST VALUE',
-          onTap: () {
-            Haptics.lightImpact();
-            setState(() => _fallbackSelectedIndex = 1);
-          },
-        ),
-        _buildPlanCard(
-          isSelected: _fallbackSelectedIndex == 0,
-          title: 'Monthly Membership',
-          priceText: r'$9.99 / month',
-          subtitle: 'Flexible • Cancel anytime',
-          badgeText: null,
-          onTap: () {
-            Haptics.lightImpact();
-            setState(() => _fallbackSelectedIndex = 0);
-          },
-        ),
-      ],
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 22),
+      decoration: BoxDecoration(
+        color: AppColors.veryLightWarmGray.withOpacity(0.55),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black.withOpacity(0.04)),
+      ),
+      child: Column(
+        children: [
+          Icon(
+            CupertinoIcons.exclamationmark_triangle,
+            size: 26,
+            color: AppColors.charcoalGray.withOpacity(0.6),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            "Couldn't load subscription plans",
+            textAlign: TextAlign.center,
+            style: AppTypography.titleMedium.copyWith(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AppColors.nearBlack,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Check your connection and try again.',
+            textAlign: TextAlign.center,
+            style: AppTypography.bodyMedium.copyWith(
+              fontSize: 12,
+              color: AppColors.charcoalGray,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: _loadOfferings,
+            child: Text(
+              'Retry',
+              style: AppTypography.bodyMedium.copyWith(
+                color: AppColors.deepForestGreen,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -653,18 +838,25 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
   }
 
   Widget _buildActionButton() {
-    final isAnnual = _selectedPackage?.packageType == PackageType.annual ||
-        (_selectedPackage == null && _fallbackSelectedIndex == 1);
+    final pkg = _selectedPackage;
+    final isAnnual = pkg?.packageType == PackageType.annual;
+    final trialLabel = pkg != null ? _trialLabelFor(pkg) : null;
 
-    final buttonText = isAnnual ? 'Start 3-Day Free Trial' : 'Continue with Monthly';
-    final guaranteeText = isAnnual
-        ? '3 days free • Then auto-renews • Cancel anytime in Settings'
-        : 'Flexible plan • Cancel anytime in App Store';
+    final buttonText = pkg == null
+        ? 'Plans unavailable'
+        : trialLabel != null
+            ? 'Start $trialLabel Free Trial'
+            : (isAnnual ? 'Continue with Yearly' : 'Continue with Monthly');
+    final guaranteeText = pkg == null
+        ? 'Reload the page and try again'
+        : trialLabel != null
+            ? '$trialLabel free • Then auto-renews • Cancel anytime in Settings'
+            : 'Cancel anytime in App Store settings';
 
     return Column(
       children: [
         BounceButton(
-          onTap: (_isProcessingPurchase || _isRestoring) ? null : _handlePurchase,
+          onTap: (_isProcessingPurchase || _isRestoring || pkg == null) ? null : _handlePurchase,
           child: Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(vertical: 15),

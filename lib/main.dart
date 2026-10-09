@@ -11,9 +11,7 @@ import 'core/theme/app_theme.dart';
 import 'firebase_options.dart';
 import 'repositories/authentication_repository.dart';
 import 'repositories/category_repository.dart';
-import 'repositories/collection_repository.dart';
 import 'repositories/gemini_authentication_repository.dart';
-import 'repositories/guide_repository.dart';
 import 'repositories/history_repository.dart';
 import 'services/auth_service.dart';
 import 'services/cloudinary_service.dart';
@@ -123,12 +121,6 @@ class VeriCheckRoot extends StatelessWidget {
         ChangeNotifierProvider<HistoryRepository>(
           create: (_) => HistoryRepository()..loadPersistedReports(),
         ),
-        ChangeNotifierProvider<GuideRepository>(
-          create: (_) => GuideRepository(),
-        ),
-        ChangeNotifierProvider<CollectionRepository>(
-          create: (_) => CollectionRepository()..load(),
-        ),
         Provider<GeminiService>(create: (_) => GeminiService()),
         Provider<GeminiAuthenticationRepository>(
           create: (ctx) => GeminiAuthenticationRepository(
@@ -231,7 +223,6 @@ class _VeriCheckAppState extends State<VeriCheckApp> {
     await DataMigrationService.migrateOfflineDataIfNeeded(uid: uid);
     if (!mounted) return;
     context.read<HistoryRepository>().syncFromFirestore();
-    context.read<CollectionRepository>().syncFromFirestore();
     context.read<CategoryRepository>().syncFromFirestore();
   }
 
@@ -247,8 +238,6 @@ class _VeriCheckAppState extends State<VeriCheckApp> {
     final orphaned = await context.read<HistoryRepository>().clearAllLocalData();
     if (!mounted) return;
     context.read<AuthenticationRepository>().deleteStoredImages(orphaned);
-    await context.read<CollectionRepository>().clearAllLocalData();
-    if (!mounted) return;
     await context.read<CategoryRepository>().clearAllLocalData();
     if (!mounted) return;
     await context.read<ProfileViewModel>().clearCachedProfile();

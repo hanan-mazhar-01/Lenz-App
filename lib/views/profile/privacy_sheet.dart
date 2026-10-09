@@ -1,11 +1,24 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../core/config/revenue_cat_config.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
 import '../../widgets/animations/bounce_button.dart';
 
 class PrivacySecuritySheet extends StatelessWidget {
   const PrivacySecuritySheet({super.key});
+
+  Future<void> _openPrivacyPolicy() async {
+    final uri = Uri.parse(RevenueCatConfig.privacyPolicyUrl);
+    try {
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+      }
+    } catch (e) {
+      debugPrint('Could not open privacy policy: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,7 +68,9 @@ class PrivacySecuritySheet extends StatelessWidget {
               description:
                   'Photos you submit are securely analyzed using Google Gemini AI models '
                   'to evaluate stitching, materials, hardware, and typography. '
-                  'Photos are securely hosted so your reports remain accessible in your collection.',
+                  'Photos are hosted with Cloudinary so your reports remain accessible in your collection. '
+                  'You can permanently delete your photos and reports at any time from '
+                  'Profile > Delete Account.',
             ),
             const SizedBox(height: 10),
             _buildInfoCard(
@@ -76,7 +91,42 @@ class PrivacySecuritySheet extends StatelessWidget {
                   'local device caches while preserving your cloud account data.',
             ),
 
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
+
+            // Button to open Privacy Policy
+            GestureDetector(
+              onTap: _openPrivacyPolicy,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.deepForestGreen.withOpacity(0.3)),
+                  color: AppColors.deepForestGreen.withOpacity(0.05),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'View Privacy Policy',
+                      style: TextStyle(
+                        color: AppColors.deepForestGreen,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                    SizedBox(width: 6),
+                    Icon(
+                      CupertinoIcons.arrow_up_right,
+                      size: 14,
+                      color: AppColors.deepForestGreen,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 14),
 
             // Close button
             BounceButton(

@@ -69,3 +69,8 @@ eval_results/
 
 # Local evaluation photos from the owner device (private, never commit)
 eval_data/
+
+# Ad-hoc zip snapshots of lib/ or functions/ have previously bundled
+# lib/core/config/env_secrets.dart (which must never be committed) into git
+# history. Use git commits/branches for backups instead of zipping folders.
+*.zip

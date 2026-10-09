@@ -1,9 +1,11 @@
 import 'dart:io';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+
 import '../../core/theme/app_colors.dart';
 import '../../models/authentication_result.dart';
 import '../../repositories/history_repository.dart';
@@ -17,26 +19,26 @@ import '../../services/haptics.dart';
 
 class ProfileScreen extends StatelessWidget {
   final VoidCallback onOpenPremium;
-  final VoidCallback onOpenCollection;
   final VoidCallback? onOpenSettings;
   final VoidCallback onOpenPrivacy;
   final VoidCallback onOpenHelp;
   final VoidCallback onOpenCredits;
   final VoidCallback? onOpenHistory;
-  final VoidCallback? onOpenSaved;
+  final VoidCallback? onOpenFavorites;
   final VoidCallback? onOpenGuestPaywall;
+  final VoidCallback? onOpenTerms;
 
   const ProfileScreen({
     super.key,
     required this.onOpenPremium,
-    required this.onOpenCollection,
     this.onOpenSettings,
     required this.onOpenPrivacy,
     required this.onOpenHelp,
     required this.onOpenCredits,
     this.onOpenHistory,
-    this.onOpenSaved,
+    this.onOpenFavorites,
     this.onOpenGuestPaywall,
+    this.onOpenTerms,
   });
 
   Future<void> _pickAvatar(
@@ -84,7 +86,10 @@ class ProfileScreen extends StatelessWidget {
     }
   }
 
-  void _showAvatarPickerSheet(BuildContext context, ProfileViewModel profileVm) {
+  void _showAvatarPickerSheet(
+    BuildContext context,
+    ProfileViewModel profileVm,
+  ) {
     Haptics.lightImpact();
     showModalBottomSheet(
       context: context,
@@ -121,10 +126,7 @@ class ProfileScreen extends StatelessWidget {
             const SizedBox(height: 4),
             const Text(
               'Select an image from camera or gallery',
-              style: TextStyle(
-                color: AppColors.charcoalGray,
-                fontSize: 12.5,
-              ),
+              style: TextStyle(color: AppColors.charcoalGray, fontSize: 12.5),
             ),
             const SizedBox(height: 18),
 
@@ -179,7 +181,9 @@ class ProfileScreen extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: AppColors.veryLightWarmGray,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: AppColors.nearBlack.withOpacity(0.06)),
+                  border: Border.all(
+                    color: AppColors.nearBlack.withOpacity(0.06),
+                  ),
                 ),
                 child: const Center(
                   child: Text(
@@ -248,7 +252,10 @@ class ProfileScreen extends StatelessWidget {
                         ),
                         IconButton(
                           onPressed: () => Navigator.of(ctx).pop(),
-                          icon: const Icon(Icons.close_rounded, color: AppColors.charcoalGray),
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            color: AppColors.charcoalGray,
+                          ),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
                         ),
@@ -272,7 +279,9 @@ class ProfileScreen extends StatelessWidget {
                               ),
                             ),
                             child: ClipOval(
-                              child: _buildAvatarImage(profileVm.user.avatarPath),
+                              child: _buildAvatarImage(
+                                profileVm.user.avatarPath,
+                              ),
                             ),
                           ),
                           Positioned(
@@ -338,7 +347,9 @@ class ProfileScreen extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: AppColors.veryLightWarmGray,
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: AppColors.nearBlack.withOpacity(0.08)),
+                        border: Border.all(
+                          color: AppColors.nearBlack.withOpacity(0.08),
+                        ),
                       ),
                       child: TextField(
                         controller: nameController,
@@ -350,9 +361,16 @@ class ProfileScreen extends StatelessWidget {
                         decoration: const InputDecoration(
                           hintText: 'Enter your name',
                           hintStyle: TextStyle(color: AppColors.softGray),
-                          contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 13,
+                          ),
                           border: InputBorder.none,
-                          prefixIcon: Icon(CupertinoIcons.person, color: AppColors.deepForestGreen, size: 20),
+                          prefixIcon: Icon(
+                            CupertinoIcons.person,
+                            color: AppColors.deepForestGreen,
+                            size: 20,
+                          ),
                         ),
                       ),
                     ),
@@ -364,7 +382,9 @@ class ProfileScreen extends StatelessWidget {
                         final newName = nameController.text.trim();
                         if (newName.isEmpty) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Name cannot be empty')),
+                            const SnackBar(
+                              content: Text('Name cannot be empty'),
+                            ),
                           );
                           return;
                         }
@@ -391,7 +411,9 @@ class ProfileScreen extends StatelessWidget {
                           borderRadius: BorderRadius.circular(16),
                           boxShadow: [
                             BoxShadow(
-                              color: AppColors.deepForestGreen.withOpacity(0.25),
+                              color: AppColors.deepForestGreen.withOpacity(
+                                0.25,
+                              ),
                               blurRadius: 10,
                               offset: const Offset(0, 4),
                             ),
@@ -507,14 +529,20 @@ class ProfileScreen extends StatelessWidget {
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(
-        child: CupertinoActivityIndicator(radius: 16, color: CupertinoColors.white),
+        child: CupertinoActivityIndicator(
+          radius: 16,
+          color: CupertinoColors.white,
+        ),
       ),
     );
 
     final error = await authService.deleteAccount();
 
     if (!context.mounted) return;
-    Navigator.of(context, rootNavigator: true).pop(); // dismiss loading indicator
+    Navigator.of(
+      context,
+      rootNavigator: true,
+    ).pop(); // dismiss loading indicator
 
     if (error != null) {
       Haptics.mediumImpact();
@@ -543,8 +571,12 @@ class ProfileScreen extends StatelessWidget {
 
     final allReports = historyRepo.allReports;
     final totalReports = allReports.length;
-    final authenticReports = allReports.where((r) => r.verdict == Verdict.likelyAuthentic).length;
-    final replicaReports = allReports.where((r) => r.verdict == Verdict.likelyReplica).length;
+    final authenticReports = allReports
+        .where((r) => r.verdict == Verdict.likelyAuthentic)
+        .length;
+    final replicaReports = allReports
+        .where((r) => r.verdict == Verdict.likelyReplica)
+        .length;
 
     final remainingGuestScans = 3 - (totalReports > 3 ? 3 : totalReports);
 
@@ -578,7 +610,9 @@ class ProfileScreen extends StatelessWidget {
                               shape: BoxShape.circle,
                               color: AppColors.veryLightWarmGray,
                               border: Border.all(
-                                color: AppColors.nearBlack.withValues(alpha: 0.08),
+                                color: AppColors.nearBlack.withValues(
+                                  alpha: 0.08,
+                                ),
                                 width: 1.5,
                               ),
                             ),
@@ -621,40 +655,109 @@ class ProfileScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           BounceButton(
-                            onTap: () => _showEditProfileSheet(context, profileVm),
+                            onTap: () =>
+                                _showEditProfileSheet(context, profileVm),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Flexible(
                                   child: Text(
                                     isGuest
-                                        ? (user.name.isNotEmpty && user.name != 'Collector' && user.name != 'Guest Collector'
-                                            ? user.name
-                                            : 'Guest Collector')
+                                        ? (user.name.isNotEmpty &&
+                                                  user.name != 'Collector' &&
+                                                  user.name != 'Guest Collector'
+                                              ? user.name
+                                              : 'Guest Collector')
                                         : (user.name.isNotEmpty &&
-                                                user.name != 'Collector' &&
-                                                user.name != 'Guest Collector' &&
-                                                (!user.email.toLowerCase().contains('privaterelay.appleid.com') ||
-                                                    user.name.toLowerCase() != (user.email.contains('@') ? user.email.split('@').first.toLowerCase() : ''))
-                                            ? user.name
-                                            : (authService.currentUser?.displayName?.isNotEmpty == true &&
-                                                    authService.currentUser!.displayName != 'Collector' &&
-                                                    authService.currentUser!.displayName != 'Guest Collector' &&
-                                                    (!((authService.currentUser?.email ?? '').toLowerCase().contains('privaterelay.appleid.com')) ||
-                                                        authService.currentUser!.displayName!.toLowerCase() !=
-                                                            ((authService.currentUser?.email ?? '').contains('@')
-                                                                ? (authService.currentUser?.email ?? '').split('@').first.toLowerCase()
-                                                                : ''))
-                                                ? authService.currentUser!.displayName!
-                                                : (authService.currentUser?.email?.contains('@') == true &&
-                                                        !authService.currentUser!.email!.toLowerCase().contains('privaterelay.appleid.com')
-                                                    ? (authService.currentUser!.email!.split('@').first.isNotEmpty
-                                                        ? authService.currentUser!.email!.split('@').first[0].toUpperCase() +
-                                                            authService.currentUser!.email!.split('@').first.substring(1)
-                                                        : 'Collector')
-                                                    : (authService.currentUser?.providerData.any((p) => p.providerId == 'apple.com') == true
-                                                        ? 'Apple User'
-                                                        : 'Collector')))),
+                                                  user.name != 'Collector' &&
+                                                  user.name !=
+                                                      'Guest Collector' &&
+                                                  (!user.email.toLowerCase().contains(
+                                                        'privaterelay.appleid.com',
+                                                      ) ||
+                                                      user.name.toLowerCase() !=
+                                                          (user.email.contains(
+                                                                '@',
+                                                              )
+                                                              ? user.email
+                                                                    .split('@')
+                                                                    .first
+                                                                    .toLowerCase()
+                                                              : ''))
+                                              ? user.name
+                                              : (authService
+                                                                .currentUser
+                                                                ?.displayName
+                                                                ?.isNotEmpty ==
+                                                            true &&
+                                                        authService
+                                                                .currentUser!
+                                                                .displayName !=
+                                                            'Collector' &&
+                                                        authService
+                                                                .currentUser!
+                                                                .displayName !=
+                                                            'Guest Collector' &&
+                                                        (!((authService.currentUser?.email ?? '').toLowerCase().contains(
+                                                              'privaterelay.appleid.com',
+                                                            )) ||
+                                                            authService
+                                                                    .currentUser!
+                                                                    .displayName!
+                                                                    .toLowerCase() !=
+                                                                ((authService.currentUser?.email ?? '').contains(
+                                                                      '@',
+                                                                    )
+                                                                    ? (authService.currentUser?.email ??
+                                                                              '')
+                                                                          .split(
+                                                                            '@',
+                                                                          )
+                                                                          .first
+                                                                          .toLowerCase()
+                                                                    : ''))
+                                                    ? authService
+                                                          .currentUser!
+                                                          .displayName!
+                                                    : (authService.currentUser?.email?.contains(
+                                                                    '@',
+                                                                  ) ==
+                                                                  true &&
+                                                              !authService
+                                                                  .currentUser!
+                                                                  .email!
+                                                                  .toLowerCase()
+                                                                  .contains(
+                                                                    'privaterelay.appleid.com',
+                                                                  )
+                                                          ? (authService
+                                                                    .currentUser!
+                                                                    .email!
+                                                                    .split('@')
+                                                                    .first
+                                                                    .isNotEmpty
+                                                                ? authService
+                                                                          .currentUser!
+                                                                          .email!
+                                                                          .split(
+                                                                            '@',
+                                                                          )
+                                                                          .first[0]
+                                                                          .toUpperCase() +
+                                                                      authService
+                                                                          .currentUser!
+                                                                          .email!
+                                                                          .split(
+                                                                            '@',
+                                                                          )
+                                                                          .first
+                                                                          .substring(
+                                                                            1,
+                                                                          )
+                                                                : 'Collector')
+                                                          : (authService.currentUser?.providerData.any((p) => p.providerId == 'apple.com') == true
+                                                                ? 'Apple User'
+                                                                : 'Collector')))),
                                     style: const TextStyle(
                                       color: AppColors.nearBlack,
                                       fontSize: 19.5,
@@ -672,7 +775,9 @@ class ProfileScreen extends StatelessWidget {
                                     color: AppColors.veryLightWarmGray,
                                     shape: BoxShape.circle,
                                     border: Border.all(
-                                      color: AppColors.nearBlack.withValues(alpha: 0.08),
+                                      color: AppColors.nearBlack.withValues(
+                                        alpha: 0.08,
+                                      ),
                                     ),
                                   ),
                                   child: const Icon(
@@ -689,9 +794,14 @@ class ProfileScreen extends StatelessWidget {
                             Row(
                               children: [
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 7,
+                                    vertical: 2,
+                                  ),
                                   decoration: BoxDecoration(
-                                    color: AppColors.nearBlack.withValues(alpha: 0.07),
+                                    color: AppColors.nearBlack.withValues(
+                                      alpha: 0.07,
+                                    ),
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                   child: const Row(
@@ -727,9 +837,12 @@ class ProfileScreen extends StatelessWidget {
                             ),
                           ] else ...[
                             GestureDetector(
-                              onTap: () => _showEditProfileSheet(context, profileVm),
+                              onTap: () =>
+                                  _showEditProfileSheet(context, profileVm),
                               child: Text(
-                                user.email.isNotEmpty ? user.email : 'No email added',
+                                user.email.isNotEmpty
+                                    ? user.email
+                                    : 'No email added',
                                 style: const TextStyle(
                                   color: AppColors.charcoalGray,
                                   fontSize: 12.5,
@@ -743,7 +856,10 @@ class ProfileScreen extends StatelessWidget {
                             Row(
                               children: [
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 7,
+                                    vertical: 2,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: user.isPremium
                                         ? const Color(0xFFE5C378)
@@ -763,9 +879,11 @@ class ProfileScreen extends StatelessWidget {
                                       ],
                                       Text(
                                         user.isPremium
-                                            ? (user.planName.toUpperCase().contains('YEARLY')
-                                                ? 'YEARLY PRO'
-                                                : 'MONTHLY PRO')
+                                            ? (user.planName
+                                                      .toUpperCase()
+                                                      .contains('YEARLY')
+                                                  ? 'YEARLY PRO'
+                                                  : 'MONTHLY PRO')
                                             : 'FREE PLAN',
                                         style: TextStyle(
                                           color: user.isPremium
@@ -811,7 +929,9 @@ class ProfileScreen extends StatelessWidget {
                       color: AppColors.veryLightWarmGray,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: AppColors.deepForestGreen.withValues(alpha: 0.16),
+                        color: AppColors.deepForestGreen.withValues(
+                          alpha: 0.16,
+                        ),
                         width: 1.2,
                       ),
                       boxShadow: [
@@ -831,7 +951,9 @@ class ProfileScreen extends StatelessWidget {
                               width: 36,
                               height: 36,
                               decoration: BoxDecoration(
-                                color: AppColors.deepForestGreen.withValues(alpha: 0.1),
+                                color: AppColors.deepForestGreen.withValues(
+                                  alpha: 0.1,
+                                ),
                                 shape: BoxShape.circle,
                               ),
                               child: const Icon(
@@ -883,7 +1005,9 @@ class ProfileScreen extends StatelessWidget {
                               borderRadius: BorderRadius.circular(14),
                               boxShadow: [
                                 BoxShadow(
-                                  color: AppColors.deepForestGreen.withValues(alpha: 0.2),
+                                  color: AppColors.deepForestGreen.withValues(
+                                    alpha: 0.2,
+                                  ),
                                   blurRadius: 8,
                                   offset: const Offset(0, 3),
                                 ),
@@ -913,7 +1037,10 @@ class ProfileScreen extends StatelessWidget {
               FadeSlideTransition(
                 delay: const Duration(milliseconds: 80),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 10),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 18,
+                    horizontal: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.veryLightWarmGray,
                     borderRadius: BorderRadius.circular(20),
@@ -974,127 +1101,148 @@ class ProfileScreen extends StatelessWidget {
                 delay: const Duration(milliseconds: 120),
                 child: Column(
                   children: [
-                    // 0. Lenz Pro Membership Banner
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            Color(0xFF1E4636),
-                            AppColors.deepForestGreen,
+                    // 0. Lenz Pro Membership Banner — guests already see a
+                    // dedicated "Sign In / Create Account" banner above;
+                    // showing the IAP upsell too, before they even have an
+                    // account, is redundant and can start a real purchase
+                    // flow for an anonymous session.
+                    if (!isGuest)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFF1E4636),
+                              AppColors.deepForestGreen,
+                            ],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.deepForestGreen.withOpacity(
+                                0.25,
+                              ),
+                              blurRadius: 14,
+                              offset: const Offset(0, 4),
+                            ),
                           ],
                         ),
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.deepForestGreen.withOpacity(0.25),
-                            blurRadius: 14,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: onOpenPremium,
-                          borderRadius: BorderRadius.circular(20),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.12),
-                                    shape: BoxShape.circle,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: onOpenPremium,
+                            borderRadius: BorderRadius.circular(20),
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.12),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.workspace_premium_rounded,
+                                      color: Color(0xFFE5C378),
+                                      size: 24,
+                                    ),
                                   ),
-                                  child: const Icon(
-                                    Icons.workspace_premium_rounded,
-                                    color: Color(0xFFE5C378),
-                                    size: 24,
-                                  ),
-                                ),
-                                const SizedBox(width: 14),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Text(
-                                            user.isPremium ? user.planName : 'Lenz Pro',
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w800,
-                                              letterSpacing: -0.2,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFE5C378),
-                                              borderRadius: BorderRadius.circular(6),
-                                            ),
-                                            child: Text(
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Text(
                                               user.isPremium
-                                                  ? (user.planName.toUpperCase().contains('YEARLY')
-                                                      ? 'YEARLY PRO'
-                                                      : 'MONTHLY PRO')
-                                                  : 'UPGRADE',
+                                                  ? user.planName
+                                                  : 'Lenz Pro',
                                               style: const TextStyle(
-                                                color: Color(0xFF122F24),
-                                                fontSize: 9.5,
-                                                fontWeight: FontWeight.w900,
-                                                letterSpacing: 0.4,
+                                                color: Colors.white,
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w800,
+                                                letterSpacing: -0.2,
                                               ),
                                             ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        user.isPremium
-                                            ? '${user.planName} Active • Unlimited scans unlocked'
-                                            : 'Upgrade for unlimited scans & certificates',
-                                        style: TextStyle(
-                                          color: Colors.white.withOpacity(0.75),
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w400,
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 7,
+                                                    vertical: 2,
+                                                  ),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFE5C378),
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                              ),
+                                              child: Text(
+                                                user.isPremium
+                                                    ? (user.planName
+                                                              .toUpperCase()
+                                                              .contains(
+                                                                'YEARLY',
+                                                              )
+                                                          ? 'YEARLY PRO'
+                                                          : 'MONTHLY PRO')
+                                                    : 'UPGRADE',
+                                                style: const TextStyle(
+                                                  color: Color(0xFF122F24),
+                                                  fontSize: 9.5,
+                                                  fontWeight: FontWeight.w900,
+                                                  letterSpacing: 0.4,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                      ),
-                                    ],
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          user.isPremium
+                                              ? '${user.planName} Active • Unlimited scans unlocked'
+                                              : 'Upgrade for unlimited scans & certificates',
+                                          style: TextStyle(
+                                            color: Colors.white.withOpacity(
+                                              0.75,
+                                            ),
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w400,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                Icon(
-                                  Icons.chevron_right_rounded,
-                                  color: Colors.white.withOpacity(0.6),
-                                  size: 22,
-                                ),
-                              ],
+                                  Icon(
+                                    Icons.chevron_right_rounded,
+                                    color: Colors.white.withOpacity(0.6),
+                                    size: 22,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
 
                     // 1. Scan History
                     _buildMenuCard(
                       icon: Icons.history_rounded,
                       title: 'Scan History',
                       subtitle: 'View your past scans',
-                      onTap: onOpenHistory ?? onOpenCollection,
+                      onTap: onOpenHistory ?? () {},
                     ),
 
-                    // 2. Saved Reports
+                    // 2. Favorites
                     _buildMenuCard(
-                      icon: Icons.bookmark_border_rounded,
-                      title: 'Saved Reports',
-                      subtitle: 'Keep track of important results',
-                      onTap: onOpenSaved ?? onOpenCollection,
+                      icon: Icons.favorite_border_rounded,
+                      title: 'Favorites',
+                      subtitle: 'Reports you\'ve marked as favorites',
+                      onTap: onOpenFavorites ?? () {},
                     ),
 
                     // 3. Help & Support
@@ -1112,6 +1260,15 @@ class ProfileScreen extends StatelessWidget {
                       subtitle: 'Learn how your data is protected',
                       onTap: onOpenPrivacy,
                     ),
+
+                    // 5. Terms of Service
+                    if (onOpenTerms != null)
+                      _buildMenuCard(
+                        icon: Icons.description_outlined,
+                        title: 'Terms of Service',
+                        subtitle: 'Read our usage and subscription terms',
+                        onTap: onOpenTerms!,
+                      ),
                   ],
                 ),
               ),
@@ -1249,14 +1406,18 @@ class ProfileScreen extends StatelessWidget {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: isIconAccent ? const Color(0xFFE2EDE6) : AppColors.softWarmGray,
+                    color: isIconAccent
+                        ? const Color(0xFFE2EDE6)
+                        : AppColors.softWarmGray,
                     shape: BoxShape.circle,
                   ),
                   child: Center(
                     child: Icon(
                       icon,
                       size: 20,
-                      color: isIconAccent ? AppColors.deepForestGreen : AppColors.nearBlack,
+                      color: isIconAccent
+                          ? AppColors.deepForestGreen
+                          : AppColors.nearBlack,
                     ),
                   ),
                 ),
@@ -1318,7 +1479,10 @@ class ProfileScreen extends StatelessWidget {
       return AppImage(
         imagePath: avatarPath,
         fit: BoxFit.cover,
-        placeholder: Image.asset('assets/images/mascot_home.png', fit: BoxFit.cover),
+        placeholder: Image.asset(
+          'assets/images/mascot_home.png',
+          fit: BoxFit.cover,
+        ),
       );
     }
     return Image.asset(
@@ -1355,7 +1519,9 @@ class ProfileScreen extends StatelessWidget {
               Icon(
                 icon,
                 size: 22,
-                color: isDestructive ? Colors.redAccent : AppColors.deepForestGreen,
+                color: isDestructive
+                    ? Colors.redAccent
+                    : AppColors.deepForestGreen,
               ),
               const SizedBox(width: 14),
               Text(

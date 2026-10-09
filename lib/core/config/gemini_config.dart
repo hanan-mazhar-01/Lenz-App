@@ -15,8 +15,12 @@ class GeminiConfig {
   /// Maximum tokens per response.
   static int maxOutputTokens = 2048;
 
-  /// Network timeout for each Gemini API call.
-  static Duration timeout = const Duration(seconds: 60);
+  /// Network timeout for each Gemini API call. Kept above the backend's own
+  /// worst-case latency (Cloud Function timeoutSeconds: 120, with the Gemini
+  /// REST call itself bounded to 100s — see functions/index.js and
+  /// functions/lib/gemini.js) so the client doesn't time out and the user
+  /// doesn't get billed for a scan credit while the backend is still working.
+  static Duration timeout = const Duration(seconds: 110);
 
   /// Maximum retries for transient errors.
   static int retryCount = 2;

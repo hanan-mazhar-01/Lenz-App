@@ -23,7 +23,6 @@ class HomeScreen extends StatelessWidget {
   final ValueChanged<CategoryItem> onOpenCategory;
   final VoidCallback onOpenProfile;
   final VoidCallback? onOpenSettings;
-  final VoidCallback onOpenGuides;
   final VoidCallback onOpenHistory;
   final VoidCallback? onOpenNotifications;
   final VoidCallback? onOpenPremium;
@@ -45,7 +44,6 @@ class HomeScreen extends StatelessWidget {
     required this.onOpenCategory,
     required this.onOpenProfile,
     this.onOpenSettings,
-    required this.onOpenGuides,
     required this.onOpenHistory,
     this.onOpenNotifications,
     this.onOpenPremium,
@@ -116,7 +114,11 @@ class HomeScreen extends StatelessWidget {
               // Top Bar: Greeting (Hi, {name} 👋) + Profile Button at top right
               _buildTopHeader(context, profileVm, authService),
 
-              if (!profileVm.user.isPremium) ...[
+              // Guests already get a "Sign In / Create Account" prompt
+              // elsewhere; showing the IAP upsell before they have an
+              // account too is redundant and can start a real purchase
+              // flow for an anonymous session.
+              if (!profileVm.user.isPremium && !authService.isAnonymous) ...[
                 const SizedBox(height: 14),
                 _buildProBanner(context),
               ],

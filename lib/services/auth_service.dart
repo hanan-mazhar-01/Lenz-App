@@ -427,6 +427,7 @@ class AuthService extends ChangeNotifier {
           knownName: resolvedName,
           knownEmail: trimmedEmail,
         );
+        unawaited(_sendVerificationEmailIfNeeded(credential.user!));
       }
       return credential;
     } on FirebaseAuthException catch (e) {
@@ -438,6 +439,19 @@ class AuthService extends ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  /// Best-effort — never blocks or fails signup if it errors (e.g. rate
+  /// limited). An unverified email/password account is still usable; this
+  /// only closes the "any unconfirmed email can sign up" gap.
+  Future<void> _sendVerificationEmailIfNeeded(User user) async {
+    try {
+      if (!user.emailVerified) {
+        await user.sendEmailVerification();
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AuthService] sendEmailVerification failed: $e');
     }
   }
 

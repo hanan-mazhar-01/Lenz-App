@@ -36,6 +36,7 @@ function httpsErrorFor(err) {
       auth: "unauthenticated",
       unavailable: "unavailable",
       network: "unavailable",
+      quota_exhausted: "failed-precondition",
       bad_request: "internal",
       truncated: "internal",
       blocked: "internal",
@@ -306,21 +307,9 @@ exports.revenueCatWebhook = functions
       return res.status(400).send("Missing event data");
     }
 
-    const appUserId = event.app_user_id;
     const eventType = event.type;
-
-    if (!appUserId) {
-      return res.status(400).send("Missing app_user_id");
-    }
-
-    const userRef = db.collection("users").doc(appUserId);
-
-    if (
-      eventType === "INITIAL_PURCHASE" ||
-      eventType === "RENEWAL" ||
-      eventType === "PRODUCT_CHANGE"
-    ) {
-      await userRef.set(
+    const grantPremium = (uid) =>
+      db.collection("users").doc(uid).set(
         {
           isPremium: true,
           planName: "VeriCheck Premium",
@@ -329,11 +318,8 @@ exports.revenueCatWebhook = functions
         },
         { merge: true }
       );
-    } else if (
-      eventType === "CANCELLATION" ||
-      eventType === "EXPIRATION"
-    ) {
-      await userRef.set(
+    const revokePremium = (uid) =>
+      db.collection("users").doc(uid).set(
         {
           isPremium: false,
           planName: "Free Plan",
@@ -341,6 +327,42 @@ exports.revenueCatWebhook = functions
         },
         { merge: true }
       );
+
+    // TRANSFER moves an entitlement between RevenueCat app user ids and has
+    // no single app_user_id of its own - handle it before the generic
+    // appUserId check below.
+    if (eventType === "TRANSFER") {
+      const toIds = Array.isArray(event.transferred_to) ? event.transferred_to : [];
+      const fromIds = Array.isArray(event.transferred_from) ? event.transferred_from : [];
+      await Promise.all([...toIds.map(grantPremium), ...fromIds.map(revokePremium)]);
+      return res.status(200).json({ received: true });
+    }
+
+    const appUserId = event.app_user_id;
+    if (!appUserId) {
+      return res.status(400).send("Missing app_user_id");
+    }
+
+    if (
+      eventType === "INITIAL_PURCHASE" ||
+      eventType === "RENEWAL" ||
+      eventType === "PRODUCT_CHANGE" ||
+      eventType === "UNCANCELLATION"
+    ) {
+      await grantPremium(appUserId);
+    } else if (
+      eventType === "CANCELLATION" ||
+      eventType === "EXPIRATION" ||
+      eventType === "REFUND"
+    ) {
+      await revokePremium(appUserId);
+    } else if (eventType === "BILLING_ISSUE" || eventType === "SUBSCRIPTION_PAUSED") {
+      // Apple/RevenueCat still consider the subscription active during a
+      // billing grace period or pause - don't revoke access pre-emptively.
+      // An EXPIRATION event will arrive if it isn't resolved.
+      logEvent("revenuecat_webhook_grace_period", { appUserId, eventType }, "WARNING");
+    } else {
+      logEvent("revenuecat_webhook_unhandled", { appUserId, eventType }, "WARNING");
     }
 
     return res.status(200).json({ received: true });
@@ -364,7 +386,7 @@ async function deleteCloudinaryAssetsByPrefix(prefix) {
   const apiSecret = process.env.CLOUDINARY_API_SECRET;
 
   if (!cloudName || !apiKey || !apiSecret) {
-    console.error("[deleteCloudinaryAssetsByPrefix] Cloudinary secrets not configured; skipping.");
+    logEvent("cloudinary_delete_skipped_unconfigured", { prefix }, "ERROR");
     return;
   }
 
@@ -381,10 +403,14 @@ async function deleteCloudinaryAssetsByPrefix(prefix) {
     });
     if (!response.ok) {
       const errText = await response.text();
-      console.error(`[deleteCloudinaryAssetsByPrefix] Cloudinary delete failed (${response.status}): ${errText}`);
+      // Deliberately non-fatal (callers don't block user-facing deletion on
+      // a third-party outage) - but logged at ERROR severity, not just
+      // console.error, so a persistent failure is actually visible/alertable
+      // instead of silently leaving orphaned images on Cloudinary forever.
+      logEvent("cloudinary_delete_failed", { prefix, status: response.status, body: errText.slice(0, 300) }, "ERROR");
     }
   } catch (e) {
-    console.error("[deleteCloudinaryAssetsByPrefix] Request error:", e);
+    logEvent("cloudinary_delete_error", { prefix, error: e.message }, "ERROR");
   }
 }
 
@@ -458,11 +484,20 @@ exports.deleteAccount = functions
   try {
     await admin.auth().deleteUser(uid);
   } catch (e) {
-    console.error("[deleteAccount] Auth user deletion error:", e);
-    throw new functions.https.HttpsError(
-      "internal",
-      "Account data was deleted, but the sign-in record could not be removed. Please contact support."
-    );
+    // One immediate retry - this step runs after Firestore data is already
+    // gone, so a transient failure here (not permission/not-found) would
+    // otherwise leave an orphaned Auth record with nothing behind it.
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await admin.auth().deleteUser(uid);
+    } catch (e2) {
+      console.error("[deleteAccount] Auth user deletion error:", e2);
+      logEvent("delete_account_orphaned_auth_user", { uid }, "ERROR");
+      throw new functions.https.HttpsError(
+        "internal",
+        "Account data was deleted, but the sign-in record could not be removed. Please contact support."
+      );
+    }
   }
 
   return { success: true };

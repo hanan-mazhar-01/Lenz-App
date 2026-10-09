@@ -602,6 +602,21 @@ class ScanFlowViewModel extends ChangeNotifier {
   // ---------------------------------------------------- final evaluation
   Future<void> finishAndAnalyzeNow() => runAnalysis();
 
+  /// Set when the user leaves the scan flow while [runAnalysis] is still
+  /// running (see [abandonAnalysisIfRunning]), so the in-flight result is
+  /// discarded instead of being saved to history and charged as a used scan.
+  bool _analysisAbandoned = false;
+
+  /// Call when the user navigates away during the `analyzing` step. The
+  /// network call already in flight can't be aborted, but its result will
+  /// be discarded — no history entry, no scan-credit deduction — instead of
+  /// silently completing behind the user's back.
+  void abandonAnalysisIfRunning() {
+    if (_scanState == ScanLifecycleState.analyzing) {
+      _analysisAbandoned = true;
+    }
+  }
+
   Future<void> runAnalysis() async {
     final ctx = _ctx;
     if (ctx == null) return;
@@ -611,6 +626,7 @@ class ScanFlowViewModel extends ChangeNotifier {
       return;
     }
 
+    _analysisAbandoned = false;
     _currentStep = ScanStep.analyzing;
     _scanState = ScanLifecycleState.analyzing;
     _appError = null;
@@ -624,6 +640,8 @@ class ScanFlowViewModel extends ChangeNotifier {
         retakeSuggestions: Map<String, int>.from(_retakeSuggestions),
         scanId: 'scan_${DateTime.now().microsecondsSinceEpoch}',
       );
+
+      if (_analysisAbandoned) return;
 
       // Repeat-scan consistency: a stable earlier result of the same
       // product is only overturned by new strong evidence.
@@ -645,9 +663,10 @@ class ScanFlowViewModel extends ChangeNotifier {
       _scanState = ScanLifecycleState.resultReady;
       _currentStep = ScanStep.authenticationReport;
     } catch (e) {
+      if (_analysisAbandoned) return;
       _fail(e, () => runAnalysis());
     } finally {
-      notifyListeners();
+      if (!_analysisAbandoned) notifyListeners();
     }
   }
 

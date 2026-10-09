@@ -5,7 +5,6 @@ import 'package:replica_detector/models/authentication_result.dart';
 import 'package:replica_detector/models/capture_guide.dart';
 import 'package:replica_detector/models/evidence_record.dart';
 import 'package:replica_detector/models/product.dart';
-import 'package:replica_detector/repositories/collection_repository.dart';
 import 'package:replica_detector/repositories/gemini_authentication_repository.dart';
 import 'package:replica_detector/repositories/history_repository.dart';
 import 'package:replica_detector/services/storage_service.dart';
@@ -41,7 +40,6 @@ void main() {
     await tester.pumpWidget(MultiProvider(
       providers: [
         ChangeNotifierProvider<StorageService>.value(value: StorageService()),
-        ChangeNotifierProvider<CollectionRepository>.value(value: CollectionRepository()),
         ...providers,
       ],
       child: MaterialApp(home: child),

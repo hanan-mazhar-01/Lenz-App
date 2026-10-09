@@ -57,7 +57,11 @@ class GeminiService {
         }
         return result;
       } on AppError catch (e) {
-        if (e.type == AppErrorType.apiUnauthorized || attempts >= maxAttempts) {
+        if (e.type == AppErrorType.apiUnauthorized ||
+            e.type == AppErrorType.aiBillingUnavailable ||
+            attempts >= maxAttempts) {
+          // Billing/quota-exhausted won't resolve by retrying immediately —
+          // surface it right away instead of burning retries on it.
           rethrow;
         }
         if (e.type == AppErrorType.quotaLimit) {
@@ -159,8 +163,16 @@ class GeminiService {
     } on FirebaseFunctionsException catch (e) {
       if (kDebugMode) {
         debugPrint(
-          '[GeminiService] FirebaseFunctionsException: code=${e.code}, message=${e.message}',
+          '[GeminiService] FirebaseFunctionsException: code=${e.code}, message=${e.message}, details=${e.details}',
         );
+      }
+      // The backend tags its HttpsError with { reason: <GeminiError code> }
+      // so distinct failure modes that happen to share an HttpsError code
+      // (e.g. both "quota_exhausted" and other bad-request cases map to
+      // "internal") can still be told apart here.
+      final reason = e.details is Map ? (e.details as Map)['reason'] : null;
+      if (reason == 'quota_exhausted') {
+        throw AppError.aiBillingUnavailable(original: e);
       }
       switch (e.code) {
         case 'resource-exhausted':

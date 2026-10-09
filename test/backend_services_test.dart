@@ -3,10 +3,8 @@ import 'package:replica_detector/core/config/cloudinary_config.dart';
 import 'package:replica_detector/core/config/env_secrets.dart';
 import 'package:replica_detector/core/config/gemini_config.dart';
 import 'package:replica_detector/models/authentication_result.dart';
-import 'package:replica_detector/models/collection_item.dart';
 import 'package:replica_detector/models/product.dart';
 import 'package:replica_detector/repositories/category_repository.dart';
-import 'package:replica_detector/repositories/collection_repository.dart';
 import 'package:replica_detector/repositories/history_repository.dart';
 import 'package:replica_detector/services/data_migration_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -70,39 +68,6 @@ void main() {
       await reloadedRepo.loadPersistedReports(prefs: prefs);
       expect(reloadedRepo.allReports.length, 1);
       expect(reloadedRepo.allReports.first.product.brand, 'Chanel');
-    });
-
-    test('CollectionRepository persists and deduplicates items', () async {
-      final repo = CollectionRepository();
-      await repo.load();
-      expect(repo.allItems, isEmpty);
-
-      final item = CollectionItem(
-        id: 'col_1',
-        name: 'Submariner Date',
-        brand: 'Rolex',
-        model: '126610LN',
-        category: ProductCategory.watches,
-        imageAsset: 'assets/images/rolex.png',
-        verdict: Verdict.likelyAuthentic,
-        authenticationConfidence: 95,
-        savedDate: DateTime.now(),
-        scannedDate: DateTime.now(),
-        sourceReportId: 'rep_rolex_1',
-      );
-
-      repo.addItem(item);
-      expect(repo.allItems.length, 1);
-
-      // Attempt duplicate addition with same source report ID
-      repo.addItem(item);
-      expect(repo.allItems.length, 1);
-
-      // Reload test
-      final reloaded = CollectionRepository();
-      await reloaded.load();
-      expect(reloaded.allItems.length, 1);
-      expect(reloaded.allItems.first.brand, 'Rolex');
     });
 
     test('CategoryRepository registers and persists custom categories', () async {

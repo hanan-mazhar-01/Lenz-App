@@ -1,11 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:replica_detector/data/authentication_rules.dart';
 import 'package:replica_detector/models/authentication_result.dart';
-import 'package:replica_detector/models/collection_item.dart';
 import 'package:replica_detector/models/evidence.dart';
 import 'package:replica_detector/models/product.dart';
-import 'package:replica_detector/repositories/collection_repository.dart';
-import 'package:replica_detector/repositories/guide_repository.dart';
 import 'package:replica_detector/repositories/history_repository.dart';
 import 'package:replica_detector/services/storage_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -65,13 +62,6 @@ void main() {
       }
     });
 
-    test('the collection starts empty', () async {
-      final repo = CollectionRepository();
-      expect(repo.allItems, isEmpty);
-      await repo.load();
-      expect(repo.totalCount, 0);
-      expect(repo.isEmpty, isTrue);
-    });
   });
 
   group('Reports round-trip through storage (§42, §47, §57)', () {
@@ -137,42 +127,6 @@ void main() {
       await repo.loadPersistedReports();
       expect(repo.allReports, hasLength(1));
       expect(repo.allReports.first.id, 'ok');
-    });
-  });
-
-  group('Collection persists real saves only (§30, §47)', () {
-    test('an item saved from a report reloads with its real values', () async {
-      final repo = CollectionRepository();
-      await repo.load();
-      repo.addItem(CollectionItem.fromReport(sampleReport()));
-
-      final reloaded = CollectionRepository();
-      await reloaded.load();
-
-      expect(reloaded.totalCount, 1);
-      final item = reloaded.allItems.first;
-      expect(item.name, 'Submariner Date');
-      expect(item.verdict, Verdict.likelyAuthentic);
-      expect(item.authenticationConfidence, 86);
-      expect(item.sourceReportId, 'rep_1');
-      expect(item.scannedDate, DateTime(2026, 3, 14, 9, 30));
-    });
-
-    test('the same report cannot be saved twice', () async {
-      final repo = CollectionRepository();
-      await repo.load();
-      repo.addItem(CollectionItem.fromReport(sampleReport()));
-      repo.addItem(CollectionItem.fromReport(sampleReport()));
-      expect(repo.totalCount, 1);
-      expect(repo.containsReport('rep_1'), isTrue);
-    });
-
-    test('collection items carry no estimated or invented values', () {
-      final item = CollectionItem.fromReport(sampleReport());
-      final json = item.toJson();
-      expect(json.keys, isNot(contains('estimatedValueUsd')));
-      expect(json.keys, isNot(contains('serialNumber')));
-      expect(item.imageAsset, testWatch.imageAsset);
     });
   });
 
@@ -256,13 +210,6 @@ void main() {
       for (final needle in ['LOGO', 'TYPOGRAPHY', 'STITCHING', 'MATERIAL', 'HARDWARE', 'SERIAL']) {
         expect(briefing, contains(needle));
       }
-    });
-  });
-
-  group('Guides are static reference content, not user data', () {
-    test('guide library is available without any scans', () {
-      final repo = GuideRepository();
-      expect(repo.allGuides, isNotEmpty);
     });
   });
 }

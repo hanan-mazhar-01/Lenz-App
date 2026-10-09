@@ -69,13 +69,23 @@ class ProfileViewModel extends ChangeNotifier {
     };
     RevenueCatService.isPremiumNotifier.addListener(_revenueCatListener!);
 
-    if (RevenueCatService.isPremiumNotifier.value) {
-      final rcPlan = RevenueCatService.activePlanNotifier.value ?? 'Lenz Pro';
-      _user = _user.copyWith(
-        isPremium: true,
-        planName: rcPlan,
-      );
-      _persistPremium(true, rcPlan);
+    // Where RevenueCat is actually wired up (Apple platforms), it's
+    // authoritative: sync to its live value in both directions at startup.
+    // Only ever upgrading a stale cached "false" (and never correcting a
+    // stale cached "true") is how a lapsed subscription on a device RC
+    // hasn't refreshed yet can keep showing Premium indefinitely. On
+    // platforms RC isn't configured for, leave the cached/Firestore value
+    // alone instead of forcing it to "not premium".
+    if (RevenueCatService.isSupportedPlatform) {
+      final isRcPro = RevenueCatService.isPremiumNotifier.value;
+      if (isRcPro) {
+        final rcPlan = RevenueCatService.activePlanNotifier.value ?? 'Lenz Pro';
+        _user = _user.copyWith(isPremium: true, planName: rcPlan);
+        _persistPremium(true, rcPlan);
+      } else if (_user.isPremium) {
+        _user = _user.copyWith(isPremium: false, planName: 'Free Plan');
+        _persistPremium(false, 'Free Plan');
+      }
     }
   }
 
@@ -183,7 +193,15 @@ class ProfileViewModel extends ChangeNotifier {
       final savedIsPremium = prefs.getBool(_keyIsPremium) ?? false;
       final savedPlanName = prefs.getString(_keyPlanName);
       final savedScans = prefs.getInt(_keyScansRemaining);
-      final effectiveIsPremium = savedIsPremium || RevenueCatService.isPremiumNotifier.value;
+      // Where RevenueCat is wired up, it's the sole authority on premium
+      // access — OR-ing in the local cache here would mean a lapsed
+      // subscription that was last synced as "premium" keeps showing
+      // Premium forever on a device RC hasn't refreshed yet, since OR
+      // never lets a live "false" override a stale cached "true". Where
+      // RC isn't configured (non-Apple platforms), fall back to the cache.
+      final effectiveIsPremium = RevenueCatService.isSupportedPlatform
+          ? RevenueCatService.isPremiumNotifier.value
+          : savedIsPremium;
       final rcPlan = RevenueCatService.activePlanNotifier.value;
 
       _user = _user.copyWith(

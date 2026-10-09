@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:showcaseview/showcaseview.dart';
@@ -15,9 +16,7 @@ import '../viewmodels/profile_viewmodel.dart';
 import '../viewmodels/scan_flow_viewmodel.dart';
 import '../widgets/navigation/ios_bottom_nav_bar.dart';
 import 'category/category_browse_screen.dart';
-import 'collection/collection_screen.dart';
 import 'favorites/favorites_screen.dart';
-import 'guides/guides_screen.dart';
 import 'history/history_screen.dart';
 import 'home/home_screen.dart';
 import 'paywall/guest_paywall_screen.dart';
@@ -25,6 +24,7 @@ import 'profile/help_support_sheet.dart';
 import 'profile/premium_screen.dart';
 import 'profile/privacy_sheet.dart';
 import 'profile/profile_screen.dart';
+import 'profile/terms_sheet.dart';
 import 'profile/scan_credits_sheet.dart';
 import 'report/authentication_report_view.dart';
 import 'report/part_detail_view.dart';
@@ -53,8 +53,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
   AuthenticationReport? _inspectedReport;
   CategoryItem? _inspectedCategory;
   bool _isPremiumModalActive = false;
-  bool _isGuidesActive = false;
-  bool _isCollectionActive = false;
 
   final BiometricService _biometricService = BiometricService();
 
@@ -80,16 +78,18 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
       semanticEnable: true,
       enableAutoScroll: true,
       scrollDuration: const Duration(milliseconds: 180),
-      onStart: (index, key) =>
-          debugPrint('[HomeTour DEBUG] onStart index=$index key=$key'),
-      onComplete: (index, key) =>
-          debugPrint('[HomeTour DEBUG] onComplete index=$index key=$key'),
+      onStart: (index, key) {
+        if (kDebugMode) debugPrint('[HomeTour] onStart index=$index key=$key');
+      },
+      onComplete: (index, key) {
+        if (kDebugMode) debugPrint('[HomeTour] onComplete index=$index key=$key');
+      },
       onFinish: () {
-        debugPrint('[HomeTour DEBUG] onFinish');
+        if (kDebugMode) debugPrint('[HomeTour] onFinish');
         _handleTourEnded();
       },
       onDismiss: (key) {
-        debugPrint('[HomeTour DEBUG] onDismiss key=$key');
+        if (kDebugMode) debugPrint('[HomeTour] onDismiss key=$key');
         _handleTourEnded();
       },
     );
@@ -174,12 +174,14 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
       _isScanFlowActive = true;
       _inspectedReport = null;
       _inspectedCategory = null;
-      _isGuidesActive = false;
-      _isCollectionActive = false;
     });
   }
 
   void _closeScanFlow() {
+    // If analysis is still running in the background, discard its result
+    // instead of letting it silently finish, save to history, and charge
+    // a scan credit after the user has already left.
+    context.read<ScanFlowViewModel>().abandonAnalysisIfRunning();
     setState(() {
       _isScanFlowActive = false;
     });
@@ -219,6 +221,15 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     );
   }
 
+  void _openTermsSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => const TermsOfServiceSheet(),
+    );
+  }
+
   void _openHelpSheet() {
     showModalBottomSheet(
       context: context,
@@ -248,24 +259,18 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
       );
     }
 
-    // 2. Guides Screen Layer
-    if (_isGuidesActive) {
-      return GuidesScreen(
-        onBack: () => setState(() => _isGuidesActive = false),
-      );
-    }
-
-    // 3. Collection Screen Layer
-    if (_isCollectionActive) {
-      return CollectionScreen(
-        onBack: () => setState(() => _isCollectionActive = false),
-        onScanItem: _openScanFlow,
-      );
-    }
-
     // 4. Active Authentication / Camera Scan Flow
     if (_isScanFlowActive) {
-      return _buildActiveScanFlow(context);
+      // Intercept the Android back gesture/button so it goes through the
+      // same close path as the in-app back buttons (credit/history-safe),
+      // instead of exiting or backgrounding the app mid-scan.
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop) _closeScanFlow();
+        },
+        child: _buildActiveScanFlow(context),
+      );
     }
 
     // 5. Inspected Report Detail View (from Home / History / Favorites)
@@ -349,7 +354,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                   onOpenProfile: () => setState(() => _currentTab = 4),
                   onOpenPremium: () =>
                       setState(() => _isPremiumModalActive = true),
-                  onOpenGuides: () => setState(() => _isGuidesActive = true),
                   onOpenHistory: () => setState(() => _currentTab = 2),
                   tourHeroKey: _tourHeroKey,
                   tourBrowseKey: _tourBrowseKey,
@@ -366,13 +370,12 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                 ProfileScreen(
                   onOpenPremium: () =>
                       setState(() => _isPremiumModalActive = true),
-                  onOpenCollection: () =>
-                      setState(() => _isCollectionActive = true),
                   onOpenPrivacy: _openPrivacySheet,
+                  onOpenTerms: _openTermsSheet,
                   onOpenHelp: _openHelpSheet,
                   onOpenCredits: _openCreditsSheet,
                   onOpenHistory: () => setState(() => _currentTab = 2),
-                  onOpenSaved: () => setState(() => _currentTab = 3),
+                  onOpenFavorites: () => setState(() => _currentTab = 3),
                   onOpenGuestPaywall: () => GuestPaywallScreen.show(context),
                 ),
               ],
@@ -405,8 +408,6 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
                       setState(() {
                         _inspectedReport = null;
                         _inspectedCategory = null;
-                        _isGuidesActive = false;
-                        _isCollectionActive = false;
                         _isPremiumModalActive = false;
                         _currentTab = index;
                       });

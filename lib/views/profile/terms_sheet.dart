@@ -9,10 +9,14 @@ import '../../widgets/animations/bounce_button.dart';
 class TermsOfServiceSheet extends StatelessWidget {
   const TermsOfServiceSheet({super.key});
 
-  Future<void> _openAppleEula() async {
+  Future<void> _openTermsOfService() async {
     final uri = Uri.parse(RevenueCatConfig.termsOfServiceUrl);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    try {
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        await launchUrl(uri, mode: LaunchMode.platformDefault);
+      }
+    } catch (e) {
+      debugPrint('Could not open terms of service: $e');
     }
   }
 
@@ -80,13 +84,13 @@ class TermsOfServiceSheet extends StatelessWidget {
               icon: CupertinoIcons.shield_lefthalf_fill,
               title: 'Authentication Disclaimer',
               description:
-                  'Lenz uses advanced AI computer-vision models to assess product authenticity. While our algorithms provide high-confidence insights, results are intended for advisory purposes and do not replace certified manufacturer appraisals.',
+                  'Lenz gives an AI-assisted opinion on product authenticity, not an official brand authentication or a guarantee. A result that an item "looks authentic" does not guarantee that it is genuine, and a result that it "looks fake" does not prove that it is counterfeit. Results are intended for advisory purposes and do not replace certified manufacturer appraisals.',
             ),
             const SizedBox(height: 20),
 
-            // Button to open Apple Standard EULA
+            // Button to open Terms of Service
             GestureDetector(
-              onTap: _openAppleEula,
+              onTap: _openTermsOfService,
               child: Container(
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 12),
@@ -99,7 +103,7 @@ class TermsOfServiceSheet extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      'View Apple Standard EULA',
+                      'View Terms of Service',
                       style: TextStyle(
                         color: AppColors.deepForestGreen,
                         fontWeight: FontWeight.w600,

@@ -64,6 +64,7 @@ async function generateContent({ apiKey, parts, generationConfig, timeoutMs = 90
     const errText = (await response.text()).slice(0, 300);
     if (status === 429) throw new GeminiError("rate_limited", "AI service rate limit reached.", errText);
     if (status === 401 || status === 403) throw new GeminiError("auth", "AI service authorization error.", errText);
+    if (status === 402) throw new GeminiError("quota_exhausted", "AI service billing/quota limit reached.", errText);
     if (status >= 500) throw new GeminiError("unavailable", `AI service temporarily unavailable (status ${status}).`, errText);
     throw new GeminiError("bad_request", `AI service returned status ${status}.`, errText);
   }

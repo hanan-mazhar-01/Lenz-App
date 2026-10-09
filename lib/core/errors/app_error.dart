@@ -7,6 +7,7 @@ enum AppErrorType {
   timeout,
   apiUnauthorized,
   quotaLimit,
+  aiBillingUnavailable,
   serverError,
   invalidResponse,
   cameraError,
@@ -72,6 +73,18 @@ class AppError implements Exception {
         originalException: original,
       );
 
+  /// The AI provider itself is out of prepaid credit/billing quota (HTTP
+  /// 402 from Gemini). Distinct from [quotaLimit] (a per-user rate limit,
+  /// where retrying shortly usually works): this is a backend-wide billing
+  /// issue that will not resolve by retrying immediately.
+  factory AppError.aiBillingUnavailable({Object? original}) => AppError(
+        type: AppErrorType.aiBillingUnavailable,
+        title: 'AI Temporarily Unavailable',
+        message: "Lenz's AI service is temporarily out of capacity. This is on our end, not yours.",
+        recoveryAction: 'Please try again later.',
+        originalException: original,
+      );
+
   factory AppError.serverError({int? code, Object? original}) => AppError(
         type: AppErrorType.serverError,
         title: 'Service Unavailable',
@@ -123,6 +136,10 @@ class AppError implements Exception {
     final str = error.toString().toLowerCase();
 
     // Check specific HTTP / API conditions
+    if (str.contains('402') || str.contains('quota_exhausted') || str.contains('billing')) {
+      return AppError.aiBillingUnavailable(original: error);
+    }
+
     if (str.contains('429') || str.contains('quota') || str.contains('resource_exhausted')) {
       return AppError.quotaLimit(original: error);
     }
