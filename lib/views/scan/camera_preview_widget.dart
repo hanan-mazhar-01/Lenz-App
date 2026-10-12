@@ -37,6 +37,13 @@ class CameraPreviewWidgetState extends State<CameraPreviewWidget>
   double _minZoom = 1.0;
   double _maxZoom = 4.0;
 
+  /// Set once a capture at the configured (possibly max) resolution times
+  /// out — some Android camera stacks hang on still-capture at their sensor's
+  /// absolute max resolution. Once that happens, every capture for the rest
+  /// of this screen's lifetime uses a lower, more broadly-compatible preset
+  /// instead of repeating the same multi-second hang on every subsequent try.
+  bool _forceStandardResolution = false;
+
   CameraController? get controller => _controller;
   bool get isInitialized => _isInitialized && _controller != null;
   FlashMode get flashMode => _flashMode;
@@ -133,7 +140,8 @@ class CameraPreviewWidgetState extends State<CameraPreviewWidget>
     // crops keep real detail; off falls back to 1080p (previously 480p,
     // too small for authentication).
     if (!mounted) return;
-    final hdQuality = context.read<StorageService>().getBool('hd_quality', defaultValue: true);
+    final hdQuality = !_forceStandardResolution &&
+        context.read<StorageService>().getBool('hd_quality', defaultValue: true);
     final newController = CameraController(
       _cameras[cameraIndex],
       hdQuality ? ResolutionPreset.max : ResolutionPreset.veryHigh,
@@ -241,16 +249,23 @@ class CameraPreviewWidgetState extends State<CameraPreviewWidget>
     }
     try {
       // Some Android camera stacks stop answering after several open/close
-      // cycles; without a bound the shutter spins forever.
-      final file = await _controller!.takePicture().timeout(const Duration(seconds: 12));
+      // cycles, or simply can't keep up with a still-capture at the sensor's
+      // max resolution; without a bound the shutter spins forever with no
+      // feedback, which reads to a user as "the camera just keeps running".
+      final file = await _controller!.takePicture().timeout(const Duration(seconds: 6));
       if (mounted && context.read<StorageService>().getBool('camera_sound', defaultValue: true)) {
         SystemSound.play(SystemSoundType.click);
       }
       return file;
     } on TimeoutException {
       if (kDebugMode) {
-        debugPrint('[CameraPreviewWidget] takePicture timed out after 12s - restarting camera');
+        debugPrint('[CameraPreviewWidget] takePicture timed out after 6s - restarting camera at a lower resolution');
       }
+      // Self-healing: a hang is most often the max-resolution preset being
+      // more than this device's camera stack can deliver for still capture.
+      // Downgrade for the rest of this session instead of hanging the same
+      // way on every retry.
+      _forceStandardResolution = true;
       if (mounted) unawaited(_initCameraController(_selectedCameraIndex));
       return null;
     } catch (e) {

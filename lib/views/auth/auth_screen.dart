@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_typography.dart';
@@ -7,6 +6,7 @@ import '../../core/responsive/responsive.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/animations/bounce_button.dart';
 import '../../widgets/animations/fade_slide_transition.dart';
+import '../../widgets/common/google_icon.dart';
 import '../../widgets/mascot/detective_mascot_widget.dart';
 import '../../services/haptics.dart';
 
@@ -390,7 +390,7 @@ class _AuthScreenState extends State<AuthScreen> {
                               if (mounted && result != null) _dismissIfPushed();
                             },
                       child: _SocialButton(
-                        icon: const _GoogleGIcon(),
+                        icon: const GoogleGIcon(),
                         label: 'Continue with Google',
                         disabled: busy,
                       ),
@@ -559,23 +559,6 @@ class _SocialButton extends StatelessWidget {
 }
 
 /// Official multi-color Google "G" mark, embedded so no extra asset is needed.
-class _GoogleGIcon extends StatelessWidget {
-  const _GoogleGIcon();
-
-  static const _svg = '''
-<svg viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
-  <path fill="#4285F4" d="M17.64 9.2045c0-.6381-.0573-1.2518-.1636-1.8409H9v3.4814h4.8436c-.2086 1.125-.8427 2.0782-1.7959 2.7164v2.2582h2.9087c1.7018-1.5668 2.6836-3.8741 2.6836-6.6151z"/>
-  <path fill="#34A853" d="M9 18c2.43 0 4.4673-.806 5.9564-2.1805l-2.9087-2.2582c-.8059.54-1.8368.8591-3.0477.8591-2.344 0-4.3282-1.5831-5.036-3.7104H.9573v2.3318C2.4382 15.9832 5.4818 18 9 18z"/>
-  <path fill="#FBBC05" d="M3.964 10.71c-.18-.54-.2822-1.1168-.2822-1.71s.1023-1.17.2823-1.71V4.9582H.9573A8.9965 8.9965 0 000 9c0 1.4523.3477 2.8268.9573 4.0418L3.964 10.71z"/>
-  <path fill="#EA4335" d="M9 3.5795c1.3214 0 2.5077.4541 3.4405 1.346l2.5813-2.5814C13.4632.8918 11.426 0 9 0 5.4818 0 2.4382 2.0168.9573 4.9582L3.964 7.29C4.6718 5.1627 6.656 3.5795 9 3.5795z"/>
-</svg>''';
-
-  @override
-  Widget build(BuildContext context) {
-    return SvgPicture.string(_svg, width: 20, height: 20);
-  }
-}
-
 /// Bottom sheet for password-reset requests.
 class _ForgotPasswordSheet extends StatefulWidget {
   final AuthService authService;

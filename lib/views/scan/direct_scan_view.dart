@@ -31,6 +31,8 @@ class _DirectScanViewState extends State<DirectScanView>
       GlobalKey<CameraPreviewWidgetState>();
   CameraController? _cameraController;
   bool _isCapturing = false;
+  bool _isCaptureSlow = false;
+  Timer? _slowCaptureTimer;
   bool _isFlashOn = false;
   double _zoomLevel = 1.0;
   double _minZoom = 1.0;
@@ -66,6 +68,7 @@ class _DirectScanViewState extends State<DirectScanView>
   @override
   void dispose() {
     _guidanceTimer?.cancel();
+    _slowCaptureTimer?.cancel();
     _guidanceAnimationController.dispose();
     super.dispose();
   }
@@ -106,6 +109,13 @@ class _DirectScanViewState extends State<DirectScanView>
     _dismissGuidance();
 
     setState(() => _isCapturing = true);
+    // A capture that's still running after a couple of seconds isn't
+    // frozen — but with no feedback it looks that way, so say so instead
+    // of leaving the shutter button as the only (unchanged) thing on screen.
+    _slowCaptureTimer?.cancel();
+    _slowCaptureTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _isCaptureSlow = true);
+    });
 
     String? capturedPath;
     try {
@@ -117,8 +127,13 @@ class _DirectScanViewState extends State<DirectScanView>
       debugPrint('[DirectScanView] takePicture error: $e');
     }
 
+    _slowCaptureTimer?.cancel();
+
     if (mounted) {
-      setState(() => _isCapturing = false);
+      setState(() {
+        _isCapturing = false;
+        _isCaptureSlow = false;
+      });
       if (widget.onCapture != null) {
         widget.onCapture!(capturedPath);
       } else {
@@ -650,6 +665,20 @@ class _DirectScanViewState extends State<DirectScanView>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // Reassurance for a capture that's taking longer than normal —
+          // without this, a slow (but still working) shutter reads as frozen.
+          if (_isCaptureSlow) ...[
+            Text(
+              'Still capturing…',
+              style: TextStyle(
+                color: AppColors.charcoalGray.withOpacity(0.8),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+
           // Android Camera Zoom Slider above shutter
           _buildZoomSlider(),
           const SizedBox(height: 16),

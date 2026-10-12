@@ -6,6 +6,7 @@ import '../../core/theme/app_colors.dart';
 import '../../services/auth_service.dart';
 import '../../viewmodels/profile_viewmodel.dart';
 import '../../widgets/animations/bounce_button.dart';
+import '../../widgets/common/google_icon.dart';
 import '../../widgets/mascot/detective_mascot_widget.dart';
 import '../../services/haptics.dart';
 
@@ -334,24 +335,7 @@ class _GuestPaywallScreenState extends State<GuestPaywallScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Container(
-                        width: 22,
-                        height: 22,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white,
-                        ),
-                        child: const Center(
-                          child: Text(
-                            'G',
-                            style: TextStyle(
-                              color: Color(0xFF4285F4),
-                              fontWeight: FontWeight.w900,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
-                      ),
+                      const GoogleGIcon(size: 22),
                       const SizedBox(width: 10),
                       const Text(
                         'Continue with Google',
