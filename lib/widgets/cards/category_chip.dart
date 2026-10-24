@@ -1,17 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_typography.dart';
+
 import '../../models/category_item.dart';
 import '../../models/product.dart';
+import '../ui/ui.dart';
+import 'category_art.dart';
 
+/// The prototype's category card (`.cat`): 112px wide white card, 64px art
+/// tile, label and an optional "N checks" line. Uses the Lenz category art
+/// when the category has one, else the category's SVG/icon on mint.
 class CategoryBrowseCard extends StatelessWidget {
   final String label;
   final IconData icon;
-  /// If set, renders an SVG asset instead of [icon].
+
+  /// If set, renders an SVG asset instead of [icon] (when no [imageAsset]).
   final String? svgAsset;
   final bool isSelected;
   final VoidCallback onTap;
+
+  /// Lenz category artwork (`assets/lenz/categories/...`).
+  final String? imageAsset;
+
+  /// Secondary line, e.g. "2 checks".
+  final String? caption;
 
   const CategoryBrowseCard({
     super.key,
@@ -20,6 +31,8 @@ class CategoryBrowseCard extends StatelessWidget {
     this.svgAsset,
     this.isSelected = false,
     required this.onTap,
+    this.imageAsset,
+    this.caption,
   });
 
   factory CategoryBrowseCard.fromItem({
@@ -27,6 +40,7 @@ class CategoryBrowseCard extends StatelessWidget {
     required CategoryItem category,
     bool isSelected = false,
     required VoidCallback onTap,
+    String? caption,
   }) {
     return CategoryBrowseCard(
       key: key,
@@ -35,6 +49,8 @@ class CategoryBrowseCard extends StatelessWidget {
       svgAsset: category.svgAsset,
       isSelected: isSelected,
       onTap: onTap,
+      imageAsset: LenzCategoryArt.forItem(category),
+      caption: caption,
     );
   }
 
@@ -43,6 +59,7 @@ class CategoryBrowseCard extends StatelessWidget {
     required ProductCategory category,
     bool isSelected = false,
     required VoidCallback onTap,
+    String? caption,
   }) {
     return CategoryBrowseCard(
       key: key,
@@ -51,79 +68,94 @@ class CategoryBrowseCard extends StatelessWidget {
       svgAsset: CategoryIconHelper.resolveSvg(category.label),
       isSelected: isSelected,
       onTap: onTap,
+      imageAsset: LenzCategoryArt.forCategory(category),
+      caption: caption,
+    );
+  }
+
+  Widget _art() {
+    if (imageAsset != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Image.asset(
+          imageAsset!,
+          width: 64,
+          height: 64,
+          fit: BoxFit.cover,
+          errorBuilder: (_, _, _) => _iconTile(),
+        ),
+      );
+    }
+    return _iconTile();
+  }
+
+  Widget _iconTile() {
+    const color = LenzColors.forest2;
+    Widget glyph;
+    final svg = svgAsset;
+    if (svg != null && svg.toLowerCase().endsWith('.png')) {
+      glyph = Image.asset(svg, width: 30, height: 30, color: color);
+    } else if (svg != null) {
+      glyph = SvgPicture.asset(
+        svg,
+        width: 30,
+        height: 30,
+        colorFilter: const ColorFilter.mode(color, BlendMode.srcIn),
+      );
+    } else {
+      glyph = Icon(icon, size: 28, color: color);
+    }
+    return Container(
+      width: 64,
+      height: 64,
+      decoration: BoxDecoration(color: LenzColors.mint2, borderRadius: BorderRadius.circular(20)),
+      alignment: Alignment.center,
+      child: glyph,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final iconColor = isSelected ? Colors.white : AppColors.deepForestGreen;
-
-    Widget iconWidget;
-    if (svgAsset != null) {
-      if (svgAsset!.toLowerCase().endsWith('.png')) {
-        iconWidget = Image.asset(
-          svgAsset!,
-          width: 30,
-          height: 30,
-          fit: BoxFit.contain,
-          color: iconColor,
-        );
-      } else {
-        iconWidget = SvgPicture.asset(
-          svgAsset!,
-          width: 30,
-          height: 30,
-          colorFilter: ColorFilter.mode(iconColor, BlendMode.srcIn),
-        );
-      }
-    } else {
-      iconWidget = Icon(icon, size: 26, color: iconColor);
-    }
-
-    return GestureDetector(
+    return LenzPressable(
       onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: SizedBox(
-        width: 68,
+      pressedScale: .94,
+      semanticLabel: caption == null ? label : '$label, $caption',
+      child: AnimatedContainer(
+        duration: LenzMotion.chip,
+        curve: LenzMotion.ease,
+        width: 112,
+        padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+        decoration: BoxDecoration(
+          color: LenzColors.paper,
+          borderRadius: BorderRadius.circular(LenzRadii.card),
+          border: Border.all(
+            color: isSelected ? LenzColors.forest2 : LenzColors.line,
+            width: isSelected ? 1.5 : 1,
+          ),
+          boxShadow: LenzShadows.sh1,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutCubic,
-              width: 62,
-              height: 62,
-              decoration: BoxDecoration(
-                color: isSelected ? AppColors.deepForestGreen : AppColors.veryLightWarmGray,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: isSelected ? AppColors.deepForestGreen : const Color(0xFFE8E2DD),
-                  width: isSelected ? 1.5 : 1.0,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: isSelected
-                        ? AppColors.deepForestGreen.withOpacity(0.22)
-                        : AppColors.nearBlack.withOpacity(0.04),
-                    blurRadius: isSelected ? 10 : 6,
-                    offset: Offset(0, isSelected ? 3 : 2),
-                  ),
-                ],
-              ),
-              child: Center(child: iconWidget),
-            ),
+            _art(),
             const SizedBox(height: 8),
             Text(
               label,
-              textAlign: TextAlign.center,
-              style: AppTypography.caption.copyWith(
-                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                color: isSelected ? AppColors.nearBlack : AppColors.charcoalGray,
-                fontSize: 11.5,
-              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: LenzText.item.copyWith(fontSize: 14),
             ),
+            if (caption != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                caption!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: LenzText.tiny.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ],
           ],
         ),
       ),
@@ -131,6 +163,7 @@ class CategoryBrowseCard extends StatelessWidget {
   }
 }
 
+/// Filter chip in the Lenz style (`.chip` / `.chip.on`).
 class CategoryFilterChip extends StatelessWidget {
   final String label;
   final bool isSelected;
@@ -145,38 +178,6 @@ class CategoryFilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeInOut,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-        decoration: BoxDecoration(
-          color: isSelected ? AppColors.buttonDark : AppColors.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? Colors.transparent : AppColors.border,
-            width: 1,
-          ),
-          boxShadow: isSelected
-              ? const [
-                  BoxShadow(
-                    color: AppColors.shadowMedium,
-                    blurRadius: 8,
-                    offset: Offset(0, 2),
-                  ),
-                ]
-              : null,
-        ),
-        child: Text(
-          label,
-          style: AppTypography.callout.copyWith(
-            color: isSelected ? Colors.white : AppColors.textSecondary,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-            fontSize: 12.5,
-          ),
-        ),
-      ),
-    );
+    return LenzChip(label: label, selected: isSelected, onTap: onTap);
   }
 }

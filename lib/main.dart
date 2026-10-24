@@ -29,7 +29,16 @@ import 'viewmodels/scan_flow_viewmodel.dart';
 import 'views/auth/auth_screen.dart';
 import 'views/main_navigation_shell.dart';
 import 'views/onboarding/onboarding_screen.dart';
+import 'views/debug/lenz_character_debug_screen.dart';
 import 'views/splash/splash_screen.dart';
+import 'widgets/lenz/lenz.dart';
+import 'widgets/ui/ui.dart';
+import 'widgets/ui/ui_gallery_screen.dart';
+
+/// Dev-only entry points for reviewing the redesign kit on a device:
+/// `flutter build apk --dart-define=LENZ_DEBUG=character` (or `ui`).
+/// Compile-time constant, so release builds without the define drop them.
+const String _lenzDebug = String.fromEnvironment('LENZ_DEBUG');
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -88,6 +97,11 @@ void main() async {
 
   // Initialize RevenueCat In-App Purchases
   await RevenueCatService.init();
+
+  // Decode the mascot layers while the splash is starting so the character
+  // never pops in. Safe to fire-and-forget: widgets render an empty box
+  // of the right shape until the layers are ready.
+  unawaited(LenzAssets.instance.ensureAllLoaded());
 
   runApp(VeriCheckRoot(prefs: prefs));
 }
@@ -201,7 +215,7 @@ class _VeriCheckAppState extends State<VeriCheckApp> {
 
   /// Keeps the branded splash up long enough for its entrance animation to
   /// play, instead of flashing for a few frames on a warm auth restore.
-  static const _minSplashDuration = Duration(milliseconds: 1800);
+  static const _minSplashDuration = SplashScreen.totalDuration;
   bool _minSplashElapsed = false;
   Timer? _splashTimer;
 
@@ -278,7 +292,12 @@ class _VeriCheckAppState extends State<VeriCheckApp> {
       // Firebase hasn't reported the real auth state yet (fresh cold start).
       // Without this gate, isAuthenticated reads as false for a moment and
       // the sign-in screen could flash before flipping to Home/Onboarding.
-      homeWidget = const SplashScreen();
+      homeWidget = SplashScreen(
+        onSkip: () {
+          _splashTimer?.cancel();
+          if (mounted) setState(() => _minSplashElapsed = true);
+        },
+      );
     } else if (!onboardingVm.isCompleted) {
       homeWidget = OnboardingScreen(onFinish: onboardingVm.finishOnboarding);
     } else if (authService.isAuthenticated) {
@@ -296,12 +315,16 @@ class _VeriCheckAppState extends State<VeriCheckApp> {
       // Light-only app: no darkTheme is registered, and themeMode is pinned
       // to light so the OS's dark-mode setting is never followed.
       themeMode: ThemeMode.light,
-      home: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 450),
-        switchInCurve: Curves.easeOut,
-        switchOutCurve: Curves.easeIn,
-        child: homeWidget,
-      ),
+      home: _lenzDebug == 'character'
+          ? const LenzCharacterDebugScreen()
+          : _lenzDebug == 'ui'
+              ? const UiGalleryScreen()
+              : AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 450),
+                  switchInCurve: Curves.easeOut,
+                  switchOutCurve: Curves.easeIn,
+                  child: homeWidget,
+                ),
       builder: (context, child) {
         final mediaQuery = MediaQuery.of(context);
         // Clamp system accessibility text scale between 0.85 and 1.20 so text
@@ -310,9 +333,12 @@ class _VeriCheckAppState extends State<VeriCheckApp> {
           minScaleFactor: 0.85,
           maxScaleFactor: 1.20,
         );
-        return MediaQuery(
-          data: mediaQuery.copyWith(textScaler: clampedScaler),
-          child: child ?? const SizedBox.shrink(),
+        return lenzAppBuilder(
+          context,
+          MediaQuery(
+            data: mediaQuery.copyWith(textScaler: clampedScaler),
+            child: child ?? const SizedBox.shrink(),
+          ),
         );
       },
     );

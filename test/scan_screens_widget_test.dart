@@ -68,7 +68,10 @@ void main() {
   final items = GeminiAuthenticationRepository.requestItems(ctx, plan, photos, const {}).take(6).toList();
 
   testWidgets('original checklist screen renders the planned photos', (tester) async {
+    // The test font draws every glyph as a full square; the step tracker's
+    // label row needs more width than the real font does.
     await pumpPhone(
+      width: 700,
       tester,
       DynamicEvidenceView(
         product: ctx.product,
@@ -143,7 +146,6 @@ void main() {
         onDone: () {},
         onToggleFavorite: () {},
         onSelectPart: (_) {},
-        onOpenDetectYourself: () {},
         onCaptureMoreEvidence: () {},
       ),
     );

@@ -67,6 +67,25 @@ void main() {
     expect(h.gemini.prompts[i], contains('P2:'));
   });
 
+  test('a guest sees the report but nothing is saved to History or Favorites', () async {
+    final h = build(responses: responses());
+    h.vm.saveReports = false; // guest: no account yet
+    await scanTwoPhotos(h.vm);
+    await h.vm.runAnalysis();
+    expect(h.vm.currentReport, isNotNull, reason: 'the guest still gets the result');
+    expect(h.history.allReports, isEmpty);
+    h.vm.toggleFavoriteCurrentReport();
+    expect(h.vm.currentReport!.isFavorite, isFalse);
+    expect(h.history.favoriteReports, isEmpty);
+  });
+
+  test('a signed-in user keeps the report in History', () async {
+    final h = build(responses: responses());
+    await scanTwoPhotos(h.vm);
+    await h.vm.runAnalysis();
+    expect(h.history.allReports, hasLength(1));
+  });
+
   test('no search or research request is ever made', () async {
     final h = build(responses: responses());
     await scanTwoPhotos(h.vm);

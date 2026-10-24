@@ -115,17 +115,27 @@ function nextRateState(prev, { nowMs, isGuest }) {
   return { minute, minuteCount, day, dayCount };
 }
 
-/** Whether this call makes the session chargeable (label-independent). */
-function sessionChargeDue(session, { imageCount }) {
+/** The call that produces the final report. It is the one thing every scan ends with. */
+const FINAL_REPORT_LABEL = "multi_image_forensic_observations";
+
+/**
+ * Whether this call makes the session chargeable.
+ *
+ * The image count and call count triggers do not depend on what the client
+ * calls the request, so they can not be dodged by relabelling. The final
+ * report label is an extra trigger: a scan done from a single photo has only
+ * one image in its final call, and used to be free and unlimited.
+ */
+function sessionChargeDue(session, { imageCount, label }) {
   if (session.charged) return false;
-  return imageCount >= 2 || session.calls > LIMITS.freeCallsPerSession;
+  return imageCount >= 2 || label === FINAL_REPORT_LABEL || session.calls > LIMITS.freeCallsPerSession;
 }
 
 /**
  * One transaction: rate limit, session bookkeeping and (for guests) the
  * scan-credit check/decrement. Returns { charged, sessionRef }.
  */
-async function admitCall({ db, admin, uid, token, scanId, imageCount, nowMs = Date.now() }) {
+async function admitCall({ db, admin, uid, token, scanId, imageCount, label, nowMs = Date.now() }) {
   const isGuest = Boolean(token && token.firebase && token.firebase.sign_in_provider === "anonymous");
   const userRef = db.collection("users").doc(uid);
   const rateRef = db.collection("rate_limits").doc(uid);
@@ -143,7 +153,7 @@ async function admitCall({ db, admin, uid, token, scanId, imageCount, nowMs = Da
     };
 
     let userUpdate = null;
-    if (sessionChargeDue(session, { imageCount })) {
+    if (sessionChargeDue(session, { imageCount, label })) {
       session.charged = true;
       charged = true;
       // Credits apply to non-premium accounts (both guests and free registered users).
@@ -204,6 +214,7 @@ module.exports = {
   sessionKey,
   nextRateState,
   sessionChargeDue,
+  FINAL_REPORT_LABEL,
   admitCall,
   refundCall,
   logId,

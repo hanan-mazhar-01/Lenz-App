@@ -1,0 +1,60 @@
+/* Shared tokens + phone frame for the Lenz redesign mock-ups (open the .html files in a browser). */
+@font-face{font-family:Nunito;font-weight:600;src:url(../assets/fonts/Nunito-SemiBold.ttf)}
+@font-face{font-family:Nunito;font-weight:700;src:url(../assets/fonts/Nunito-Bold.ttf)}
+@font-face{font-family:Nunito;font-weight:800;src:url(../assets/fonts/Nunito-ExtraBold.ttf)}
+@font-face{font-family:Nunito;font-weight:900;src:url(../assets/fonts/Nunito-Black.ttf)}
+
+:root{
+  --ivory:#FCF8F6; --paper:#fff; --ink:#10241C; --forest:#122F24; --forest2:#1D4C3A; --mint:#D6E8DE; --mint2:#EAF4EE;
+  --leaf:#2EA44F; --gold:#D4AF37; --gold2:#F4D97B; --muted:#66716B; --line:rgba(18,47,36,.09);
+  --ok:#1F8A4C; --okSoft:#DDF1E4; --bad:#C23B3B; --badSoft:#FBE0DC; --warn:#B9741A; --warnSoft:#FBEBC1;
+  --ease:cubic-bezier(.2,.8,.2,1); --spring:cubic-bezier(.34,1.56,.64,1);
+  --sh1:0 1px 2px rgba(18,47,36,.05),0 8px 24px -10px rgba(18,47,36,.16);
+}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+body{font-family:Nunito,ui-rounded,'Avenir Next Rounded','Trebuchet MS',system-ui,sans-serif;color:var(--ink);
+  background:radial-gradient(1100px 600px at 15% 0,#DDEEE2 0,transparent 60%),radial-gradient(900px 600px at 95% 100%,#F4E6C6 0,transparent 55%),#EEF2EE;
+  padding:34px 20px 70px;-webkit-font-smoothing:antialiased;min-height:100vh}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;padding:0}
+.ic{display:block;flex:none}
+
+.page-head{max-width:980px;margin:0 auto 34px;text-align:center}
+.page-head h1{font-weight:900;font-size:34px;letter-spacing:-.03em}
+.page-head p{margin-top:8px;color:var(--muted);font-weight:600;font-size:15px;line-height:1.5}
+.back{display:inline-block;margin-bottom:14px;font-weight:800;font-size:13px;color:var(--forest2);text-decoration:none;
+  background:var(--mint2);padding:7px 14px;border-radius:99px}
+.row{display:flex;flex-wrap:wrap;gap:46px 40px;justify-content:center;align-items:flex-start}
+.fig{display:flex;flex-direction:column;align-items:center;gap:20px}
+.fig figcaption{max-width:330px;text-align:center}
+.fig h3{font-weight:900;font-size:19px;letter-spacing:-.02em}
+.fig .tag{display:inline-block;margin-bottom:6px;font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--forest2);background:var(--mint);padding:4px 10px;border-radius:99px}
+.fig p{margin-top:6px;color:var(--muted);font-size:13.5px;font-weight:600;line-height:1.45}
+.note{max-width:760px;margin:46px auto 0;background:#fff;border-radius:22px;padding:20px 24px;box-shadow:var(--sh1);
+  font-weight:600;font-size:14px;line-height:1.55;color:#33423b}
+.note b{font-weight:900;color:var(--ink)}
+
+/* ---------- phone ---------- */
+.phone{position:relative;width:var(--w,390px);height:var(--h,844px);border-radius:46px;overflow:hidden;background:var(--ivory);
+  box-shadow:0 0 0 9px #101513,0 0 0 11px #2a322e,0 40px 80px -24px rgba(16,36,28,.5);container-type:size;isolation:isolate;flex:none}
+.phone::after{content:"";position:absolute;top:9px;left:50%;width:104px;height:28px;margin-left:-52px;border-radius:18px;background:#0b0f0d;z-index:90;pointer-events:none}
+.status{position:absolute;top:0;left:0;right:0;height:44px;display:flex;justify-content:space-between;align-items:center;padding:6px 26px 0;
+  font-weight:900;font-size:14px;z-index:80;pointer-events:none}
+.status.light{color:#fff}
+.status i{font-style:normal;font-size:12px;letter-spacing:1px}
+.blob{position:absolute;left:-20%;right:-20%;top:-10%;height:380px;background:radial-gradient(60% 60% at 50% 40%,var(--mint) 0,transparent 72%);opacity:.9;pointer-events:none}
+
+/* ---------- mascot (SVG built from the real layers by lenz_mock.js) ---------- */
+.lenz{display:block;width:100%;height:100%;overflow:visible}
+.lz-char{animation:lz-breathe 4.4s ease-in-out infinite}
+.lz-head{transform-origin:760px 690px;animation:lz-tilt 5.2s ease-in-out infinite}
+.lz-tail{transform-origin:515px 1040px;animation:lz-tail 3.2s ease-in-out infinite}
+.lz-mag{transform-origin:905px 868px;animation:lz-mag 3.6s ease-in-out infinite}
+.lz-lid{opacity:0;animation:lz-blink 4.6s infinite}
+@keyframes lz-breathe{50%{transform:translateY(5px)}}
+@keyframes lz-tilt{0%,100%{transform:rotate(-1deg)}50%{transform:rotate(1.4deg)}}
+@keyframes lz-tail{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(4deg)}}
+@keyframes lz-mag{0%,100%{transform:rotate(-2deg)}50%{transform:rotate(2.5deg)}}
+@keyframes lz-blink{0%,92%,100%{opacity:0}94%,97%{opacity:1}}
+.lz-fade{-webkit-mask-image:linear-gradient(#000 78%,transparent);mask-image:linear-gradient(#000 78%,transparent)}
+@media (prefers-reduced-motion:reduce){.lz-char,.lz-head,.lz-tail,.lz-mag,.lz-lid{animation:none}}

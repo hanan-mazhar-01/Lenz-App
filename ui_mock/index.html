@@ -1,0 +1,3168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lenz AI — Luxury Authenticator UI/UX Redesign</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;0,700;1,600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  
+  <style>
+    /* ==========================================================================
+       UI/UX PRO MAX DESIGN SYSTEM TOKENS
+       Style: Liquid Glass & Optical Luxury
+       Palette: Warm Ivory, Deep Forest Green (#122F24), Obsidian (#141517), Champagne Gold (#D4AF37)
+       ========================================================================== */
+    :root {
+      --bg-studio: #0F1115;
+      --bg-studio-panel: #171920;
+      --bg-studio-card: #20232C;
+      --border-studio: rgba(255, 255, 255, 0.08);
+      --text-studio-primary: #F3F4F6;
+      --text-studio-secondary: #9CA3AF;
+      
+      /* Mobile App Light Theme (Default Luxury Aesthetic) */
+      --app-bg: #FCF8F6;
+      --app-bg-secondary: #F7F3F1;
+      --app-surface: #F1EDEB;
+      --app-card: #FFFFFF;
+      --app-border: rgba(31, 32, 35, 0.06);
+      --app-border-strong: rgba(31, 32, 35, 0.12);
+      
+      --app-forest: #122F24;
+      --app-forest-hover: #0D221A;
+      --app-forest-soft: rgba(18, 47, 36, 0.08);
+      --app-gold: #D4AF37;
+      --app-gold-soft: rgba(212, 175, 55, 0.14);
+      --app-text-main: #1F2023;
+      --app-text-muted: #5F6264;
+      --app-text-subtle: #8A8D91;
+      
+      --app-authentic: #2EA44F;
+      --app-authentic-soft: rgba(46, 164, 79, 0.12);
+      --app-replica: #DC2626;
+      --app-replica-soft: rgba(220, 38, 38, 0.12);
+      --app-warning: #D97706;
+      --app-warning-soft: rgba(217, 119, 6, 0.12);
+      
+      --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+      --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.10);
+      --shadow-forest: 0 10px 28px rgba(18, 47, 36, 0.25);
+      
+      --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-serif: 'Playfair Display', Georgia, serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      
+      --radius-sm: 12px;
+      --radius-md: 18px;
+      --radius-lg: 26px;
+      --radius-full: 9999px;
+    }
+
+    /* Dark Mode Theme */
+    [data-app-theme="dark"] {
+      --app-bg: #0D0F11;
+      --app-bg-secondary: #14171B;
+      --app-surface: #1B1E24;
+      --app-card: #20242B;
+      --app-border: rgba(255, 255, 255, 0.08);
+      --app-border-strong: rgba(255, 255, 255, 0.16);
+      
+      --app-text-main: #F3F4F6;
+      --app-text-muted: #A1A7B2;
+      --app-text-subtle: #6C7280;
+      --app-forest-soft: rgba(46, 164, 79, 0.16);
+      --app-surface-glass: rgba(27, 30, 36, 0.85);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+    }
+
+    body {
+      background: var(--bg-studio);
+      color: var(--text-studio-primary);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Top Showcase Banner */
+    header.studio-header {
+      background: rgba(23, 25, 32, 0.85);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border-studio);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-badge {
+      background: linear-gradient(135deg, #122F24, #1B4535);
+      border: 1px solid rgba(212, 175, 55, 0.4);
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--app-gold);
+      font-weight: 800;
+      font-size: 18px;
+      box-shadow: 0 4px 14px rgba(18, 47, 36, 0.4);
+    }
+
+    .brand-title h1 {
+      font-size: 17px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-title h1 span.pill {
+      background: rgba(212, 175, 55, 0.15);
+      color: var(--app-gold);
+      border: 1px solid rgba(212, 175, 55, 0.3);
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-weight: 600;
+    }
+
+    .brand-title p {
+      font-size: 12px;
+      color: var(--text-studio-secondary);
+      margin-top: 1px;
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .mascot-controller-pill {
+      background: var(--bg-studio-card);
+      border: 1px solid var(--border-studio);
+      border-radius: var(--radius-full);
+      padding: 4px 6px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .pill-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-studio-secondary);
+      padding: 6px 12px;
+      border-radius: var(--radius-full);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: var(--font-sans);
+    }
+
+    .pill-btn:hover {
+      color: #fff;
+    }
+
+    .pill-btn.active {
+      background: #122F24;
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(212, 175, 55, 0.3);
+    }
+
+    .icon-toggle-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--bg-studio-card);
+      border: 1px solid var(--border-studio);
+      color: #F3F4F6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .icon-toggle-btn:hover {
+      background: #282C37;
+      transform: translateY(-1px);
+    }
+
+    /* Main Workspace Layout */
+    .studio-workspace {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 320px 1fr 340px;
+      gap: 24px;
+      padding: 24px;
+      max-width: 1720px;
+      margin: 0 auto;
+      width: 100%;
+      align-items: start;
+    }
+
+    @media (max-width: 1380px) {
+      .studio-workspace {
+        grid-template-columns: 280px 1fr;
+      }
+      .right-inspector-panel {
+        display: none;
+      }
+    }
+
+    @media (max-width: 950px) {
+      .studio-workspace {
+        grid-template-columns: 1fr;
+      }
+      .left-nav-panel {
+        order: 2;
+      }
+      .center-device-stage {
+        order: 1;
+      }
+    }
+
+    /* Left Navigation Panel */
+    .left-nav-panel, .right-inspector-panel {
+      background: var(--bg-studio-panel);
+      border: 1px solid var(--border-studio);
+      border-radius: 20px;
+      padding: 20px;
+      position: sticky;
+      top: 90px;
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
+    }
+
+    .panel-section-title {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-studio-secondary);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .screen-nav-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    .screen-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: var(--bg-studio-card);
+      border: 1px solid transparent;
+      color: var(--text-studio-secondary);
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .screen-item:hover {
+      color: #fff;
+      background: #252934;
+      transform: translateX(3px);
+    }
+
+    .screen-item.active {
+      background: linear-gradient(90deg, rgba(18, 47, 36, 0.8), rgba(27, 69, 53, 0.4));
+      border-color: rgba(212, 175, 55, 0.4);
+      color: #fff;
+    }
+
+    .screen-item .badge {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      color: inherit;
+    }
+
+    .screen-item.active .badge {
+      background: var(--app-forest);
+      color: var(--app-gold);
+      border: 1px solid rgba(212, 175, 55, 0.3);
+    }
+
+    .screen-item .info h4 {
+      font-size: 13.5px;
+      font-weight: 600;
+    }
+
+    .screen-item .info p {
+      font-size: 11px;
+      color: var(--text-studio-secondary);
+      opacity: 0.8;
+    }
+
+    /* Living Mascot Controller Card */
+    .mascot-controller-card {
+      background: linear-gradient(135deg, #131E18 0%, #1A2E24 100%);
+      border: 1px solid rgba(212, 175, 55, 0.3);
+      border-radius: 16px;
+      padding: 16px;
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+
+    .mascot-controller-card::after {
+      content: '';
+      position: absolute;
+      top: -40px;
+      right: -40px;
+      width: 100px;
+      height: 100px;
+      background: radial-gradient(circle, rgba(212, 175, 55, 0.25), transparent 70%);
+      pointer-events: none;
+    }
+
+    .mascot-mini-preview {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .mascot-avatar-circle {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: #11281E;
+      border: 2px solid var(--app-gold);
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .mascot-avatar-circle img {
+      width: 120%;
+      height: 120%;
+      object-fit: contain;
+      transform: translateY(2px);
+    }
+
+    .mascot-meta h4 {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .mascot-meta span {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: #34D399;
+      font-weight: 600;
+    }
+
+    .mascot-meta span::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #34D399;
+      animation: pulseDot 1.5s infinite;
+    }
+
+    @keyframes pulseDot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.3); }
+    }
+
+    .mascot-mood-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
+    }
+
+    .mood-btn {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #E2E8F0;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .mood-btn:hover {
+      background: rgba(212, 175, 55, 0.2);
+      border-color: var(--app-gold);
+    }
+
+    .mood-btn.active {
+      background: var(--app-gold);
+      color: #122F24;
+      font-weight: 800;
+      border-color: #fff;
+    }
+
+    /* CENTER DEVICE STAGE */
+    .center-device-stage {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    /* Device Chassis: iPhone 16 Pro styling */
+    .phone-chassis {
+      width: 392px;
+      height: 820px;
+      background: #1C1D21;
+      border-radius: 54px;
+      padding: 12px;
+      box-shadow: 
+        0 0 0 1px rgba(255, 255, 255, 0.15),
+        0 25px 60px rgba(0, 0, 0, 0.55),
+        0 0 80px rgba(18, 47, 36, 0.25);
+      position: relative;
+      transition: all 0.3s ease;
+    }
+
+    /* Dynamic Island */
+    .dynamic-island {
+      position: absolute;
+      top: 19px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 108px;
+      height: 29px;
+      background: #000;
+      border-radius: 20px;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 10px;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      cursor: pointer;
+    }
+
+    .dynamic-island:hover {
+      width: 180px;
+    }
+
+    .island-cam {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #0D1625;
+      box-shadow: inset 0 0 2px #3B82F6;
+    }
+
+    .island-sensor {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #111;
+    }
+
+    .island-live-indicator {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    .dynamic-island:hover .island-live-indicator {
+      display: flex;
+    }
+
+    /* Phone Screen Container */
+    .phone-screen {
+      width: 100%;
+      height: 100%;
+      background: var(--app-bg);
+      border-radius: 44px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      color: var(--app-text-main);
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+    }
+
+    /* iOS Status Bar */
+    .ios-status-bar {
+      height: 48px;
+      padding: 14px 26px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--app-text-main);
+      z-index: 40;
+      position: relative;
+    }
+
+    .status-icons {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+    }
+
+    /* Screen Viewport Wrapper (scrollable inner body) */
+    .app-screen-body {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding-bottom: 96px; /* space for bottom nav bar */
+      scroll-behavior: smooth;
+    }
+
+    .app-screen-body::-webkit-scrollbar {
+      display: none;
+    }
+
+    /* Screen Containers */
+    .screen-view {
+      display: none;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: opacity 0.35s ease, transform 0.35s ease;
+      min-height: 100%;
+    }
+
+    .screen-view.active {
+      display: block;
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ==========================================================================
+       LIVING CHARACTER (LENZ MASCOT) ANIMATIONS & STYLING
+       ========================================================================== */
+    .living-mascot-wrapper {
+      position: relative;
+      display: inline-block;
+      cursor: pointer;
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .living-mascot-wrapper:hover {
+      transform: scale(1.05) translateY(-3px);
+    }
+
+    .living-mascot-wrapper:active {
+      transform: scale(0.96) translateY(2px);
+    }
+
+    /* Living Breathing Animation */
+    .breathing-character {
+      animation: characterBreathe 3.6s ease-in-out infinite;
+      transform-origin: bottom center;
+      will-change: transform;
+      filter: drop-shadow(0 12px 20px rgba(18, 47, 36, 0.15));
+      transition: filter 0.3s ease;
+    }
+
+    @keyframes characterBreathe {
+      0%, 100% {
+        transform: translateY(0) scale(1, 1);
+      }
+      50% {
+        transform: translateY(-5px) scale(1.015, 0.985);
+      }
+    }
+
+    /* Shimmer & Lens Glow Effect */
+    .lens-glow-halo {
+      position: absolute;
+      top: 20%;
+      left: 15%;
+      width: 70%;
+      height: 70%;
+      background: radial-gradient(circle, rgba(212, 175, 55, 0.28) 0%, rgba(46, 164, 79, 0.15) 45%, transparent 75%);
+      border-radius: 50%;
+      pointer-events: none;
+      animation: haloPulse 3s ease-in-out infinite alternate;
+      z-index: 0;
+    }
+
+    @keyframes haloPulse {
+      0% { opacity: 0.4; transform: scale(0.95); }
+      100% { opacity: 0.9; transform: scale(1.12); }
+    }
+
+    /* Dynamic Speech / Thought Bubble */
+    .mascot-speech-bubble {
+      position: absolute;
+      top: -34px;
+      right: -20px;
+      background: #FFFFFF;
+      color: var(--app-forest);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 6px 12px;
+      border-radius: 14px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+      border: 1px solid rgba(18, 47, 36, 0.1);
+      white-space: nowrap;
+      animation: bubbleFloat 2.8s ease-in-out infinite;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    [data-app-theme="dark"] .mascot-speech-bubble {
+      background: #1E232B;
+      color: #34D399;
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .mascot-speech-bubble::after {
+      content: '';
+      position: absolute;
+      bottom: -6px;
+      left: 18px;
+      border-width: 6px 6px 0;
+      border-style: solid;
+      border-color: #FFFFFF transparent;
+      display: block;
+      width: 0;
+    }
+
+    [data-app-theme="dark"] .mascot-speech-bubble::after {
+      border-color: #1E232B transparent;
+    }
+
+    @keyframes bubbleFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+    }
+
+    /* Magnifying Glass Scan Beam */
+    .magnifier-sparkle {
+      position: absolute;
+      top: 30%;
+      right: 22%;
+      width: 14px;
+      height: 14px;
+      background: #FFF;
+      border-radius: 50%;
+      box-shadow: 0 0 12px 4px rgba(212, 175, 55, 0.8);
+      pointer-events: none;
+      animation: sparkleGlint 2.4s ease-in-out infinite;
+    }
+
+    @keyframes sparkleGlint {
+      0%, 100% { opacity: 0.2; transform: scale(0.6); }
+      40%, 60% { opacity: 1; transform: scale(1.2); }
+    }
+
+    /* ==========================================================================
+       SCREEN 1: ONBOARDING / LIVING WELCOME
+       ========================================================================== */
+    .onboarding-container {
+      padding: 16px 22px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+
+    .onboarding-mascot-hero {
+      position: relative;
+      margin: 20px 0 12px;
+      width: 210px;
+      height: 200px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .onboarding-mascot-hero img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      position: relative;
+      z-index: 2;
+    }
+
+    .onboarding-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      background: var(--app-surface);
+      border: 1px solid var(--app-border-strong);
+      padding: 5px 12px;
+      border-radius: var(--radius-full);
+      margin-bottom: 12px;
+    }
+
+    .onboarding-tag .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--app-authentic);
+    }
+
+    .onboarding-tag span {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--app-forest);
+      letter-spacing: 0.3px;
+    }
+
+    .onboarding-headline {
+      font-family: var(--font-sans);
+      font-size: 27px;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.6px;
+      color: var(--app-text-main);
+      margin-bottom: 10px;
+    }
+
+    .onboarding-subtext {
+      font-size: 13.5px;
+      color: var(--app-text-muted);
+      line-height: 1.45;
+      max-width: 310px;
+      margin-bottom: 22px;
+    }
+
+    /* Staggered Feature Cards */
+    .feature-card-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 100%;
+      margin-bottom: 24px;
+      text-align: left;
+    }
+
+    .feature-card {
+      background: var(--app-card);
+      border: 1px solid var(--app-border);
+      border-radius: 18px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: var(--shadow-sm);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .feature-icon-box {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      background: var(--app-forest-soft);
+      color: var(--app-forest);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+
+    .feature-card .content h5 {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--app-text-main);
+    }
+
+    .feature-card .content p {
+      font-size: 11.5px;
+      color: var(--app-text-muted);
+      margin-top: 2px;
+    }
+
+    .btn-luxury-primary {
+      width: 100%;
+      background: var(--app-forest);
+      color: #FFFFFF;
+      border: none;
+      padding: 14px 20px;
+      border-radius: var(--radius-full);
+      font-size: 14.5px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      box-shadow: var(--shadow-forest);
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .btn-luxury-primary:hover {
+      background: var(--app-forest-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 14px 34px rgba(18, 47, 36, 0.35);
+    }
+
+    .btn-luxury-primary:active {
+      transform: scale(0.98);
+    }
+
+    .onboarding-login-link {
+      margin-top: 14px;
+      font-size: 12.5px;
+      color: var(--app-text-muted);
+    }
+
+    .onboarding-login-link a {
+      color: var(--app-forest);
+      font-weight: 700;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+
+    /* ==========================================================================
+       SCREEN 2: REDESIGNED LUXURY HOME
+       ========================================================================== */
+    .home-container {
+      padding: 10px 18px 24px;
+    }
+
+    .home-top-bar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .home-greeting h2 {
+      font-size: 23px;
+      font-weight: 800;
+      letter-spacing: -0.4px;
+      color: var(--app-text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .home-greeting p {
+      font-size: 12.5px;
+      color: var(--app-text-muted);
+      margin-top: 2px;
+    }
+
+    .home-top-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .avatar-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: var(--app-surface);
+      border: 1px solid var(--app-border-strong);
+      padding: 2px;
+      cursor: pointer;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .avatar-btn img {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    /* Pro Membership Promotional Strip */
+    .pro-promo-strip {
+      background: linear-gradient(135deg, #14241B 0%, #1D3528 100%);
+      border: 1px solid rgba(212, 175, 55, 0.35);
+      border-radius: 16px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #fff;
+      margin-bottom: 16px;
+      box-shadow: 0 6px 18px rgba(20, 36, 27, 0.2);
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+
+    .pro-promo-strip:hover {
+      transform: translateY(-2px);
+    }
+
+    .pro-promo-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .sparkle-badge {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: rgba(212, 175, 55, 0.2);
+      color: var(--app-gold);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 15px;
+    }
+
+    .pro-promo-text h5 {
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .pro-promo-text p {
+      font-size: 11px;
+      color: #CBD5E1;
+    }
+
+    .pro-pill-btn {
+      background: var(--app-gold);
+      color: #122F24;
+      font-size: 10.5px;
+      font-weight: 900;
+      padding: 4px 10px;
+      border-radius: var(--radius-full);
+      letter-spacing: 0.5px;
+    }
+
+    /* Living Hero Card */
+    .hero-scanner-card {
+      background: var(--app-surface);
+      border: 1px solid var(--app-border-strong);
+      border-radius: 24px;
+      padding: 18px 18px 14px;
+      box-shadow: var(--shadow-md);
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 22px;
+    }
+
+    .hero-scanner-card::after {
+      content: '';
+      position: absolute;
+      top: -30px;
+      right: -30px;
+      width: 140px;
+      height: 140px;
+      background: radial-gradient(circle, rgba(18, 47, 36, 0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-top-row {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .hero-left-content {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      z-index: 2;
+    }
+
+    .lenz-live-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #FFFFFF;
+      padding: 4px 9px;
+      border-radius: var(--radius-full);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--app-text-main);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      margin-bottom: 8px;
+    }
+
+    [data-app-theme="dark"] .lenz-live-status {
+      background: #252A33;
+      color: #FFF;
+    }
+
+    .lenz-live-status .live-indicator {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--app-authentic);
+      box-shadow: 0 0 6px var(--app-authentic);
+    }
+
+    .hero-left-content h3 {
+      font-size: 18px;
+      font-weight: 800;
+      line-height: 1.2;
+      color: var(--app-text-main);
+      letter-spacing: -0.3px;
+      margin-bottom: 6px;
+    }
+
+    .hero-left-content p {
+      font-size: 11.5px;
+      color: var(--app-text-muted);
+      line-height: 1.35;
+      margin-bottom: 12px;
+    }
+
+    .hero-cta-btn {
+      background: var(--app-forest);
+      color: #fff;
+      border: none;
+      padding: 8px 14px;
+      border-radius: var(--radius-full);
+      font-size: 12px;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: var(--shadow-forest);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .hero-cta-btn:hover {
+      background: var(--app-forest-hover);
+      transform: translateY(-2px);
+    }
+
+    .hero-right-mascot {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+    }
+
+    .hero-right-mascot img {
+      width: 140px;
+      height: 130px;
+      object-fit: contain;
+      position: relative;
+      z-index: 2;
+    }
+
+    .hero-footer-strip {
+      border-top: 1px solid var(--app-border-strong);
+      margin-top: 14px;
+      padding-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--app-text-muted);
+      font-weight: 500;
+    }
+
+    .hero-footer-strip .metric {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    /* Category Browser Grid */
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+
+    .section-header h4 {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--app-text-main);
+      letter-spacing: -0.3px;
+    }
+
+    .section-header a {
+      font-size: 12px;
+      color: var(--app-text-muted);
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .category-scroll-row {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 6px;
+      margin-bottom: 22px;
+    }
+
+    .category-scroll-row::-webkit-scrollbar {
+      display: none;
+    }
+
+    .category-pill-card {
+      flex: 0 0 auto;
+      width: 96px;
+      background: var(--app-card);
+      border: 1px solid var(--app-border);
+      border-radius: 18px;
+      padding: 12px 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      box-shadow: var(--shadow-sm);
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .category-pill-card:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-md);
+      border-color: var(--app-forest);
+    }
+
+    .category-pill-card .cat-img-box {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: var(--app-surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 8px;
+    }
+
+    .category-pill-card .cat-img-box img {
+      width: 32px;
+      height: 32px;
+      object-fit: contain;
+    }
+
+    .category-pill-card span.cat-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--app-text-main);
+    }
+
+    .category-pill-card span.cat-count {
+      font-size: 10px;
+      color: var(--app-text-subtle);
+      margin-top: 1px;
+    }
+
+    /* Recent Scans Feed */
+    .recent-scans-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .scan-result-card {
+      background: var(--app-card);
+      border: 1px solid var(--app-border);
+      border-radius: 20px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: var(--shadow-sm);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .scan-result-card:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .scan-card-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .scan-thumb {
+      width: 52px;
+      height: 52px;
+      border-radius: 14px;
+      background: var(--app-surface);
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .scan-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .scan-info h5 {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--app-text-main);
+    }
+
+    .scan-info p {
+      font-size: 11.5px;
+      color: var(--app-text-muted);
+      margin-top: 1px;
+    }
+
+    .verdict-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: var(--radius-full);
+      font-size: 10.5px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+
+    .verdict-tag.authentic {
+      background: var(--app-authentic-soft);
+      color: var(--app-authentic);
+    }
+
+    .verdict-tag.replica {
+      background: var(--app-replica-soft);
+      color: var(--app-replica);
+    }
+
+    .confidence-meter {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--app-forest);
+      text-align: right;
+    }
+
+    /* ==========================================================================
+       SCREEN 3: SMART CAMERA & GUIDED CAPTURE
+       ========================================================================== */
+    .camera-screen-view {
+      background: #000;
+      color: #fff;
+      min-height: 100%;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .camera-viewfinder {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 480px;
+      background: #090B0E;
+    }
+
+    .camera-bg-sample {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0.65;
+      filter: contrast(1.1);
+    }
+
+    /* Target Framing Reticle */
+    .viewfinder-reticle {
+      position: absolute;
+      width: 250px;
+      height: 250px;
+      border: 1px dashed rgba(255, 255, 255, 0.4);
+      border-radius: 28px;
+      pointer-events: none;
+    }
+
+    .viewfinder-reticle::before,
+    .viewfinder-reticle::after {
+      content: '';
+      position: absolute;
+      width: 24px;
+      height: 24px;
+      border-color: var(--app-gold);
+      border-style: solid;
+    }
+
+    .viewfinder-reticle::before {
+      top: -2px;
+      left: -2px;
+      border-width: 3px 0 0 3px;
+      border-top-left-radius: 28px;
+    }
+
+    .viewfinder-reticle::after {
+      bottom: -2px;
+      right: -2px;
+      border-width: 0 3px 3px 0;
+      border-bottom-right-radius: 28px;
+    }
+
+    .scan-laser-line {
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, #2EA44F, #D4AF37, transparent);
+      box-shadow: 0 0 14px 3px rgba(46, 164, 79, 0.7);
+      animation: laserSweep 2.4s ease-in-out infinite alternate;
+    }
+
+    @keyframes laserSweep {
+      0% { top: 15px; }
+      100% { top: 235px; }
+    }
+
+    /* Camera Top Toolbar */
+    .camera-top-toolbar {
+      position: absolute;
+      top: 12px;
+      left: 16px;
+      right: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 10;
+    }
+
+    .cam-action-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .cam-step-pill {
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      padding: 6px 14px;
+      border-radius: var(--radius-full);
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--app-gold);
+    }
+
+    /* Assistant Mascot Live In-Camera Overlay */
+    .camera-assistant-dock {
+      position: absolute;
+      bottom: 110px;
+      left: 16px;
+      right: 16px;
+      background: rgba(18, 30, 24, 0.88);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(212, 175, 55, 0.35);
+      border-radius: 20px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6);
+      z-index: 20;
+    }
+
+    .assistant-mascot-pic {
+      width: 44px;
+      height: 44px;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .assistant-mascot-pic img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .assistant-hint-text h5 {
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--app-gold);
+    }
+
+    .assistant-hint-text p {
+      font-size: 11px;
+      color: #CBD5E1;
+      line-height: 1.35;
+    }
+
+    /* Camera Controls Bar */
+    .camera-bottom-deck {
+      background: #000;
+      padding: 18px 24px 34px;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      position: relative;
+      z-index: 20;
+    }
+
+    .gallery-preview-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      border: 2px solid rgba(255, 255, 255, 0.4);
+      background: #222;
+      overflow: hidden;
+      cursor: pointer;
+    }
+
+    .gallery-preview-btn img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .shutter-btn-outer {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      border: 4px solid #FFFFFF;
+      padding: 4px;
+      cursor: pointer;
+      transition: transform 0.15s ease;
+    }
+
+    .shutter-btn-outer:active {
+      transform: scale(0.92);
+    }
+
+    .shutter-btn-inner {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: #FFFFFF;
+      transition: background 0.2s;
+    }
+
+    .shutter-btn-outer:hover .shutter-btn-inner {
+      background: var(--app-gold);
+    }
+
+    /* ==========================================================================
+       SCREEN 4: DEEP AI ANALYSIS (HOLOGRAPHIC SCANNER HUD)
+       ========================================================================== */
+    .analysis-screen-view {
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+
+    .radar-visualizer-box {
+      width: 220px;
+      height: 220px;
+      position: relative;
+      margin: 16px 0 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .radar-spin-ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 2px dashed rgba(18, 47, 36, 0.25);
+      animation: spinClockwise 8s linear infinite;
+    }
+
+    .radar-spin-ring-inner {
+      position: absolute;
+      inset: 22px;
+      border-radius: 50%;
+      border: 2px solid rgba(212, 175, 55, 0.35);
+      border-top-color: var(--app-forest);
+      animation: spinCounter 4s linear infinite;
+    }
+
+    @keyframes spinClockwise {
+      100% { transform: rotate(360deg); }
+    }
+
+    @keyframes spinCounter {
+      100% { transform: rotate(-360deg); }
+    }
+
+    .radar-core-mascot {
+      width: 110px;
+      height: 110px;
+      border-radius: 50%;
+      background: var(--app-card);
+      border: 2px solid var(--app-forest);
+      overflow: hidden;
+      box-shadow: 0 0 30px rgba(18, 47, 36, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 2;
+    }
+
+    .radar-core-mascot img {
+      width: 90%;
+      height: 90%;
+      object-fit: contain;
+    }
+
+    .analysis-stage-pill {
+      background: var(--app-forest);
+      color: #FFFFFF;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 5px 14px;
+      border-radius: var(--radius-full);
+      margin-bottom: 12px;
+      box-shadow: 0 4px 12px rgba(18, 47, 36, 0.2);
+    }
+
+    .analysis-headline {
+      font-size: 21px;
+      font-weight: 800;
+      color: var(--app-text-main);
+      margin-bottom: 6px;
+    }
+
+    .analysis-subtext {
+      font-size: 13px;
+      color: var(--app-text-muted);
+      max-width: 290px;
+      margin-bottom: 22px;
+    }
+
+    .analysis-checklist {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      text-align: left;
+    }
+
+    .check-step-item {
+      background: var(--app-card);
+      border: 1px solid var(--app-border);
+      border-radius: 14px;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .step-label-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .step-status-icon {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .step-status-icon.done {
+      background: var(--app-authentic);
+      color: #fff;
+    }
+
+    .step-status-icon.active {
+      background: var(--app-gold);
+      color: #122F24;
+      animation: pulseDot 1s infinite;
+    }
+
+    .step-label-group span {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--app-text-main);
+    }
+
+    .step-progress-timer {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--app-text-subtle);
+    }
+
+    /* ==========================================================================
+       SCREEN 5: FORENSIC AUTHENTICATION REPORT
+       ========================================================================== */
+    .report-container {
+      padding: 12px 18px 28px;
+    }
+
+    .report-product-badge {
+      background: var(--app-card);
+      border: 1px solid var(--app-border);
+      border-radius: 20px;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 16px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .report-product-badge img {
+      width: 58px;
+      height: 58px;
+      border-radius: 14px;
+      object-fit: cover;
+      background: var(--app-surface);
+    }
+
+    .report-product-badge .meta h4 {
+      font-size: 15.5px;
+      font-weight: 800;
+      color: var(--app-text-main);
+    }
+
+    .report-product-badge .meta p {
+      font-size: 12px;
+      color: var(--app-text-muted);
+    }
+
+    /* Verdict Gauge Hero */
+    .verdict-hero-card {
+      background: var(--app-surface);
+      border: 1px solid var(--app-border-strong);
+      border-radius: 24px;
+      padding: 22px 18px;
+      text-align: center;
+      position: relative;
+      margin-bottom: 18px;
+      box-shadow: var(--shadow-md);
+    }
+
+    .verdict-score-ring {
+      width: 120px;
+      height: 120px;
+      margin: 0 auto 14px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .score-circle-svg {
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+
+    .score-circle-bg {
+      fill: none;
+      stroke: rgba(0, 0, 0, 0.06);
+      stroke-width: 8;
+    }
+
+    .score-circle-prog {
+      fill: none;
+      stroke: var(--app-authentic);
+      stroke-width: 8;
+      stroke-linecap: round;
+      stroke-dasharray: 314;
+      stroke-dashoffset: 20; /* 94% */
+      transition: stroke-dashoffset 1s ease, stroke 0.3s;
+    }
+
+    .verdict-hero-card.replica-mode .score-circle-prog {
+      stroke: var(--app-replica);
+      stroke-dashoffset: 240; /* 24% */
+    }
+
+    .score-number-display {
+      position: absolute;
+      font-family: var(--font-sans);
+      font-size: 32px;
+      font-weight: 800;
+      color: var(--app-text-main);
+      letter-spacing: -1px;
+    }
+
+    .verdict-pill-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 16px;
+      border-radius: var(--radius-full);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 0.3px;
+      margin-bottom: 8px;
+    }
+
+    .verdict-pill-badge.authentic {
+      background: var(--app-authentic-soft);
+      color: var(--app-authentic);
+      border: 1px solid rgba(46, 164, 79, 0.25);
+    }
+
+    .verdict-pill-badge.replica {
+      background: var(--app-replica-soft);
+      color: var(--app-replica);
+      border: 1px solid rgba(220, 38, 38, 0.25);
+    }
+
+    .verdict-hero-card p.verdict-reason {
+      font-size: 12.5px;
+      color: var(--app-text-muted);
+      line-height: 1.4;
+      max-width: 280px;
+      margin: 0 auto;
+    }
+
+    /* Detailed Evidence Gallery */
+    .checkpoint-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .checkpoint-card {
+      background: var(--app-card);
+      border: 1px solid var(--app-border);
+      border-radius: 16px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .checkpoint-img {
+      width: 100%;
+      height: 80px;
+      border-radius: 10px;
+      background: #E5E7EB;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .checkpoint-img img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .checkpoint-card .title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--app-text-main);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .checkpoint-card .confidence {
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--app-authentic);
+    }
+
+    .checkpoint-card.warning .confidence {
+      color: var(--app-replica);
+    }
+
+    /* Living Mascot Feedback Tip */
+    .report-mascot-tip-box {
+      background: #FFFFFF;
+      border: 1px solid rgba(212, 175, 55, 0.3);
+      border-radius: 18px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 18px;
+    }
+
+    [data-app-theme="dark"] .report-mascot-tip-box {
+      background: #1B1E24;
+    }
+
+    .report-mascot-tip-box img {
+      width: 48px;
+      height: 48px;
+      object-fit: contain;
+    }
+
+    .report-mascot-tip-box .text h6 {
+      font-size: 12.5px;
+      font-weight: 800;
+      color: var(--app-forest);
+    }
+
+    [data-app-theme="dark"] .report-mascot-tip-box .text h6 {
+      color: var(--app-gold);
+    }
+
+    .report-mascot-tip-box .text p {
+      font-size: 11.5px;
+      color: var(--app-text-muted);
+      line-height: 1.35;
+    }
+
+    /* ==========================================================================
+       SCREEN 6: VAULT & HISTORY
+       ========================================================================== */
+    .history-container {
+      padding: 12px 18px 24px;
+    }
+
+    .vault-search-bar {
+      background: var(--app-card);
+      border: 1px solid var(--app-border-strong);
+      border-radius: var(--radius-full);
+      padding: 9px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .vault-search-bar input {
+      border: none;
+      background: transparent;
+      outline: none;
+      font-size: 13px;
+      color: var(--app-text-main);
+      width: 100%;
+      font-family: var(--font-sans);
+    }
+
+    /* ==========================================================================
+       SCREEN 7: PROFILE & VERIFICATION PASS
+       ========================================================================== */
+    .profile-container {
+      padding: 14px 18px 24px;
+    }
+
+    .profile-hero-card {
+      background: var(--app-surface);
+      border: 1px solid var(--app-border-strong);
+      border-radius: 22px;
+      padding: 18px;
+      text-align: center;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 18px;
+    }
+
+    .profile-hero-avatar {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      border: 2px solid var(--app-forest);
+      padding: 2px;
+      margin: 0 auto 10px;
+      box-shadow: 0 4px 14px rgba(18, 47, 36, 0.2);
+    }
+
+    .profile-hero-avatar img {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    .profile-hero-card h3 {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--app-text-main);
+    }
+
+    .profile-hero-card p {
+      font-size: 12px;
+      color: var(--app-text-muted);
+    }
+
+    .credits-gauge-strip {
+      background: var(--app-card);
+      border: 1px solid var(--app-border);
+      border-radius: 16px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 14px;
+    }
+
+    .credits-gauge-strip .label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--app-text-main);
+    }
+
+    .credits-gauge-strip .meter {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--app-forest);
+    }
+
+    /* ==========================================================================
+       FLOATING FROSTED GLASS BOTTOM NAV BAR
+       ========================================================================== */
+    .ios-glass-navbar {
+      position: absolute;
+      bottom: 14px;
+      left: 18px;
+      right: 18px;
+      height: 64px;
+      background: rgba(241, 237, 235, 0.88);
+      backdrop-filter: blur(24px) saturate(180%);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      border-radius: 34px;
+      box-shadow: 
+        0 10px 30px rgba(0, 0, 0, 0.12),
+        0 1px 2px rgba(0, 0, 0, 0.04);
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      padding: 0 10px;
+      z-index: 45;
+    }
+
+    [data-app-theme="dark"] .ios-glass-navbar {
+      background: rgba(27, 30, 36, 0.88);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .nav-tab-btn {
+      background: transparent;
+      border: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      color: var(--app-text-subtle);
+      cursor: pointer;
+      position: relative;
+      padding: 6px 12px;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .nav-tab-btn svg {
+      width: 22px;
+      height: 22px;
+      stroke-width: 2;
+      transition: transform 0.2s, stroke 0.2s;
+    }
+
+    .nav-tab-btn span {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.1px;
+    }
+
+    .nav-tab-btn:hover {
+      color: var(--app-text-main);
+    }
+
+    .nav-tab-btn.active {
+      color: var(--app-forest);
+    }
+
+    [data-app-theme="dark"] .nav-tab-btn.active {
+      color: var(--app-gold);
+    }
+
+    .nav-tab-btn.active svg {
+      transform: translateY(-2px);
+    }
+
+    .nav-tab-btn.scan-center-tab {
+      color: var(--app-forest);
+      position: relative;
+    }
+
+    .scan-circle-glow {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--app-forest);
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 6px 16px rgba(18, 47, 36, 0.35);
+      margin-top: -18px;
+      border: 3px solid #FCF8F6;
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    [data-app-theme="dark"] .scan-circle-glow {
+      border-color: #0D0F11;
+    }
+
+    .nav-tab-btn.scan-center-tab:hover .scan-circle-glow {
+      transform: scale(1.1);
+    }
+
+    /* RIGHT INSPECTION & UX SPECS PANEL */
+    .specs-card {
+      background: var(--bg-studio-card);
+      border: 1px solid var(--border-studio);
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+
+    .specs-card h5 {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: #F3F4F6;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .specs-card p {
+      font-size: 11.5px;
+      color: var(--text-studio-secondary);
+      line-height: 1.4;
+    }
+
+    .spec-kv-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11.5px;
+      padding: 5px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .spec-kv-row span:first-child {
+      color: var(--text-studio-secondary);
+    }
+
+    .spec-kv-row span:last-child {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: #CBD5E1;
+    }
+
+    /* Toast Notification */
+    .studio-toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #111827;
+      border: 1px solid rgba(212, 175, 55, 0.4);
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 12px;
+      font-size: 12.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 1000;
+    }
+
+    .studio-toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Studio Header -->
+  <header class="studio-header">
+    <div class="brand-group">
+      <div class="brand-badge">L</div>
+      <div class="brand-title">
+        <h1>Lenz Luxury AI <span class="pill">UI/UX PRO MAX</span></h1>
+        <p>Interactive Living Character Redesign Mockup • Mobile System</p>
+      </div>
+    </div>
+
+    <!-- Quick Controller Controls -->
+    <div class="header-controls">
+      <div class="mascot-controller-pill">
+        <span style="font-size: 11px; color: var(--text-studio-secondary); padding-left: 8px;">Lenz State:</span>
+        <button class="pill-btn active" onclick="setMascotMood('idle')">Breathe</button>
+        <button class="pill-btn" onclick="setMascotMood('inspecting')">Inspect</button>
+        <button class="pill-btn" onclick="setMascotMood('identifying')">Scan</button>
+        <button class="pill-btn" onclick="setMascotMood('authentic')">Authentic 🎉</button>
+        <button class="pill-btn" onclick="setMascotMood('replica')">Fake Alert ⚠️</button>
+      </div>
+
+      <button class="icon-toggle-btn" title="Toggle App Dark/Light Theme" onclick="toggleAppTheme()">
+        <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Workspace 3-Column Layout -->
+  <main class="studio-workspace">
+
+    <!-- LEFT NAVIGATION & CONTROLLER -->
+    <aside class="left-nav-panel">
+      <div class="panel-section-title">
+        <span>App Screens</span>
+        <span style="font-size: 10px; color: var(--app-gold);">7 Views</span>
+      </div>
+
+      <nav class="screen-nav-list">
+        <div class="screen-item active" onclick="switchScreen('screen-onboarding')">
+          <div class="badge">1</div>
+          <div class="info">
+            <h4>Living Onboarding</h4>
+            <p>Animated welcoming mascot & value prop</p>
+          </div>
+        </div>
+
+        <div class="screen-item" onclick="switchScreen('screen-home')">
+          <div class="badge">2</div>
+          <div class="info">
+            <h4>Luxury Home Hub</h4>
+            <p>Hero card, live status & category pills</p>
+          </div>
+        </div>
+
+        <div class="screen-item" onclick="switchScreen('screen-camera')">
+          <div class="badge">3</div>
+          <div class="info">
+            <h4>Smart Camera & Guide</h4>
+            <p>Laser reticle & in-camera Lenz assistant</p>
+          </div>
+        </div>
+
+        <div class="screen-item" onclick="switchScreen('screen-analysis')">
+          <div class="badge">4</div>
+          <div class="info">
+            <h4>Deep AI Analysis HUD</h4>
+            <p>Rotating radar, telemetry & material scan</p>
+          </div>
+        </div>
+
+        <div class="screen-item" onclick="switchScreen('screen-report')">
+          <div class="badge">5</div>
+          <div class="info">
+            <h4>Forensic Report</h4>
+            <p>Score ring, verdict & macro evidence</p>
+          </div>
+        </div>
+
+        <div class="screen-item" onclick="switchScreen('screen-history')">
+          <div class="badge">6</div>
+          <div class="info">
+            <h4>Collector Vault</h4>
+            <p>Searchable checks & inspection history</p>
+          </div>
+        </div>
+
+        <div class="screen-item" onclick="switchScreen('screen-profile')">
+          <div class="badge">7</div>
+          <div class="info">
+            <h4>Pass & Membership</h4>
+            <p>Scan credits meter & security settings</p>
+          </div>
+        </div>
+      </nav>
+
+      <!-- Living Character Interactive Controller -->
+      <div class="panel-section-title">
+        <span>Character Engine</span>
+        <span style="font-size: 10px; color: #34D399;">Active</span>
+      </div>
+
+      <div class="mascot-controller-card">
+        <div class="mascot-mini-preview">
+          <div class="mascot-avatar-circle">
+            <img id="mascot-preview-avatar" src="../assets/images/home_mascot_lenz_user.png" alt="Lenz">
+          </div>
+          <div class="mascot-meta">
+            <h4>Detective Lenz</h4>
+            <span id="mascot-status-label">Breathe & Curious</span>
+          </div>
+        </div>
+
+        <div class="mascot-mood-grid">
+          <button class="mood-btn active" onclick="setMascotMood('idle')">✨ Idle Breathe</button>
+          <button class="mood-btn" onclick="setMascotMood('inspecting')">🔍 Microscopic</button>
+          <button class="mood-btn" onclick="setMascotMood('identifying')">🧠 AI Scanning</button>
+          <button class="mood-btn" onclick="setMascotMood('authentic')">🛡️ Authentic</button>
+          <button class="mood-btn" onclick="setMascotMood('replica')">🚨 Counterfeit</button>
+          <button class="mood-btn" onclick="pokeMascot()">👆 Poke Lenz</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- CENTER DEVICE DISPLAY STAGE -->
+    <section class="center-device-stage">
+
+      <!-- iPhone 16 Pro Chassis -->
+      <div class="phone-chassis">
+        <!-- Dynamic Island -->
+        <div class="dynamic-island" onclick="triggerDynamicIsland()">
+          <div class="island-cam"></div>
+          <div class="island-live-indicator">
+            <span>🛡️</span>
+            <span>Lenz Active</span>
+          </div>
+          <div class="island-sensor"></div>
+        </div>
+
+        <!-- Phone Screen Content -->
+        <div class="phone-screen" id="app-phone-screen" data-app-theme="light">
+          <!-- iOS Status Bar -->
+          <div class="ios-status-bar">
+            <span>9:41</span>
+            <div class="status-icons">
+              <span>5G</span>
+              <svg width="18" height="10" viewBox="0 0 24 12" fill="currentColor">
+                <rect x="0" y="0" width="20" height="12" rx="3" stroke="currentColor" fill="none" stroke-width="2"/>
+                <rect x="2" y="2" width="14" height="8" rx="1.5"/>
+                <path d="M22 4v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Main Scrollable Screen Body -->
+          <div class="app-screen-body">
+
+            <!-- ==========================================
+                 SCREEN 1: LIVING ONBOARDING
+                 ========================================== -->
+            <div class="screen-view active" id="screen-onboarding">
+              <div class="onboarding-container">
+                <div class="onboarding-tag">
+                  <div class="dot"></div>
+                  <span>Lenz AI • REAL OR FAKE DETECTOR</span>
+                </div>
+
+                <!-- Living Character Hero -->
+                <div class="onboarding-mascot-hero">
+                  <div class="lens-glow-halo"></div>
+                  <div class="living-mascot-wrapper" onclick="pokeMascot()">
+                    <div class="mascot-speech-bubble" id="onboard-bubble">
+                      "I spot microscopic stitch angles & logos!"
+                    </div>
+                    <img class="breathing-character current-mascot-img" 
+                         src="../assets/images/mascot_welcome.png" 
+                         alt="Lenz Detective Mascot">
+                    <div class="magnifier-sparkle"></div>
+                  </div>
+                </div>
+
+                <h1 class="onboarding-headline">Spot the fakes before you spend.</h1>
+                <p class="onboarding-subtext">
+                  Forensic AI inspection for luxury watches, designer bags, sneakers, and apparel in under 30 seconds.
+                </p>
+
+                <!-- Features -->
+                <div class="feature-card-list">
+                  <div class="feature-card">
+                    <div class="feature-icon-box">🔍</div>
+                    <div class="content">
+                      <h5>Microscopic Checkpoints</h5>
+                      <p>Inspects thread angles, hardware engravings & date codes.</p>
+                    </div>
+                  </div>
+
+                  <div class="feature-card">
+                    <div class="feature-icon-box">⚡</div>
+                    <div class="content">
+                      <h5>Instant AI Verdict</h5>
+                      <p>98.4% verified accuracy with multi-angle corroboration.</p>
+                    </div>
+                  </div>
+
+                  <div class="feature-card">
+                    <div class="feature-icon-box">🛡️</div>
+                    <div class="content">
+                      <h5>Collector Vault</h5>
+                      <p>Keep a verified provenance certificate for every trade.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <button class="btn-luxury-primary" onclick="switchScreen('screen-home')">
+                  <span>Start Authentic Inspection</span>
+                  <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                  </svg>
+                </button>
+
+                <p class="onboarding-login-link">
+                  Already have an account? <a onclick="switchScreen('screen-home')">Log in</a>
+                </p>
+              </div>
+            </div>
+
+            <!-- ==========================================
+                 SCREEN 2: REDESIGNED LUXURY HOME
+                 ========================================== -->
+            <div class="screen-view" id="screen-home">
+              <div class="home-container">
+                <!-- Top Header -->
+                <div class="home-top-bar">
+                  <div class="home-greeting">
+                    <h2>Hi, Collector 👋</h2>
+                    <p>Let’s check something authentic today.</p>
+                  </div>
+                  <div class="home-top-actions">
+                    <div class="avatar-btn" onclick="switchScreen('screen-profile')">
+                      <img src="../assets/images/mascot_home.png" alt="Avatar">
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Pro Membership Strip -->
+                <div class="pro-promo-strip" onclick="showToast('⭐ Lenz Pro: Unlimited scans unlocked!')">
+                  <div class="pro-promo-left">
+                    <div class="sparkle-badge">✦</div>
+                    <div class="pro-promo-text">
+                      <h5>Upgrade to Lenz Pro</h5>
+                      <p>Unlimited scans & instant forensic AI report</p>
+                    </div>
+                  </div>
+                  <span class="pro-pill-btn">PRO ›</span>
+                </div>
+
+                <!-- Living Hero Scanner Card -->
+                <div class="hero-scanner-card">
+                  <div class="hero-top-row">
+                    <div class="hero-left-content">
+                      <div class="lenz-live-status">
+                        <span class="live-indicator"></span>
+                        <span>Lenz • Ready</span>
+                      </div>
+                      <h3>Need me to check something?</h3>
+                      <p>Show me the item and I'll look for the details that matter.</p>
+                      
+                      <button class="hero-cta-btn" onclick="switchScreen('screen-camera')">
+                        <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                          <circle cx="12" cy="13" r="3" stroke-width="2" stroke="currentColor" fill="none"/>
+                        </svg>
+                        <span>Scan Anything</span>
+                        <span>›</span>
+                      </button>
+                    </div>
+
+                    <!-- Living Character on Hero -->
+                    <div class="hero-right-mascot" onclick="pokeMascot()">
+                      <div class="living-mascot-wrapper">
+                        <img class="breathing-character current-mascot-img" 
+                             src="../assets/images/home_mascot_lenz_user.png" 
+                             alt="Lenz">
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="hero-footer-strip">
+                    <div class="metric">
+                      <span>🛡️</span> 10,000+ catalog reference items
+                    </div>
+                    <div class="metric">
+                      <span>⏱️</span> Under 30 sec
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Browse Categories -->
+                <div class="section-header">
+                  <h4>Browse your items</h4>
+                  <a onclick="showToast('Filtering by categories')">See all</a>
+                </div>
+
+                <div class="category-scroll-row">
+                  <div class="category-pill-card" onclick="switchScreen('screen-camera')">
+                    <div class="cat-img-box">
+                      <img src="../assets/images/cat_watches.png" alt="Watches">
+                    </div>
+                    <span class="cat-label">Watches</span>
+                    <span class="cat-count">Rolex, AP</span>
+                  </div>
+
+                  <div class="category-pill-card" onclick="switchScreen('screen-camera')">
+                    <div class="cat-img-box">
+                      <img src="../assets/images/cat_bags.png" alt="Bags">
+                    </div>
+                    <span class="cat-label">Bags</span>
+                    <span class="cat-count">Hermès, LV</span>
+                  </div>
+
+                  <div class="category-pill-card" onclick="switchScreen('screen-camera')">
+                    <div class="cat-img-box">
+                      <img src="../assets/images/cat_sneakers.png" alt="Sneakers">
+                    </div>
+                    <span class="cat-label">Sneakers</span>
+                    <span class="cat-count">Jordan, Travis</span>
+                  </div>
+
+                  <div class="category-pill-card" onclick="switchScreen('screen-camera')">
+                    <div class="cat-img-box">
+                      <img src="../assets/images/cat_clothing.png" alt="Clothing">
+                    </div>
+                    <span class="cat-label">Clothing</span>
+                    <span class="cat-count">Gucci, Bal</span>
+                  </div>
+
+                  <div class="category-pill-card" onclick="switchScreen('screen-camera')">
+                    <div class="cat-img-box">
+                      <img src="../assets/images/cat_accessories.png" alt="Accessories">
+                    </div>
+                    <span class="cat-label">Jewelry</span>
+                    <span class="cat-count">Cartier, VCA</span>
+                  </div>
+                </div>
+
+                <!-- Recent Checks -->
+                <div class="section-header">
+                  <h4>Your recent checks</h4>
+                  <a onclick="switchScreen('screen-history')">See all ›</a>
+                </div>
+
+                <div class="recent-scans-list">
+                  <div class="scan-result-card" onclick="switchScreen('screen-report')">
+                    <div class="scan-card-left">
+                      <div class="scan-thumb">
+                        <img src="../assets/images/watch_full.png" alt="Watch">
+                      </div>
+                      <div class="scan-info">
+                        <h5>Rolex Submariner Date</h5>
+                        <p>Cerachrom Bezel 126610LN</p>
+                        <span class="verdict-tag authentic">✓ Authentic</span>
+                      </div>
+                    </div>
+                    <div class="confidence-meter">
+                      <div style="font-size: 15px; color: var(--app-authentic);">96%</div>
+                      <div style="font-size: 10px; color: var(--app-text-subtle);">Match</div>
+                    </div>
+                  </div>
+
+                  <div class="scan-result-card" onclick="openReplicaReport()">
+                    <div class="scan-card-left">
+                      <div class="scan-thumb">
+                        <img src="../assets/images/bag_full.png" alt="Bag">
+                      </div>
+                      <div class="scan-info">
+                        <h5>Hermès Birkin 25 Togo</h5>
+                        <p>Gold Hardware • Stamped Z</p>
+                        <span class="verdict-tag replica">✕ Replica Detected</span>
+                      </div>
+                    </div>
+                    <div class="confidence-meter">
+                      <div style="font-size: 15px; color: var(--app-replica);">24%</div>
+                      <div style="font-size: 10px; color: var(--app-text-subtle);">Match</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ==========================================
+                 SCREEN 3: SMART CAMERA & GUIDED CAPTURE
+                 ========================================== -->
+            <div class="screen-view camera-screen-view" id="screen-camera">
+              <div class="camera-viewfinder">
+                <img class="camera-bg-sample" src="../assets/images/bag_stitching.png" alt="Inspection target">
+                
+                <!-- Reticle with animated sweep -->
+                <div class="viewfinder-reticle">
+                  <div class="scan-laser-line"></div>
+                </div>
+
+                <!-- Top Camera Toolbar -->
+                <div class="camera-top-toolbar">
+                  <div class="cam-action-btn" onclick="switchScreen('screen-home')">✕</div>
+                  <div class="cam-step-pill">Photo 1 of 4 • Stitching</div>
+                  <div class="cam-action-btn" onclick="showToast('Flash toggled')">⚡</div>
+                </div>
+
+                <!-- Living Assistant Dock in Viewfinder -->
+                <div class="camera-assistant-dock">
+                  <div class="assistant-mascot-pic living-mascot-wrapper" onclick="pokeMascot()">
+                    <img class="breathing-character current-mascot-img" 
+                         src="../assets/images/mascot_inspecting.png" 
+                         alt="Lenz">
+                  </div>
+                  <div class="assistant-hint-text">
+                    <h5>Lenz Guidance</h5>
+                    <p id="cam-hint">"Hold steady: get within 4 inches so I can check thread angle & knot symmetry."</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Camera Bottom Controls Deck -->
+              <div class="camera-bottom-deck">
+                <div class="gallery-preview-btn" onclick="showToast('Open Photo Library')">
+                  <img src="../assets/images/bag_hardware.png" alt="Gallery">
+                </div>
+
+                <div class="shutter-btn-outer" onclick="runScanAnalysis()">
+                  <div class="shutter-btn-inner"></div>
+                </div>
+
+                <div class="cam-action-btn" onclick="showToast('Camera flipped')">
+                  🔄
+                </div>
+              </div>
+            </div>
+
+            <!-- ==========================================
+                 SCREEN 4: DEEP AI ANALYSIS HUD
+                 ========================================== -->
+            <div class="screen-view" id="screen-analysis">
+              <div class="analysis-screen-view">
+                <span class="analysis-stage-pill" id="analysis-pill">Analyzing image...</span>
+
+                <!-- Concentric Holographic Radar -->
+                <div class="radar-visualizer-box">
+                  <div class="radar-spin-ring"></div>
+                  <div class="radar-spin-ring-inner"></div>
+                  <div class="radar-core-mascot">
+                    <img class="breathing-character current-mascot-img" 
+                         src="../assets/images/mascot_identifying.png" 
+                         alt="Lenz">
+                  </div>
+                </div>
+
+                <h2 class="analysis-headline">Inspecting Checkpoints</h2>
+                <p class="analysis-subtext">Comparing your macro photos against 10,000+ verified manufacturer archives.</p>
+
+                <div class="analysis-checklist">
+                  <div class="check-step-item">
+                    <div class="step-label-group">
+                      <div class="step-status-icon done">✓</div>
+                      <span>Product Identification</span>
+                    </div>
+                    <span class="step-progress-timer">0.4s</span>
+                  </div>
+
+                  <div class="check-step-item">
+                    <div class="step-label-group">
+                      <div class="step-status-icon active">●</div>
+                      <span>Stitch Geometry & Thread Count</span>
+                    </div>
+                    <span class="step-progress-timer" style="color: var(--app-gold);">Scanning</span>
+                  </div>
+
+                  <div class="check-step-item">
+                    <div class="step-label-group">
+                      <div class="step-status-icon" style="background: rgba(0,0,0,0.06);">○</div>
+                      <span>Hardware Engraving Font & Depth</span>
+                    </div>
+                    <span class="step-progress-timer">Pending</span>
+                  </div>
+
+                  <div class="check-step-item">
+                    <div class="step-label-group">
+                      <div class="step-status-icon" style="background: rgba(0,0,0,0.06);">○</div>
+                      <span>Leather Grain Density & Tone</span>
+                    </div>
+                    <span class="step-progress-timer">Pending</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ==========================================
+                 SCREEN 5: FORENSIC REPORT
+                 ========================================== -->
+            <div class="screen-view" id="screen-report">
+              <div class="report-container">
+                <div class="report-product-badge">
+                  <img src="../assets/images/watch_full.png" id="report-item-img" alt="Product">
+                  <div class="meta">
+                    <h4 id="report-item-title">Rolex Submariner Date</h4>
+                    <p id="report-item-sub">Ref. 126610LN • Oystersteel</p>
+                  </div>
+                </div>
+
+                <!-- Verdict Hero -->
+                <div class="verdict-hero-card" id="verdict-hero-card">
+                  <div class="verdict-score-ring">
+                    <svg class="score-circle-svg" viewBox="0 0 120 120">
+                      <circle class="score-circle-bg" cx="60" cy="60" r="50"></circle>
+                      <circle class="score-circle-prog" id="score-circle-prog" cx="60" cy="60" r="50"></circle>
+                    </svg>
+                    <div class="score-number-display" id="score-number-display">96%</div>
+                  </div>
+
+                  <div class="verdict-pill-badge authentic" id="verdict-pill-badge">
+                    <span>🛡️</span>
+                    <span id="verdict-pill-text">Likely Authentic</span>
+                  </div>
+
+                  <p class="verdict-reason" id="verdict-reason">
+                    High consistency across font kerning, dial print elevation, and cyclops 2.5x magnification.
+                  </p>
+                </div>
+
+                <!-- Living Detective Mascot Tip Box -->
+                <div class="report-mascot-tip-box" onclick="pokeMascot()">
+                  <img class="breathing-character current-mascot-img" 
+                       src="../assets/images/mascot_ready.png" 
+                       alt="Lenz">
+                  <div class="text">
+                    <h6 id="report-mascot-title">Lenz Detective Observation</h6>
+                    <p id="report-mascot-text">"Look at the hand-painted laser crown at 6 o'clock — 100% matches genuine Rolex production tolerances!"</p>
+                  </div>
+                </div>
+
+                <!-- Macro Checkpoints -->
+                <div class="section-header">
+                  <h4>Inspected Evidence</h4>
+                  <a onclick="showToast('4 macro photos examined')">4 Checkpoints</a>
+                </div>
+
+                <div class="checkpoint-grid">
+                  <div class="checkpoint-card">
+                    <div class="checkpoint-img">
+                      <img src="../assets/images/bag_stitching.png" alt="Stitching">
+                    </div>
+                    <div class="title">
+                      <span>Stitching Angle</span>
+                      <span class="confidence">98% PASS</span>
+                    </div>
+                  </div>
+
+                  <div class="checkpoint-card">
+                    <div class="checkpoint-img">
+                      <img src="../assets/images/bag_hardware.png" alt="Hardware">
+                    </div>
+                    <div class="title">
+                      <span>Engraving Font</span>
+                      <span class="confidence">95% PASS</span>
+                    </div>
+                  </div>
+
+                  <div class="checkpoint-card">
+                    <div class="checkpoint-img">
+                      <img src="../assets/images/bag_interior.png" alt="Stamp">
+                    </div>
+                    <div class="title">
+                      <span>Heat Stamp</span>
+                      <span class="confidence">97% PASS</span>
+                    </div>
+                  </div>
+
+                  <div class="checkpoint-card">
+                    <div class="checkpoint-img">
+                      <img src="../assets/images/watch_reference.png" alt="Dial">
+                    </div>
+                    <div class="title">
+                      <span>Dial Print</span>
+                      <span class="confidence">94% PASS</span>
+                    </div>
+                  </div>
+                </div>
+
+                <button class="btn-luxury-primary" onclick="switchScreen('screen-home')">
+                  <span>Done & Save to Vault</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- ==========================================
+                 SCREEN 6: COLLECTOR VAULT / HISTORY
+                 ========================================== -->
+            <div class="screen-view" id="screen-history">
+              <div class="history-container">
+                <div class="section-header" style="margin-top: 10px;">
+                  <h2 style="font-size: 24px; font-weight: 800;">Vault History</h2>
+                  <span style="font-size: 12px; color: var(--app-forest); font-weight: 700;">8 Verified</span>
+                </div>
+
+                <div class="vault-search-bar">
+                  <span>🔍</span>
+                  <input type="text" placeholder="Search brands, references, models...">
+                </div>
+
+                <div class="recent-scans-list">
+                  <div class="scan-result-card" onclick="switchScreen('screen-report')">
+                    <div class="scan-card-left">
+                      <div class="scan-thumb"><img src="../assets/images/watch_full.png" alt="Watch"></div>
+                      <div class="scan-info">
+                        <h5>Rolex Submariner 126610LN</h5>
+                        <p>Oct 18, 2026 • Certificate #LX-8492</p>
+                        <span class="verdict-tag authentic">✓ Authentic (96%)</span>
+                      </div>
+                    </div>
+                    <span>›</span>
+                  </div>
+
+                  <div class="scan-result-card" onclick="openReplicaReport()">
+                    <div class="scan-card-left">
+                      <div class="scan-thumb"><img src="../assets/images/bag_full.png" alt="Bag"></div>
+                      <div class="scan-info">
+                        <h5>Hermès Birkin 25 Togo</h5>
+                        <p>Oct 16, 2026 • Counterfeit Flagged</p>
+                        <span class="verdict-tag replica">✕ Replica (24%)</span>
+                      </div>
+                    </div>
+                    <span>›</span>
+                  </div>
+
+                  <div class="scan-result-card" onclick="switchScreen('screen-report')">
+                    <div class="scan-card-left">
+                      <div class="scan-thumb"><img src="../assets/images/cat_sneakers.png" alt="Shoes"></div>
+                      <div class="scan-info">
+                        <h5>Jordan 1 Retro High Travis</h5>
+                        <p>Oct 12, 2026 • Suede & Stitch Valid</p>
+                        <span class="verdict-tag authentic">✓ Authentic (98%)</span>
+                      </div>
+                    </div>
+                    <span>›</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ==========================================
+                 SCREEN 7: PROFILE & MEMBERSHIP
+                 ========================================== -->
+            <div class="screen-view" id="screen-profile">
+              <div class="profile-container">
+                <div class="profile-hero-card">
+                  <div class="profile-hero-avatar">
+                    <img src="../assets/images/mascot_home.png" alt="User">
+                  </div>
+                  <h3>Hanan Collector</h3>
+                  <p>Member since Oct 2026 • Pro VIP</p>
+
+                  <div class="credits-gauge-strip">
+                    <span class="label">Authentications Remaining</span>
+                    <span class="meter">UNLIMITED (PRO)</span>
+                  </div>
+                </div>
+
+                <div class="section-header">
+                  <h4>App Preferences</h4>
+                </div>
+
+                <div class="feature-card-list">
+                  <div class="feature-card" onclick="toggleAppTheme()">
+                    <div class="feature-icon-box">🌓</div>
+                    <div class="content" style="flex:1;">
+                      <h5>Theme Mode</h5>
+                      <p>Toggle between Warm Luxury Ivory & Dark Mode</p>
+                    </div>
+                    <span>›</span>
+                  </div>
+
+                  <div class="feature-card" onclick="showToast('Biometric security active')">
+                    <div class="feature-icon-box">🔐</div>
+                    <div class="content" style="flex:1;">
+                      <h5>Biometric Face ID Vault</h5>
+                      <p>Require Face ID to view authentication reports</p>
+                    </div>
+                    <span style="color: var(--app-authentic); font-weight: 700;">ON</span>
+                  </div>
+
+                  <div class="feature-card" onclick="showToast('Haptic feedback active')">
+                    <div class="feature-icon-box">📳</div>
+                    <div class="content" style="flex:1;">
+                      <h5>Haptic Tactile Engine</h5>
+                      <p>Subtle mechanical vibrations on button taps</p>
+                    </div>
+                    <span style="color: var(--app-authentic); font-weight: 700;">ON</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div> <!-- End Screen Body -->
+
+          <!-- Floating iOS Glass Bottom Nav Bar -->
+          <div class="ios-glass-navbar">
+            <button class="nav-tab-btn active" id="tab-home" onclick="switchScreen('screen-home')">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+              </svg>
+              <span>Home</span>
+            </button>
+
+            <button class="nav-tab-btn" id="tab-history" onclick="switchScreen('screen-history')">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <span>Vault</span>
+            </button>
+
+            <!-- Center Primary Scan Trigger Button -->
+            <button class="nav-tab-btn scan-center-tab" onclick="switchScreen('screen-camera')">
+              <div class="scan-circle-glow">
+                <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <circle cx="12" cy="13" r="3" stroke-width="2" stroke="currentColor" fill="none"/>
+                </svg>
+              </div>
+              <span style="font-weight: 700; color: var(--app-forest);">Scan</span>
+            </button>
+
+            <button class="nav-tab-btn" id="tab-report" onclick="switchScreen('screen-report')">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+              <span>Report</span>
+            </button>
+
+            <button class="nav-tab-btn" id="tab-profile" onclick="switchScreen('screen-profile')">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+              </svg>
+              <span>Profile</span>
+            </button>
+          </div>
+
+        </div> <!-- End Phone Screen -->
+      </div> <!-- End Phone Chassis -->
+    </section>
+
+    <!-- RIGHT INSPECTOR & DESIGN SYSTEM SPECS PANEL -->
+    <aside class="right-inspector-panel">
+      <div class="panel-section-title">
+        <span>UI/UX Pro Max Specs</span>
+        <span style="font-size: 10px; color: var(--app-gold);">System V2</span>
+      </div>
+
+      <div class="specs-card">
+        <h5>🎨 Liquid Glass Material</h5>
+        <p>Optical translucency, lensing effects, and warm ivory/deep forest micro-contrasts inspired by Apple HIG & Swiss watchmaking.</p>
+      </div>
+
+      <div class="specs-card">
+        <h5>🧬 Living Mascot Architecture</h5>
+        <div class="spec-kv-row">
+          <span>Animation Cycle</span>
+          <span>3.6s Sine Float</span>
+        </div>
+        <div class="spec-kv-row">
+          <span>Halo Lensing</span>
+          <span>Radial Glint</span>
+        </div>
+        <div class="spec-kv-row">
+          <span>Micro-States</span>
+          <span>5 Reactive Expressions</span>
+        </div>
+        <div class="spec-kv-row">
+          <span>Tactile Feedback</span>
+          <span>Scale & Tilt Spring</span>
+        </div>
+      </div>
+
+      <div class="specs-card">
+        <h5>📐 Forensic Hierarchy</h5>
+        <div class="spec-kv-row">
+          <span>Display Font</span>
+          <span>Plus Jakarta Sans 800</span>
+        </div>
+        <div class="spec-kv-row">
+          <span>Primary Accent</span>
+          <span>#122F24 Forest</span>
+        </div>
+        <div class="spec-kv-row">
+          <span>Luxury Accent</span>
+          <span>#D4AF37 Champagne</span>
+        </div>
+        <div class="spec-kv-row">
+          <span>Card Radius</span>
+          <span>20px Continuous</span>
+        </div>
+      </div>
+
+      <div class="specs-card" style="background: rgba(18, 47, 36, 0.4); border-color: rgba(212, 175, 55, 0.3);">
+        <h5 style="color: var(--app-gold);">💡 Interactive Actions</h5>
+        <p style="color: #CBD5E1; font-size: 11px;">
+          • Tap on <strong>Lenz Mascot</strong> to trigger live reactions.<br>
+          • Use the <strong>State Selector</strong> on the top bar to simulate live detection phases.<br>
+          • Tap <strong>Scan Anything</strong> or camera shutter to watch the deep radar animation in action.
+        </p>
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- Interactive Studio Toast -->
+  <div class="studio-toast" id="studio-toast">
+    <span id="toast-icon">✨</span>
+    <span id="toast-msg">Action performed</span>
+  </div>
+
+  <!-- JAVASCRIPT CONTROLLER -->
+  <script>
+    // State storage
+    const mascotImages = {
+      idle: '../assets/images/home_mascot_lenz_user.png',
+      welcome: '../assets/images/mascot_welcome.png',
+      inspecting: '../assets/images/mascot_inspecting.png',
+      identifying: '../assets/images/mascot_identifying.png',
+      authentic: '../assets/images/mascot_ready.png',
+      replica: '../assets/images/mascot_tip.png'
+    };
+
+    const mascotDialogues = {
+      idle: '"Ready to verify stitching, leather grain, and serial fonts!"',
+      welcome: '"I spot microscopic stitch angles & logos!"',
+      inspecting: '"Magnifying thread density... looking for counterfeit flaws!"',
+      identifying: '"AI deep cross-referencing against 10,000+ reference catalog..."',
+      authentic: '"Brilliant! Production tolerances 100% align with genuine item!"',
+      replica: '"Warning: font kerning and thread alignment show replica markers!"'
+    };
+
+    let currentMascotState = 'idle';
+
+    // Screen Switcher
+    function switchScreen(screenId) {
+      document.querySelectorAll('.screen-view').forEach(el => el.classList.remove('active'));
+      const targetScreen = document.getElementById(screenId);
+      if (targetScreen) {
+        targetScreen.classList.add('active');
+      }
+
+      // Update Left Nav
+      document.querySelectorAll('.screen-item').forEach(item => {
+        item.classList.remove('active');
+        if (item.getAttribute('onclick')?.includes(screenId)) {
+          item.classList.add('active');
+        }
+      });
+
+      // Update Bottom Nav Tab Highlights
+      document.querySelectorAll('.nav-tab-btn').forEach(b => b.classList.remove('active'));
+      if (screenId === 'screen-home') document.getElementById('tab-home')?.classList.add('active');
+      if (screenId === 'screen-history') document.getElementById('tab-history')?.classList.add('active');
+      if (screenId === 'screen-report') document.getElementById('tab-report')?.classList.add('active');
+      if (screenId === 'screen-profile') document.getElementById('tab-profile')?.classList.add('active');
+
+      // Scroll phone body to top
+      document.querySelector('.app-screen-body').scrollTop = 0;
+
+      // Dynamic Contextual Character Reactions
+      if (screenId === 'screen-onboarding') {
+        setMascotMood('welcome');
+      } else if (screenId === 'screen-home') {
+        setMascotMood('idle');
+      } else if (screenId === 'screen-camera') {
+        setMascotMood('inspecting');
+      } else if (screenId === 'screen-analysis') {
+        setMascotMood('identifying');
+      } else if (screenId === 'screen-report') {
+        setMascotMood('authentic');
+      }
+    }
+
+    // Set Mascot Emotional Mood / State
+    function setMascotMood(mood) {
+      currentMascotState = mood;
+      const imgSrc = mascotImages[mood] || mascotImages.idle;
+      const dialogue = mascotDialogues[mood] || mascotDialogues.idle;
+
+      // Update all mascot images in DOM
+      document.querySelectorAll('.current-mascot-img').forEach(img => {
+        img.style.transform = 'scale(0.85) rotate(-5deg)';
+        img.style.opacity = '0.5';
+        setTimeout(() => {
+          img.src = imgSrc;
+          img.style.transform = 'scale(1) rotate(0deg)';
+          img.style.opacity = '1';
+        }, 150);
+      });
+
+      // Update preview avatar in sidebar
+      const previewAvatar = document.getElementById('mascot-preview-avatar');
+      if (previewAvatar) previewAvatar.src = imgSrc;
+
+      // Update dialogue bubbles
+      const bubble = document.getElementById('onboard-bubble');
+      if (bubble) bubble.textContent = dialogue;
+
+      const camHint = document.getElementById('cam-hint');
+      if (camHint) camHint.textContent = dialogue;
+
+      // Update status label
+      const statusLbl = document.getElementById('mascot-status-label');
+      if (statusLbl) statusLbl.textContent = mood.charAt(0).toUpperCase() + mood.slice(1);
+
+      // Update mood buttons
+      document.querySelectorAll('.mood-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('onclick')?.includes(`'${mood}'`));
+      });
+      document.querySelectorAll('.mascot-controller-pill .pill-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('onclick')?.includes(`'${mood}'`));
+      });
+
+      showToast(`Lenz State: ${mood.toUpperCase()}`);
+    }
+
+    // Interactive Tap on Character (Poke reaction)
+    function pokeMascot() {
+      const wrappers = document.querySelectorAll('.living-mascot-wrapper');
+      wrappers.forEach(w => {
+        w.style.transform = 'scale(1.18) rotate(6deg) translateY(-8px)';
+        setTimeout(() => {
+          w.style.transform = 'scale(0.92) rotate(-4deg)';
+          setTimeout(() => {
+            w.style.transform = '';
+          }, 180);
+        }, 180);
+      });
+
+      showToast('🐾 Lenz: "I\'m on the case! Analyzing every millimeter."');
+    }
+
+    // Run Simulated Full Deep Radar Scan
+    function runScanAnalysis() {
+      switchScreen('screen-analysis');
+      setMascotMood('identifying');
+
+      const pill = document.getElementById('analysis-pill');
+      const stages = [
+        'Photo Inspection & Sharpness...',
+        'AI Macro Stitch Geometry...',
+        'Hardware Engraving Depth...',
+        'Cross-referencing Master Archive...',
+        'Finalizing Forensic Assessment...'
+      ];
+
+      let idx = 0;
+      const interval = setInterval(() => {
+        idx++;
+        if (idx < stages.length) {
+          pill.textContent = stages[idx];
+        } else {
+          clearInterval(interval);
+          switchScreen('screen-report');
+        }
+      }, 700);
+    }
+
+    // Open Replica Mode Demo
+    function openReplicaReport() {
+      switchScreen('screen-report');
+      setMascotMood('replica');
+
+      // Update report details for Hermès Birkin Replica
+      document.getElementById('report-item-img').src = '../assets/images/bag_full.png';
+      document.getElementById('report-item-title').textContent = 'Hermès Birkin 25 Togo';
+      document.getElementById('report-item-sub').textContent = 'Gold Hardware • Handcrafted Replica';
+
+      const hero = document.getElementById('verdict-hero-card');
+      hero.classList.add('replica-mode');
+
+      document.getElementById('score-number-display').textContent = '24%';
+      document.getElementById('score-number-display').style.color = 'var(--app-replica)';
+
+      const pill = document.getElementById('verdict-pill-badge');
+      pill.className = 'verdict-pill-badge replica';
+      document.getElementById('verdict-pill-text').textContent = 'Replica Detected';
+
+      document.getElementById('verdict-reason').textContent = 
+        'Stitch angles are machine-straightened at 0° instead of authentic Hermès 45° saddle pitch. Heat stamp depth exceeds original specifications.';
+
+      document.getElementById('report-mascot-title').textContent = 'Counterfeit Detection Alert';
+      document.getElementById('report-mascot-text').textContent = 
+        '"Notice the hardware foil stamp: edges are bleeding and leather grain is chemically pressed!"';
+    }
+
+    // Dynamic Island Interaction
+    function triggerDynamicIsland() {
+      showToast('Dynamic Island: 3 checks remaining in current pass');
+    }
+
+    // App Theme Toggle (Warm Ivory vs Dark)
+    function toggleAppTheme() {
+      const screen = document.getElementById('app-phone-screen');
+      const isDark = screen.getAttribute('data-app-theme') === 'dark';
+      const newTheme = isDark ? 'light' : 'dark';
+      screen.setAttribute('data-app-theme', newTheme);
+      showToast(`Switched phone preview to ${newTheme.toUpperCase()} theme`);
+    }
+
+    // Toast Notification Utility
+    function showToast(message) {
+      const toast = document.getElementById('studio-toast');
+      const msg = document.getElementById('toast-msg');
+      msg.textContent = message;
+      toast.classList.add('show');
+      clearTimeout(window._toastTimeout);
+      window._toastTimeout = setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2500);
+    }
+  </script>
+</body>
+</html>

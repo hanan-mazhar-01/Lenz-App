@@ -41,6 +41,8 @@
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Lenz uses Face ID to protect your scan reports.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Lenz uses your camera to capture product photos for AI-powered authenticity assessment.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
@@ -75,8 +77,6 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>

@@ -73,10 +73,42 @@ test("many single-photo calls in one session are charged too", async () => {
   );
 });
 
-test("signed-in free accounts keep the current uncapped policy", async () => {
+test("signed-in free accounts are charged like guests, and stopped at zero", async () => {
   const { db, admin } = makeFake();
-  db.store.set("users/u1", { scansRemaining: 0 });
-  const r = await limits.admitCall({ db, admin, uid: "u1", token: { firebase: { sign_in_provider: "google.com" } }, scanId: "scan_signed", imageCount: 7 });
-  assert.equal(r.charged, false);
+  db.store.set("users/u1", { planName: "Free Plan", scansRemaining: 2, isPremium: false });
+  const token = { firebase: { sign_in_provider: "password" } };
+  const call = (scanId, imageCount) => limits.admitCall({ db, admin, uid: "u1", token, scanId, imageCount });
+  assert.equal((await call("scan_signed1", 7)).charged, true);
+  assert.equal(db.store.get("users/u1").scansRemaining, 1);
+  assert.equal((await call("scan_signed2", 7)).charged, true);
   assert.equal(db.store.get("users/u1").scansRemaining, 0);
+  await assert.rejects(call("scan_signed3", 7), /No scan credits/);
+});
+
+test("a premium account is never charged", async () => {
+  const { db, admin } = makeFake();
+  db.store.set("users/p1", { planName: "Lenz Pro", scansRemaining: 9999, isPremium: true });
+  const token = { firebase: { sign_in_provider: "google.com" } };
+  const r = await limits.admitCall({ db, admin, uid: "p1", token, scanId: "scan_premium", imageCount: 7 });
+  assert.equal(r.charged, false);
+  assert.equal(db.store.get("users/p1").scansRemaining, 9999);
+});
+
+test("a one-photo scan is charged at its final report call", async () => {
+  const { db, admin } = makeFake();
+  db.store.set("users/g9", { planName: "Guest Plan", scansRemaining: 3, isPremium: false });
+  const token = { firebase: { sign_in_provider: "anonymous" } };
+  const call = (label, imageCount) =>
+    limits.admitCall({ db, admin, uid: "g9", token, scanId: "scan_onepic", imageCount, label });
+  assert.equal((await call("product_identification_and_validation", 1)).charged, false);
+  assert.equal((await call("photo_analysis:overview", 1)).charged, false);
+  assert.equal((await call(limits.FINAL_REPORT_LABEL, 1)).charged, true);
+  assert.equal(db.store.get("users/g9").scansRemaining, 2);
+  assert.equal((await call(limits.FINAL_REPORT_LABEL, 1)).charged, false, "once per scan");
+});
+
+test("sessionChargeDue: the final report label charges; other labels with one image do not", () => {
+  assert.equal(limits.sessionChargeDue({ calls: 1, charged: false }, { imageCount: 1, label: limits.FINAL_REPORT_LABEL }), true);
+  assert.equal(limits.sessionChargeDue({ calls: 1, charged: false }, { imageCount: 1, label: "photo_analysis:overview" }), false);
+  assert.equal(limits.sessionChargeDue({ calls: 1, charged: true }, { imageCount: 1, label: limits.FINAL_REPORT_LABEL }), false);
 });

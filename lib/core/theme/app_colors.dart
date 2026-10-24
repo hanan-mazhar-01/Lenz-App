@@ -1,18 +1,24 @@
 import 'package:flutter/material.dart';
 
-/// Central luxury theme color tokens supporting both Light and Dark modes.
-/// Dominant visual system: Off-white / Pure Black & Graphite base with selective mint/emerald accent.
+import 'lenz_colors.dart';
+
+/// Legacy colour tokens, kept so un-migrated screens compile.
+///
+/// Since the Lenz redesign every VALUE here is remapped onto the prototype
+/// palette in [LenzColors] (names are unchanged). New code should use
+/// [LenzColors] directly. The app is light-only; the `*Dark` constants are
+/// retained for API compatibility only.
 abstract final class AppColors {
   // Reference Color Scheme (Requested Palette)
-  static const Color warmIvory = Color(0xFFFCF8F6); // Main background
-  static const Color softWarmGray = Color(0xFFF7F3F1); // Secondary background
-  static const Color veryLightWarmGray = Color(0xFFF1EDEB); // Card background
-  static const Color deepForestGreen = Color(0xFF122F24); // Primary dark green
-  static const Color nearBlack = Color(0xFF1F2023); // Main text
-  static const Color charcoalGray = Color(0xFF5F6264); // Secondary text
-  static const Color softGray = Color(0xFF8A8D91); // Muted text
-  static const Color coolGray = Color(0xFF9EA3AE); // Outer phone/frame gray
-  static const Color pureWhite = Color(0xFFFFFFFF); // Pure white
+  static const Color warmIvory = LenzColors.ivory; // Main background
+  static const Color softWarmGray = LenzColors.mint2; // Secondary / soft surface (was warm grey)
+  static const Color veryLightWarmGray = LenzColors.paper; // Card background (paper white)
+  static const Color deepForestGreen = LenzColors.forest; // Primary dark green
+  static const Color nearBlack = LenzColors.ink; // Main text
+  static const Color charcoalGray = LenzColors.muted; // Secondary text
+  static const Color softGray = LenzColors.subtle; // Muted text
+  static const Color coolGray = LenzColors.placeholder; // Outer phone/frame gray
+  static const Color pureWhite = LenzColors.paper; // Pure white
 
   // Palette Aliases matching specification
   static const Color mainBackground = warmIvory;
@@ -28,7 +34,7 @@ abstract final class AppColors {
   static const Color background = warmIvory;
   static const Color backgroundSecondary = softWarmGray;
   static const Color surface = veryLightWarmGray; // Card background
-  static const Color surfaceGlass = Color(0xCCF1EDEB); // 80% opacity
+  static const Color surfaceGlass = Color(0xD1FFFFFF); // white 82%
   static const Color surfaceElevated = veryLightWarmGray;
 
   // Dark Mode Colors
@@ -39,9 +45,9 @@ abstract final class AppColors {
   static const Color surfaceElevatedDark = Color(0xFF242428);
 
   // Borders & Dividers
-  static const Color border = Color(0x0F000000); // 6% black
-  static const Color borderLight = Color(0x08000000); // 3% black
-  static const Color borderHighlighted = Color(0x20122F24);
+  static const Color border = LenzColors.line; // forest 9%
+  static const Color borderLight = Color(0x0D122F24); // forest 5%
+  static const Color borderHighlighted = Color(0x2E122F24);
   static const Color borderDark = Color(0x1FFFFFFF); // 12% white
   static const Color borderLightDark = Color(0x0FFFFFFF);
 
@@ -57,25 +63,25 @@ abstract final class AppColors {
 
   // Brand Accents - Selective Mint / Emerald / Deep Forest Green
   static const Color accent = deepForestGreen; // Deep Forest Green from reference CTAs
-  static const Color accentHover = Color(0xFF0C2018);
-  static const Color accentSoft = Color(0x1A122F24); // Light green pill background
+  static const Color accentHover = Color(0xFF112B21);
+  static const Color accentSoft = LenzColors.mint2; // Light green pill background
   static const Color accentBorder = Color(0x33122F24);
-  static const Color accentDark = Color(0xFF2EA44F); // Slightly brighter for dark contrast
+  static const Color accentDark = LenzColors.leaf; // Slightly brighter for dark contrast
   static const Color accentSoftDark = Color(0x262EA44F);
 
   // Functional / Status
-  static const Color success = Color(0xFF2EA44F);
-  static const Color successBg = Color(0x142EA44F);
-  static const Color warning = Color(0xFFD97706);
-  static const Color warningBg = Color(0x14D97706);
-  static const Color danger = Color(0xFFDC2626);
-  static const Color dangerBg = Color(0x14DC2626);
-  static const Color neutralPill = Color(0xFFF2F2F0);
+  static const Color success = LenzColors.ok;
+  static const Color successBg = LenzColors.okSoft;
+  static const Color warning = LenzColors.warn;
+  static const Color warningBg = LenzColors.warnSoft;
+  static const Color danger = LenzColors.bad;
+  static const Color dangerBg = LenzColors.badSoft;
+  static const Color neutralPill = LenzColors.mint2;
   static const Color neutralPillDark = Color(0xFF28282C);
 
   // Shadows
-  static const Color shadow = Color(0x0A000000);
-  static const Color shadowMedium = Color(0x14000000);
+  static const Color shadow = Color(0x0D122F24);
+  static const Color shadowMedium = Color(0x29122F24);
   static const Color shadowDark = Color(0x33000000);
 
   // Reticle / Viewfinder
@@ -83,7 +89,7 @@ abstract final class AppColors {
   static const Color viewfinderCorners = Color(0xFFFFFFFF);
 
   // Button Dark
-  static const Color buttonDark = Color(0xFF1C1C1E);
+  static const Color buttonDark = LenzColors.forest;
   static const Color buttonDarkInverse = Color(0xFFFFFFFF);
 
   // Helper getters for dynamic context resolution

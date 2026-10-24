@@ -68,6 +68,10 @@ class ProfileViewModel extends ChangeNotifier {
       }
     };
     RevenueCatService.isPremiumNotifier.addListener(_revenueCatListener!);
+    // A switch between plans (monthly <-> yearly, changed in the store's
+    // settings or at renewal) keeps premium true, so the plan name needs its own
+    // listener or the profile would keep showing the old plan.
+    RevenueCatService.activePlanNotifier.addListener(_revenueCatListener!);
 
     // Where RevenueCat is actually wired up (Apple platforms), it's
     // authoritative: sync to its live value in both directions at startup.
@@ -378,6 +382,7 @@ class ProfileViewModel extends ChangeNotifier {
   void dispose() {
     if (_revenueCatListener != null) {
       RevenueCatService.isPremiumNotifier.removeListener(_revenueCatListener!);
+      RevenueCatService.activePlanNotifier.removeListener(_revenueCatListener!);
     }
     _firestoreSub?.cancel();
     _authSub?.cancel();

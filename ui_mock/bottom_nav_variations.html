@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lenz — Bottom nav, 3 variations</title>
+<link rel="stylesheet" href="lenz_mock.css">
+<style>
+  /* ---------- fake Home content behind each nav, so the bar is judged in context ---------- */
+  .home{position:absolute;inset:0;padding:58px 18px 0;overflow:hidden}
+  .home .hi{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .home .av{width:42px;height:42px;border-radius:50%;background:var(--mint);overflow:hidden;flex:none}
+  .home .av>div{width:150%;margin:-6px 0 0 -14px}
+  .home .hi b{display:block;font-weight:900;font-size:21px;line-height:1.1}
+  .home .hi small{font-weight:700;color:var(--muted);font-size:12px}
+  .hero{height:150px;border-radius:30px;background:linear-gradient(135deg,#1D4C3A,#0C2219);color:#fff;padding:18px;position:relative;overflow:hidden}
+  .hero b{display:block;font-weight:900;font-size:21px;line-height:1.05;width:150px}
+  .hero i{display:inline-block;margin-top:14px;font-style:normal;font-weight:900;font-size:12px;background:#fff;color:var(--forest);padding:9px 13px;border-radius:99px}
+  .hero .m{position:absolute;right:-26px;bottom:-34px;width:176px}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:12px 0}
+  .tiles div{background:#fff;border-radius:20px;padding:12px;box-shadow:var(--sh1)}
+  .tiles b{display:block;font-weight:900;font-size:22px} .tiles small{font-weight:700;color:var(--muted);font-size:11px}
+  .rowc{background:#fff;border-radius:22px;padding:12px;display:flex;gap:12px;align-items:center;box-shadow:var(--sh1);margin-bottom:9px}
+  .rowc .th{width:50px;height:50px;border-radius:16px;background:var(--mint2);flex:none}
+  .rowc b{display:block;font-weight:900;font-size:15px} .rowc small{font-weight:700;color:var(--muted);font-size:12px}
+  .rowc em{margin-left:auto;font-style:normal;font-weight:900;font-size:11px;padding:5px 10px;border-radius:99px;background:var(--okSoft);color:var(--ok)}
+  .toast{position:absolute;left:50%;top:60px;transform:translate(-50%,-14px);opacity:0;background:var(--forest);color:#fff;font-weight:800;font-size:12.5px;
+    padding:9px 16px;border-radius:99px;z-index:70;transition:.35s var(--spring);white-space:nowrap}
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+
+  /* =====================================================================
+     A  ·  LIQUID DOCK — floating frosted capsule, active tab grows into a labelled pill
+     ===================================================================== */
+  .navA{position:absolute;left:14px;right:14px;bottom:20px;height:72px;border-radius:38px;z-index:60;
+    display:flex;align-items:center;justify-content:space-between;padding:0 8px;
+    background:linear-gradient(180deg,rgba(255,255,255,.86),rgba(255,255,255,.66));
+    -webkit-backdrop-filter:blur(24px) saturate(1.7);backdrop-filter:blur(24px) saturate(1.7);
+    border:1px solid rgba(255,255,255,.95);
+    box-shadow:0 22px 44px -16px rgba(18,47,36,.45),0 2px 6px rgba(18,47,36,.06),inset 0 1px 0 #fff}
+  .navA .grp{flex:1 1 0;min-width:0;display:flex;align-items:center;justify-content:space-around}
+  .navA .tab{height:52px;border-radius:26px;padding:0 10px;display:flex;align-items:center;color:#7C877F;
+    transition:background .45s var(--ease),color .3s,padding .45s var(--ease),transform .3s var(--spring)}
+  .navA .tab:active{transform:scale(.92)}
+  .navA .tab span{max-width:0;opacity:0;overflow:hidden;white-space:nowrap;font-weight:900;font-size:13px;
+    transition:max-width .5s var(--ease),opacity .3s .05s,margin .5s var(--ease)}
+  .navA .tab.on{background:linear-gradient(135deg,#DCEFE4,#C5E3D2);color:var(--forest);padding:0 12px;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.8),0 6px 14px -6px rgba(31,138,76,.5)}
+  .navA .tab.on span{max-width:60px;opacity:1;margin-left:7px}
+  .navA .scan{width:60px;height:60px;border-radius:50%;margin-top:-30px;flex:none;position:relative;color:#fff;
+    background:radial-gradient(120% 120% at 30% 15%,#3C8C69 0,#1D4C3A 45%,#0F271D 100%);
+    box-shadow:0 0 0 6px var(--ivory),0 16px 28px -6px rgba(18,47,36,.75),inset 0 2px 0 rgba(255,255,255,.28);
+    display:grid;place-items:center;transition:transform .35s var(--spring)}
+  .navA .scan::after{content:"";position:absolute;right:7px;top:8px;width:9px;height:9px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#fff7d1,var(--gold));box-shadow:0 0 10px 2px rgba(244,217,123,.8)}
+  .navA .scan:active{transform:scale(.9) rotate(-8deg)}
+
+  /* =====================================================================
+     B  ·  NOTCH BAR — docked white bar, round cradle for the scan lens, sliding top indicator
+     ===================================================================== */
+  .navB{position:absolute;left:0;right:0;bottom:0;z-index:60;height:96px;filter:drop-shadow(0 -10px 22px rgba(18,47,36,.13))}
+  .navB .bar{position:absolute;inset:0;background:#fff;border-radius:30px 30px 0 0;
+    -webkit-mask:radial-gradient(circle 43px at 50% 6px,transparent 98%,#000 100%);mask:radial-gradient(circle 43px at 50% 6px,transparent 98%,#000 100%)}
+  .navB .tabs{position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr 104px 1fr 1fr;padding:0 6px 16px}
+  .navB .tab{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;padding-bottom:6px;
+    font-weight:800;font-size:11.5px;color:#8A948D;transition:color .3s}
+  .navB .tab .pill{width:52px;height:32px;border-radius:16px;display:grid;place-items:center;transition:background .4s var(--ease),transform .4s var(--spring)}
+  .navB .tab.on{color:var(--forest);font-weight:900}
+  .navB .tab.on .pill{background:var(--mint2);transform:translateY(-4px) scale(1.06)}
+  .navB .tab.on .pill svg{stroke:var(--forest2);fill:rgba(46,164,79,.16)}
+  .navB .ind{position:absolute;top:0;height:4px;width:34px;border-radius:0 0 6px 6px;background:var(--leaf);
+    box-shadow:0 6px 14px 0 rgba(46,164,79,.55);transition:left .5s var(--spring)}
+  .navB .scan{position:absolute;left:50%;top:-28px;width:68px;height:68px;margin-left:-34px;border-radius:50%;color:#fff;
+    background:linear-gradient(150deg,#3FBF68 0,#1F8A4C 55%,#146A39 100%);display:grid;place-items:center;
+    box-shadow:0 14px 26px -8px rgba(31,138,76,.8),inset 0 2px 0 rgba(255,255,255,.35);transition:transform .35s var(--spring)}
+  .navB .scan:active{transform:scale(.9)}
+  .navB .lbl{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);font-weight:900;font-size:11.5px;color:var(--leaf);letter-spacing:.02em}
+
+  /* =====================================================================
+     C  ·  FOREST CAPSULE — dark glass capsule, glowing active icon, gold lens that pulses
+     ===================================================================== */
+  .navC{position:absolute;left:16px;right:16px;bottom:20px;height:70px;border-radius:36px;z-index:60;
+    display:grid;grid-template-columns:1fr 1fr 82px 1fr 1fr;align-items:center;
+    background:linear-gradient(180deg,#245A45 0%,#143528 55%,#0E271D 100%);
+    box-shadow:0 24px 44px -14px rgba(18,47,36,.7),inset 0 1px 0 rgba(255,255,255,.16),inset 0 -1px 0 rgba(0,0,0,.25)}
+  .navC .tab{position:relative;height:70px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:rgba(214,232,222,.55);
+    transition:color .3s}
+  .navC .tab::before{content:"";position:absolute;left:50%;top:50%;width:62px;height:62px;margin:-36px 0 0 -31px;border-radius:50%;
+    background:radial-gradient(circle,rgba(86,214,126,.5) 0,transparent 66%);opacity:0;transform:scale(.4);transition:.5s var(--ease)}
+  .navC .tab svg{position:relative;transition:transform .45s var(--spring)}
+  .navC .tab span{font-weight:800;font-size:10.5px;height:12px;opacity:0;transform:translateY(5px);transition:.35s var(--ease);position:relative;color:#fff}
+  .navC .tab.on{color:#fff}
+  .navC .tab.on::before{opacity:1;transform:scale(1)}
+  .navC .tab.on svg{transform:translateY(-3px) scale(1.12);filter:drop-shadow(0 0 8px rgba(120,235,160,.7))}
+  .navC .tab.on span{opacity:1;transform:none}
+  .navC .tab.on::after{content:"";position:absolute;bottom:7px;width:5px;height:5px;border-radius:50%;background:var(--gold2);box-shadow:0 0 8px var(--gold)}
+  .navC .scan{position:relative;justify-self:center;width:66px;height:66px;margin-top:-34px;border-radius:50%;color:#3a2c05;display:grid;place-items:center;
+    background:linear-gradient(180deg,#F8E394,#D4AF37);box-shadow:0 0 0 6px var(--ivory),0 16px 28px -8px rgba(212,175,55,.85),inset 0 2px 0 rgba(255,255,255,.65);
+    transition:transform .35s var(--spring)}
+  .navC .scan::before{content:"";position:absolute;inset:-6px;border-radius:50%;border:2px solid rgba(212,175,55,.65);animation:ring 2.4s infinite}
+  .navC .scan:active{transform:scale(.9)}
+  @keyframes ring{0%{transform:scale(.92);opacity:.9}100%{transform:scale(1.5);opacity:0}}
+</style>
+</head>
+<body>
+<div class="page-head">
+  <a class="back" href="redesign_index.html">← All mock-ups</a>
+  <h1>Bottom navigation — 3 variations</h1>
+  <p>Same five destinations (Home · History · Scan · Saved · Profile), same behaviour. Tap any tab or the scan button to feel the motion.
+     Each one is drawn over a Home screen so you can judge it in context.</p>
+</div>
+
+<div class="row">
+  <figure class="fig">
+    <div class="phone" id="pA"><div class="status"><span>9:41</span><i>●●● ▮</i></div></div>
+    <figcaption><span class="tag">Variation A</span><h3>Liquid dock</h3>
+      <p>Floating frosted-glass capsule. The active tab grows into a mint pill with its label; the scan lens floats above the bar in forest green with a gold spark.</p></figcaption>
+  </figure>
+  <figure class="fig">
+    <div class="phone" id="pB"><div class="status"><span>9:41</span><i>●●● ▮</i></div></div>
+    <figcaption><span class="tag">Variation B</span><h3>Notch bar</h3>
+      <p>Classic docked bar with a round cradle cut for the scan button. A leaf-green indicator springs between tabs; labels always visible, the active icon lifts.</p></figcaption>
+  </figure>
+  <figure class="fig">
+    <div class="phone" id="pC"><div class="status"><span>9:41</span><i>●●● ▮</i></div></div>
+    <figcaption><span class="tag">Variation C</span><h3>Forest capsule</h3>
+      <p>Dark, premium capsule that makes the ivory screen pop. Active icon glows green with a gold dot; the gold scan lens pulses softly to invite a tap.</p></figcaption>
+  </figure>
+</div>
+
+<div class="note">
+  <b>Notes for the build.</b> All three keep the 5-slot layout, 44 px+ touch targets, and respect the home-indicator safe area (the bar sits 18–20 px above it,
+  or pads it for B). Hiding rule is unchanged: the bar slides away while a full-screen layer (scan, report, paywall) is open.
+  Motion: 450–500 ms ease-out for the pill / indicator, spring (1.56) for the lift, and everything collapses to an instant change when
+  “reduce motion” is on. Pick one and I will build it in Flutter as a drop-in replacement for <b>LenzTabBar</b> (same constructor).
+</div>
+
+<script src="lenz_mock.js"></script>
+<script>
+const TABS = [['home','Home'],['clock','History'],null,['heart','Saved'],['user','Profile']];
+const homeHTML = `
+<div class="blob"></div>
+<div class="home">
+  <div class="hi"><div class="av"><div data-lenz="peek"></div></div><div><small>Welcome back</small><b>Hi, Alex 👋</b></div></div>
+  <div class="hero"><b>Need me to check something?</b><i>Scan an item</i><div class="m" data-lenz="bust"></div></div>
+  <div class="tiles"><div><b>3</b><small>Scans left</small></div><div><b>7</b><small>Checks run</small></div><div><b>4</b><small>Authentic</small></div></div>
+  <div class="rowc"><div class="th"></div><div><b>Neverfull MM</b><small>Louis Vuitton · Today</small></div><em>Authentic</em></div>
+  <div class="rowc"><div class="th"></div><div><b>Submariner Date</b><small>Rolex · Yesterday</small></div><em>Authentic</em></div>
+  <div class="rowc"><div class="th"></div><div><b>Air Jordan 1 High</b><small>Nike · Oct 14</small></div><em>Authentic</em></div>
+</div><div class="toast"></div>`;
+
+function build(id, cls, markup) {
+  const phone = document.getElementById(id);
+  phone.insertAdjacentHTML('beforeend', homeHTML + markup);
+  const nav = phone.querySelector('.' + cls), tabs = [...nav.querySelectorAll('.tab')], toast = phone.querySelector('.toast');
+  const ind = nav.querySelector('.ind');
+  const set = (i) => {
+    tabs.forEach((t, k) => t.classList.toggle('on', k === i));
+    if (ind) { const t = tabs[i], nb = nav.getBoundingClientRect(), tb = t.getBoundingClientRect(); ind.style.left = (tb.left - nb.left + tb.width / 2 - 17) + 'px'; }
+  };
+  tabs.forEach((t, i) => t.addEventListener('click', () => set(i)));
+  nav.querySelector('.scan').addEventListener('click', () => {
+    toast.textContent = 'Opening scanner…'; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 1300);
+  });
+  set(0); requestAnimationFrame(() => set(0));
+}
+const tabBtn = (t, labelAlways) => `<button class="tab" aria-label="${t[1]}">${LM.ic(t[0], 24, 2.1)}<span>${t[1]}</span></button>`;
+const scanBtn = `<button class="scan" aria-label="Scan an item">${LM.ic('scan', 30, 2.2)}</button>`;
+
+build('pA', 'navA', `<nav class="navA"><div class="grp">${tabBtn(TABS[0])}${tabBtn(TABS[1])}</div>${scanBtn}<div class="grp">${tabBtn(TABS[3])}${tabBtn(TABS[4])}</div></nav>`);
+
+build('pB', 'navB', `<nav class="navB"><div class="bar"></div><div class="tabs">
+  ${tabBtn(TABS[0]).replace(/<span>(.*?)<\/span>/, '<span>$1</span>').replace(/(<svg[\s\S]*?<\/svg>)/, '<div class="pill">$1</div>')}
+  ${tabBtn(TABS[1]).replace(/(<svg[\s\S]*?<\/svg>)/, '<div class="pill">$1</div>')}
+  <div></div>
+  ${tabBtn(TABS[3]).replace(/(<svg[\s\S]*?<\/svg>)/, '<div class="pill">$1</div>')}
+  ${tabBtn(TABS[4]).replace(/(<svg[\s\S]*?<\/svg>)/, '<div class="pill">$1</div>')}
+  </div><div class="ind"></div>${scanBtn}<div class="lbl">Scan</div></nav>`);
+// B: tabs sit inside .tabs grid, so the indicator needs the real tab elements
+(() => { const nav = document.querySelector('.navB'); const tabs = [...nav.querySelectorAll('.tab')];
+  tabs.forEach((t) => { t.querySelector('span').style.cssText = 'opacity:1;max-width:none;margin:0'; }); })();
+
+build('pC', 'navC', `<nav class="navC">${tabBtn(TABS[0])}${tabBtn(TABS[1])}${scanBtn}${tabBtn(TABS[3])}${tabBtn(TABS[4])}</nav>`);
+LM.mount();
+// B's label span is always visible (CSS for A hides it) — override locally
+document.querySelectorAll('.navB .tab span').forEach((s) => { s.style.cssText = 'opacity:1;max-width:none;margin:0;transform:none;height:auto;font-size:11.5px;color:inherit'; });
+</script>
+</body>
+</html>

@@ -1,14 +1,13 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import '../../core/errors/app_error.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_typography.dart';
-import '../../widgets/animations/bounce_button.dart';
-import '../../widgets/animations/fade_slide_transition.dart';
-import '../../widgets/cards/glass_card.dart';
-import '../../widgets/mascot/detective_mascot_widget.dart';
-import '../../services/haptics.dart';
 
+import '../../core/errors/app_error.dart';
+import '../../services/haptics.dart';
+import '../../widgets/lenz/lenz.dart';
+import '../../widgets/ui/ui.dart';
+
+/// Scan failure screen (prototype `SCREENS.error`). Title, message and the
+/// recovery hint come from the real [AppError]; Lenz's mood and the icon
+/// follow the error type.
 class ScanErrorView extends StatelessWidget {
   final String errorMessage;
   final AppError? appError;
@@ -26,221 +25,147 @@ class ScanErrorView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final effectiveError = appError ?? AppError.fromException(errorMessage);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    IconData errorIcon;
-    Color iconColor;
-    MascotState mascotState;
-
-    switch (effectiveError.type) {
-      case AppErrorType.noInternet:
-        errorIcon = CupertinoIcons.wifi_exclamationmark;
-        iconColor = AppColors.warning;
-        mascotState = MascotState.curious;
-        break;
-      case AppErrorType.serviceUnreachable:
-        errorIcon = CupertinoIcons.antenna_radiowaves_left_right;
-        iconColor = AppColors.warning;
-        mascotState = MascotState.thinking;
-        break;
-      case AppErrorType.timeout:
-        errorIcon = CupertinoIcons.hourglass;
-        iconColor = AppColors.warning;
-        mascotState = MascotState.thinking;
-        break;
-      case AppErrorType.quotaLimit:
-        errorIcon = CupertinoIcons.clock_fill;
-        iconColor = AppColors.accent;
-        mascotState = MascotState.inconclusive;
-        break;
-      case AppErrorType.aiBillingUnavailable:
-        errorIcon = CupertinoIcons.clock_fill;
-        iconColor = AppColors.accent;
-        mascotState = MascotState.inconclusive;
-        break;
-      case AppErrorType.apiUnauthorized:
-        errorIcon = CupertinoIcons.lock_shield_fill;
-        iconColor = AppColors.danger;
-        mascotState = MascotState.suspicious;
-        break;
-      case AppErrorType.serverError:
-        errorIcon = CupertinoIcons.cloud_bolt_rain_fill;
-        iconColor = AppColors.danger;
-        mascotState = MascotState.thinking;
-        break;
-      case AppErrorType.invalidResponse:
-        errorIcon = CupertinoIcons.question_circle_fill;
-        iconColor = AppColors.warning;
-        mascotState = MascotState.inconclusive;
-        break;
-      case AppErrorType.cameraError:
-        errorIcon = CupertinoIcons.camera;
-        iconColor = AppColors.danger;
-        mascotState = MascotState.curious;
-        break;
-      case AppErrorType.unknownError:
-        errorIcon = CupertinoIcons.exclamationmark_triangle_fill;
-        iconColor = AppColors.warning;
-        mascotState = MascotState.suspicious;
-        break;
-    }
+    final (
+      String icon,
+      Color iconColor,
+      LenzMood mood,
+      String kind,
+    ) = switch (effectiveError.type) {
+      AppErrorType.noInternet => (
+        LenzIcons.cloud,
+        LenzColors.warn,
+        LenzMood.sorry,
+        'Network error',
+      ),
+      AppErrorType.serviceUnreachable => (
+        LenzIcons.cloud,
+        LenzColors.warn,
+        LenzMood.sorry,
+        'Service unreachable',
+      ),
+      AppErrorType.timeout => (LenzIcons.clock, LenzColors.warn, LenzMood.sorry, 'Timed out'),
+      AppErrorType.quotaLimit => (
+        LenzIcons.clock,
+        LenzColors.warn,
+        LenzMood.unsure,
+        'Busy right now',
+      ),
+      AppErrorType.aiBillingUnavailable => (
+        LenzIcons.clock,
+        LenzColors.warn,
+        LenzMood.unsure,
+        'Temporarily unavailable',
+      ),
+      AppErrorType.apiUnauthorized => (
+        LenzIcons.lock,
+        LenzColors.bad,
+        LenzMood.shocked,
+        'Access problem',
+      ),
+      AppErrorType.serverError => (LenzIcons.warn, LenzColors.bad, LenzMood.sorry, 'Server error'),
+      AppErrorType.invalidResponse => (
+        LenzIcons.help,
+        LenzColors.warn,
+        LenzMood.unsure,
+        'Unreadable result',
+      ),
+      AppErrorType.cameraError => (
+        LenzIcons.camera,
+        LenzColors.bad,
+        LenzMood.sorry,
+        'Camera error',
+      ),
+      AppErrorType.unknownError => (
+        LenzIcons.warn,
+        LenzColors.warn,
+        LenzMood.shocked,
+        'Unexpected error',
+      ),
+    };
+    final pad = MediaQuery.paddingOf(context);
 
     return Scaffold(
-      backgroundColor: AppColors.backgroundOf(context),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Spacer(),
-
-              // Detective mascot state illustration
-              FadeSlideTransition(
-                delay: const Duration(milliseconds: 60),
-                child: DetectiveMascotWidget(
-                  size: 130,
-                  state: mascotState,
-                  showHalo: true,
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              // Title with icon badge
-              FadeSlideTransition(
-                delay: const Duration(milliseconds: 100),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+      backgroundColor: LenzColors.ivory,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          const LenzBlob(color: Color(0xFFE9E4DE)),
+          SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(20, pad.top + 14, 20, 30 + pad.bottom),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 8),
+                LenzTopBar(title: 'Something went wrong', onBack: onCancel),
+                const SizedBox(height: 6),
+                LenzStagger(
+                  spacing: 10,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Icon(errorIcon, size: 22, color: iconColor),
-                    const SizedBox(width: 8),
-                    Flexible(
+                    Transform.translate(
+                      offset: const Offset(0, 6),
+                      child: SizedBox(width: 250, child: LenzCharacter(mood: mood)),
+                    ),
+                    Text(
+                      effectiveError.title,
+                      textAlign: TextAlign.center,
+                      style: LenzText.display.copyWith(fontSize: 28),
+                    ),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 300),
                       child: Text(
-                        effectiveError.title,
-                        style: AppTypography.displayLarge.copyWith(
-                          fontSize: 22,
-                          color: AppColors.textPrimaryOf(context),
-                        ),
+                        effectiveError.message,
                         textAlign: TextAlign.center,
+                        style: LenzText.sub,
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // Detail message card
-              FadeSlideTransition(
-                delay: const Duration(milliseconds: 140),
-                child: GlassCard(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                  backgroundColor: AppColors.cardSurfaceOf(context),
-                  border: Border.all(color: AppColors.borderOf(context)),
-                  child: Column(
-                    children: [
-                      Text(
-                        effectiveError.message,
-                        style: AppTypography.bodyMedium.copyWith(
-                          color: AppColors.textSecondaryOf(context),
-                          height: 1.45,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      if (effectiveError.recoveryAction != null) ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF2C2C2E) : const Color(0xFFF2F2F7),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(CupertinoIcons.lightbulb, size: 14, color: AppColors.accent),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text(
-                                  effectiveError.recoveryAction!,
-                                  style: AppTypography.captionMedium.copyWith(
-                                    color: AppColors.textPrimaryOf(context),
-                                    fontSize: 12,
+                    LenzCard(
+                      radius: 24,
+                      width: double.infinity,
+                      child: Row(
+                        children: [
+                          LenzIcon(icon, size: 22, color: iconColor),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(kind, style: LenzText.item.copyWith(fontSize: 15)),
+                                if (effectiveError.recoveryAction != null)
+                                  Text(
+                                    effectiveError.recoveryAction!,
+                                    style: LenzText.sub.copyWith(fontSize: 12.5),
                                   ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-
-              const Spacer(),
-
-              // Action buttons
-              FadeSlideTransition(
-                delay: const Duration(milliseconds: 180),
-                child: Column(
-                  children: [
-                    BounceButton(
-                      onTap: () {
+                        ],
+                      ),
+                    ),
+                    LenzButton(
+                      label: 'Try again',
+                      icon: LenzIcons.refresh,
+                      onPressed: () {
                         Haptics.mediumImpact();
                         onRetry();
                       },
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        decoration: BoxDecoration(
-                          color: AppColors.accent,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.accent.withOpacity(0.28),
-                              blurRadius: 14,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        alignment: Alignment.center,
-                        child: const Text(
-                          'Try Again',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                      ),
                     ),
-                    const SizedBox(height: 12),
-                    BounceButton(
-                      onTap: () {
+                    LenzButton(
+                      label: 'Cancel and return home',
+                      variant: LenzButtonVariant.ghost,
+                      onPressed: () {
                         Haptics.lightImpact();
                         onCancel();
                       },
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        alignment: Alignment.center,
-                        child: Text(
-                          'Cancel & Return Home',
-                          style: AppTypography.bodyMedium.copyWith(
-                            color: AppColors.textSecondaryOf(context),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
                     ),
                   ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

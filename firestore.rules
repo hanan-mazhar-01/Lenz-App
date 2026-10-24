@@ -16,9 +16,13 @@ service cloud.firestore {
       allow read: if isOwner(uid);
 
       // Allow user creation if client initializes defaults, but prevent setting premium/extra scans
+      // A new document starts with no scans: the server grants a guest's scans
+      // and a real account's free scans once per device (claimGuestScans /
+      // finalizeAccountUpgrade). Clients can not give themselves any.
       allow create: if isOwner(uid)
                     && (!request.resource.data.keys().hasAny(['isPremium', 'scansRemaining'])
-                        || (request.resource.data.isPremium == false && request.resource.data.scansRemaining <= 5));
+                        || (request.resource.data.isPremium == false
+                            && request.resource.data.scansRemaining <= 0));
 
       // Client can update name, email, avatar, etc., but CANNOT modify isPremium or scansRemaining
       allow update: if isOwner(uid)
@@ -56,5 +60,6 @@ service cloud.firestore {
     // access: rate-limit counters and scan sessions used for billing.
     match /rate_limits/{doc} { allow read, write: if false; }
     match /scan_sessions/{doc} { allow read, write: if false; }
+    match /device_grants/{doc} { allow read, write: if false; }
   }
 }

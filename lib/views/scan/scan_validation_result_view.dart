@@ -1,11 +1,13 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import '../../core/theme/app_colors.dart';
-import '../../models/product_identification.dart';
-import '../../widgets/animations/bounce_button.dart';
-import '../../widgets/animations/fade_slide_transition.dart';
-import '../../widgets/common/app_image.dart';
 
+import '../../models/product_identification.dart';
+import '../../widgets/common/app_image.dart';
+import '../../widgets/lenz/lenz.dart';
+import '../../widgets/ui/ui.dart';
+
+/// "Not a product / can't identify" screen (prototype `SCREENS.notproduct`).
+/// Every real validation outcome keeps its own title, badge and button copy;
+/// the user's photo (when there is one) is shown with the outcome badge.
 class ScanValidationResultView extends StatelessWidget {
   final String? capturedImagePath;
   final IdentificationStatus status;
@@ -28,348 +30,222 @@ class ScanValidationResultView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Title, badge, and icon based on validation outcome
+    // Title, badge, and icon based on validation outcome (unchanged mapping).
     String title;
     String badgeLabel;
-    IconData badgeIcon;
-    Color badgeColor;
+    String badgeIcon;
     String buttonText;
+    LenzMood mood = LenzMood.unsure;
 
     if (reason == 'not_real_photo') {
       title = 'This is a picture, not the item';
       badgeLabel = 'Not a Real Photo';
-      badgeIcon = CupertinoIcons.photo_on_rectangle;
-      badgeColor = const Color(0xFFD97706);
+      badgeIcon = LenzIcons.image;
       buttonText = 'Take a Photo';
     } else if (reason == 'image_too_dark') {
       title = 'Too dark to analyze';
       badgeLabel = 'Too Dark';
-      badgeIcon = CupertinoIcons.moon_fill;
-      badgeColor = const Color(0xFFD97706);
+      badgeIcon = LenzIcons.eyeOff;
       buttonText = 'Try Again';
+      mood = LenzMood.sorry;
     } else if (reason == 'no_visible_content') {
       title = 'No visible item detected';
       badgeLabel = 'No Object';
-      badgeIcon = CupertinoIcons.eye_slash_fill;
-      badgeColor = const Color(0xFFD97706);
+      badgeIcon = LenzIcons.eyeOff;
       buttonText = 'Scan Again';
     } else if (reason == 'insufficient_visual_quality') {
       title = "Image isn't clear enough";
       badgeLabel = 'Blurry / Unclear';
-      badgeIcon = CupertinoIcons.sparkles;
-      badgeColor = const Color(0xFFD97706);
+      badgeIcon = LenzIcons.sparkles;
       buttonText = 'Retake Photo';
+      mood = LenzMood.sorry;
     } else if (reason == 'human_detected') {
       title = 'No supported luxury item detected';
       badgeLabel = 'Person Detected';
-      badgeIcon = CupertinoIcons.person_crop_circle_badge_exclam;
-      badgeColor = AppColors.charcoalGray;
+      badgeIcon = LenzIcons.user;
       buttonText = 'Scan a Luxury Item';
-    } else if (status == IdentificationStatus.insufficientEvidence || reason == 'partial_product_insufficient_evidence') {
+      mood = LenzMood.shy;
+    } else if (status == IdentificationStatus.insufficientEvidence ||
+        reason == 'partial_product_insufficient_evidence') {
       title = 'More details needed';
       badgeLabel = 'Incomplete View';
-      badgeIcon = CupertinoIcons.info_circle_fill;
-      badgeColor = const Color(0xFFD97706);
+      badgeIcon = LenzIcons.info;
       buttonText = 'Retake Clearer Photo';
+      mood = LenzMood.think;
     } else {
       title = 'No supported luxury item detected';
       badgeLabel = 'Non-Luxury Object';
-      badgeIcon = CupertinoIcons.question_circle_fill;
-      badgeColor = AppColors.charcoalGray;
+      badgeIcon = LenzIcons.help;
       buttonText = 'Scan a Supported Item';
     }
 
+    final hasPhoto = capturedImagePath != null && capturedImagePath!.isNotEmpty;
+    final pad = MediaQuery.paddingOf(context);
+    const tips = [
+      'Center the luxury item on a plain, well-lit surface.',
+      'Avoid shadows, heavy glare, and camera blur.',
+      'Supported categories: Handbags, Watches, Sneakers & Shoes, Clothing, Wallets, Jewelry and Accessories.',
+    ];
+
     return Scaffold(
-      backgroundColor: AppColors.warmIvory,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.close_rounded, color: AppColors.nearBlack),
-          onPressed: onClose,
-        ),
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // 1. Captured Photo with Badge Overlay
-              if (capturedImagePath != null && capturedImagePath!.isNotEmpty)
-                FadeSlideTransition(
-                  delay: const Duration(milliseconds: 40),
-                  child: Center(
-                    child: Stack(
-                      children: [
-                        Container(
-                          width: double.infinity,
-                          height: 200,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(22),
-                            border: Border.all(
-                              color: AppColors.nearBlack.withOpacity(0.08),
-                              width: 1.2,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.nearBlack.withOpacity(0.06),
-                                blurRadius: 14,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(21),
-                            child: AppImage(
-                              imagePath: capturedImagePath!,
-                              width: double.infinity,
-                              height: 200,
-                              fit: BoxFit.cover,
-                            ),
-                          ),
-                        ),
-                        // Floating status pill badge
-                        Positioned(
-                          top: 12,
-                          left: 12,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: badgeColor.withOpacity(0.92),
-                              borderRadius: BorderRadius.circular(12),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.2),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(badgeIcon, size: 13, color: Colors.white),
-                                const SizedBox(width: 5),
-                                Text(
-                                  badgeLabel,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+      backgroundColor: LenzColors.ivory,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          const LenzBlob(color: LenzColors.warnSoft),
+          SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(20, pad.top + 14, 20, 30 + pad.bottom),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const SizedBox(height: 8),
+                LenzTopBar(
+                  title: 'Hmm',
+                  leading: LenzIconButton(
+                    icon: LenzIcons.x,
+                    semanticLabel: 'Close',
+                    onTap: onClose,
                   ),
                 ),
-
-              const SizedBox(height: 22),
-
-              // 2. Headline Title
-              FadeSlideTransition(
-                delay: const Duration(milliseconds: 70),
-                child: Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: AppColors.nearBlack,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.4,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 10),
-
-              // 3. User-friendly Explanation Message
-              FadeSlideTransition(
-                delay: const Duration(milliseconds: 100),
-                child: Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: AppColors.charcoalGray,
-                    fontSize: 14.5,
-                    height: 1.45,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // 4. Missing Evidence list (if applicable)
-              if (missingEvidence.isNotEmpty) ...[
-                FadeSlideTransition(
-                  delay: const Duration(milliseconds: 120),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.veryLightWarmGray,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: AppColors.nearBlack.withOpacity(0.06),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Needed for reliable identification:',
-                          style: TextStyle(
-                            color: AppColors.nearBlack,
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        ...missingEvidence.map((item) => Padding(
-                              padding: const EdgeInsets.only(bottom: 5),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Padding(
-                                    padding: EdgeInsets.only(top: 4),
-                                    child: Icon(
-                                      Icons.circle,
-                                      size: 5,
-                                      color: AppColors.deepForestGreen,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      item,
-                                      style: const TextStyle(
-                                        color: AppColors.charcoalGray,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
-
-              // 5. Best Practices Tips Card
-              FadeSlideTransition(
-                delay: const Duration(milliseconds: 140),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.softWarmGray,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: AppColors.nearBlack.withOpacity(0.05),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: const [
-                          Icon(
-                            CupertinoIcons.lightbulb_fill,
-                            size: 16,
-                            color: AppColors.deepForestGreen,
-                          ),
-                          SizedBox(width: 7),
-                          Text(
-                            'Scanning Tips',
-                            style: TextStyle(
-                              color: AppColors.nearBlack,
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        '• Center the luxury item on a plain, well-lit surface.\n'
-                        '• Avoid shadows, heavy glare, and camera blur.\n'
-                        '• Supported categories: Handbags, Watches, Sneakers & Shoes, Clothing, Wallets, Jewelry and Accessories.',
-                        style: TextStyle(
-                          color: AppColors.charcoalGray,
-                          fontSize: 12.5,
-                          height: 1.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 28),
-
-              // 6. Action Buttons
-              FadeSlideTransition(
-                delay: const Duration(milliseconds: 170),
-                child: Column(
+                const SizedBox(height: 6),
+                LenzStagger(
+                  spacing: 10,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    BounceButton(
-                      onTap: onTryAgain,
-                      child: Container(
-                        width: double.infinity,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: AppColors.deepForestGreen,
-                          borderRadius: BorderRadius.circular(18),
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.deepForestGreen.withOpacity(0.22),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
+                    if (hasPhoto)
+                      SizedBox(
+                        height: 230,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: Align(
+                                alignment: Alignment.bottomRight,
+                                child: SizedBox(width: 200, child: LenzCharacter(mood: mood)),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              flex: 2,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: _PhotoBadge(path: capturedImagePath!),
+                              ),
                             ),
                           ],
                         ),
-                        child: Center(
-                          child: Text(
-                            buttonText,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 15.5,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -0.2,
-                            ),
-                          ),
-                        ),
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: SizedBox(width: 250, child: LenzCharacter(mood: mood)),
                       ),
+                    LenzPill(label: badgeLabel, icon: badgeIcon, variant: LenzPillVariant.unsure),
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: LenzText.display.copyWith(fontSize: 28),
                     ),
-                    const SizedBox(height: 10),
-                    TextButton(
-                      onPressed: onClose,
-                      child: const Text(
-                        'Back to Home',
-                        style: TextStyle(
-                          color: AppColors.charcoalGray,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 300),
+                      child: Text(message, textAlign: TextAlign.center, style: LenzText.sub),
+                    ),
+                    if (missingEvidence.isNotEmpty)
+                      _BulletCard(
+                        title: 'Needed for reliable identification',
+                        lines: missingEvidence,
+                        icon: LenzIcons.camera,
                       ),
+                    const _BulletCard(title: 'Scanning tips', lines: tips, icon: LenzIcons.tip),
+                    LenzButton(label: buttonText, icon: LenzIcons.camera, onPressed: onTryAgain),
+                    LenzButton(
+                      label: 'Back to home',
+                      variant: LenzButtonVariant.ghost,
+                      onPressed: onClose,
                     ),
                   ],
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The user's photo as a tilted polaroid.
+class _PhotoBadge extends StatelessWidget {
+  const _PhotoBadge({required this.path});
+
+  final String path;
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.rotate(
+      angle: .06,
+      child: Container(
+        width: 96,
+        height: 96,
+        padding: const EdgeInsets.all(5),
+        decoration: BoxDecoration(
+          color: LenzColors.paper,
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: LenzShadows.sh2,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(17),
+          child: AppImage(imagePath: path, width: 86, height: 86, fit: BoxFit.cover),
         ),
       ),
     );
   }
 }
 
+class _BulletCard extends StatelessWidget {
+  const _BulletCard({required this.title, required this.lines, required this.icon});
+
+  final String title;
+  final List<String> lines;
+  final String icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return LenzCard(
+      radius: 26,
+      width: double.infinity,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: LenzText.item.copyWith(fontSize: 15.5)),
+          const SizedBox(height: 2),
+          for (final l in lines)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 22,
+                    height: 22,
+                    margin: const EdgeInsets.only(top: 1),
+                    decoration: const BoxDecoration(
+                      color: LenzColors.warnSoft,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: LenzIcon(icon, size: 13, strokeWidth: 2.6, color: LenzColors.warn),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(l, style: LenzText.bullet)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}

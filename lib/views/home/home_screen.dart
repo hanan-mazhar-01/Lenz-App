@@ -1,23 +1,30 @@
-import 'package:flutter/cupertino.dart';
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:showcaseview/showcaseview.dart';
 
-import '../../core/theme/app_colors.dart';
-import '../../core/responsive/responsive.dart';
 import '../../models/authentication_result.dart';
 import '../../models/category_item.dart';
+import '../../repositories/history_repository.dart';
 import '../../services/auth_service.dart';
+import '../../services/haptics.dart';
 import '../../viewmodels/home_viewmodel.dart';
 import '../../viewmodels/profile_viewmodel.dart';
-import '../../widgets/animations/bounce_button.dart';
-import '../../widgets/animations/fade_slide_transition.dart';
 import '../../widgets/cards/category_chip.dart';
+import '../../widgets/cards/report_list_tile.dart';
 import '../../widgets/common/app_image.dart';
+import '../../widgets/common/guest_session.dart';
+import '../../widgets/lenz/lenz.dart';
 import '../../widgets/tour/home_tour_card.dart';
-import '../../services/haptics.dart';
+import '../../widgets/ui/ui.dart';
+import '../paywall/guest_paywall_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+/// Home tab (prototype `SCREENS.home`): greeting + avatar + tour button, the
+/// dark hero card with Lenz, three live stats, the Pro / guest promo, the
+/// category carousel and the user's recent checks.
+class HomeScreen extends StatefulWidget {
   final VoidCallback onStartScan;
   final ValueChanged<AuthenticationReport> onOpenReport;
   final ValueChanged<CategoryItem> onOpenCategory;
@@ -37,6 +44,10 @@ class HomeScreen extends StatelessWidget {
   final GlobalKey tourProfileKey;
   final GlobalKey tourNavKey;
 
+  /// The tour target currently in the spotlight (drives the white ring
+  /// around the hole). Optional; provided by `MainNavigationShell`.
+  final ValueListenable<GlobalKey?>? activeTourTarget;
+
   const HomeScreen({
     super.key,
     required this.onStartScan,
@@ -52,31 +63,26 @@ class HomeScreen extends StatelessWidget {
     required this.tourRecentKey,
     required this.tourProfileKey,
     required this.tourNavKey,
+    this.activeTourTarget,
   });
 
   /// Step order and copy for the Home tour - kept next to the screen it
   /// describes rather than in the controller, since it's just static content.
   static const List<({String title, String description})> tourSteps = [
+    (title: 'Scan anything', description: 'Start here to check whether an item looks authentic.'),
     (
-      title: 'Scan Anything',
-      description: 'Start here to check whether an item looks authentic. Upload the item and begin your authenticity check.',
+      title: 'Browse your items',
+      description: 'Jump straight into a category to find what you want to check.',
+    ),
+    (title: 'Recent checks', description: 'Your previous reports appear here for easy access.'),
+    (
+      title: 'Your profile',
+      description: 'Manage your account, scan credits and app settings from here.',
     ),
     (
-      title: 'Browse Your Items',
-      description: 'Jump straight into a category to quickly find the type of item you want to check.',
-    ),
-    (
-      title: 'Recent Checks',
-      description: 'Your previous authenticity checks and reports will appear here for easy access.',
-    ),
-    (
-      title: 'Your Profile',
+      title: 'Quick navigation',
       description:
-          'Manage your account, scan credits, and app settings from here.',
-    ),
-    (
-      title: 'Quick Navigation',
-      description: 'Jump between Home, Scan, History, Favorites, and your Profile anytime from here.',
+          'Hop between Home, History, Favorites and your Profile, or tap the camera to scan.',
     ),
   ];
 
@@ -92,104 +98,20 @@ class HomeScreen extends StatelessWidget {
   ];
 
   @override
-  Widget build(BuildContext context) {
-    final homeVm = context.watch<HomeViewModel>();
-    final profileVm = context.watch<ProfileViewModel>();
-    final authService = context.watch<AuthService>();
-    final recent = homeVm.filteredReports;
-    final hasFilteredReports = recent.isNotEmpty;
+  State<HomeScreen> createState() => _HomeScreenState();
+}
 
-    final hPad = Responsive.horizontalPadding(context);
+class _HomeScreenState extends State<HomeScreen> {
+  static const Color _mood = Color(0xFFD9ECDF);
+  static const _heroLines = [
+    'Tap Scan to begin!',
+    'I never blink at fakes.',
+    'Show me something shiny.',
+    'Detective Lenz at your service.',
+  ];
 
-    return Scaffold(
-      backgroundColor: AppColors.warmIvory,
-      body: SafeArea(
-        bottom: false,
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(hPad, 8, hPad, 110),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Top Bar: Greeting (Hi, {name} 👋) + Profile Button at top right
-              _buildTopHeader(context, profileVm, authService),
-
-              // Guests already get a "Sign In / Create Account" prompt
-              // elsewhere; showing the IAP upsell before they have an
-              // account too is redundant and can start a real purchase
-              // flow for an anonymous session.
-              if (!profileVm.user.isPremium && !authService.isAnonymous) ...[
-                const SizedBox(height: 14),
-                _buildProBanner(context),
-              ],
-
-              const SizedBox(height: 18),
-
-              // Hero Banner Card: Lenz Mascot & Scan Anything CTA
-              Showcase.withWidget(
-                key: tourHeroKey,
-                container: HomeTourCard(
-                  title: tourSteps[0].title,
-                  description: tourSteps[0].description,
-                  stepIndex: 0,
-                  totalSteps: tourSteps.length,
-                ),
-                targetBorderRadius: BorderRadius.circular(24),
-                targetPadding: const EdgeInsets.all(4),
-                onBarrierClick: () => ShowcaseView.get().dismiss(),
-                disableDefaultTargetGestures: true,
-                disableMovingAnimation: true,
-                child: _buildHeroCard(context),
-              ),
-
-              const SizedBox(height: 22),
-
-              // Browse Your Items Section (Dynamic Vector Category Icons)
-              Showcase.withWidget(
-                key: tourBrowseKey,
-                container: HomeTourCard(
-                  title: tourSteps[1].title,
-                  description: tourSteps[1].description,
-                  stepIndex: 1,
-                  totalSteps: tourSteps.length,
-                ),
-                targetBorderRadius: BorderRadius.circular(16),
-                targetPadding: const EdgeInsets.all(6),
-                onBarrierClick: () => ShowcaseView.get().dismiss(),
-                disableDefaultTargetGestures: true,
-                disableMovingAnimation: true,
-                child: _buildBrowseSection(context, homeVm),
-              ),
-
-              const SizedBox(height: 22),
-
-              // Your Recent Checks Section (Zero Dummy Data, Real Scans or Clean Empty State)
-              Showcase.withWidget(
-                key: tourRecentKey,
-                container: HomeTourCard(
-                  title: tourSteps[2].title,
-                  description: tourSteps[2].description,
-                  stepIndex: 2,
-                  totalSteps: tourSteps.length,
-                ),
-                targetBorderRadius: BorderRadius.circular(20),
-                targetPadding: const EdgeInsets.all(6),
-                onBarrierClick: () => ShowcaseView.get().dismiss(),
-                disableDefaultTargetGestures: true,
-                disableMovingAnimation: true,
-                child: _buildRecentChecksSection(
-                  context,
-                  homeVm,
-                  recent,
-                  hasFilteredReports,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  final math.Random _rng = math.Random();
+  String _heroBubble = 'Spot fakes before you spend.';
 
   /// First word of a full name ("Malik Haider" -> "Malik"), so the greeting
   /// stays short. Only applied to real names, not fallbacks like 'Apple User'.
@@ -198,548 +120,720 @@ class HomeScreen extends StatelessWidget {
     return trimmed.isEmpty ? trimmed : trimmed.split(RegExp(r'\s+')).first;
   }
 
-  /// Top Bar: Greeting ("Hi, {name} 👋" & subtitle) + Profile button at top-right
-  Widget _buildTopHeader(
-    BuildContext context,
-    ProfileViewModel profileVm,
-    AuthService authService,
-  ) {
+  String _displayName(ProfileViewModel profileVm, AuthService authService) {
     final isGuest = authService.isAnonymous;
     final user = profileVm.user;
-    String displayName;
     final email = authService.currentUser?.email ?? user.email;
     final isPrivateRelay = email.toLowerCase().contains('privaterelay.appleid.com');
     final emailPrefix = email.contains('@') ? email.split('@').first.trim().toLowerCase() : '';
 
     if (isGuest) {
-      displayName =
-          (user.name.isNotEmpty &&
-              user.name != 'Collector' &&
-              user.name != 'Guest Collector')
+      return (user.name.isNotEmpty && user.name != 'Collector' && user.name != 'Guest Collector')
           ? _firstName(user.name)
           : 'Guest';
-    } else {
-      if (user.name.isNotEmpty &&
-          user.name != 'Collector' &&
-          user.name != 'Guest Collector' &&
-          (!isPrivateRelay || user.name.toLowerCase() != emailPrefix)) {
-        displayName = _firstName(user.name);
-      } else if (authService.currentUser?.displayName?.isNotEmpty == true &&
-          authService.currentUser!.displayName != 'Collector' &&
-          authService.currentUser!.displayName != 'Guest Collector' &&
-          (!isPrivateRelay || authService.currentUser!.displayName!.toLowerCase() != emailPrefix)) {
-        displayName = _firstName(authService.currentUser!.displayName!);
-      } else if (authService.currentUser?.email?.contains('@') == true && !isPrivateRelay) {
-        final prefix = authService.currentUser!.email!.split('@').first.trim();
-        displayName = prefix.isNotEmpty
-            ? (prefix[0].toUpperCase() + prefix.substring(1))
-            : 'Collector';
-      } else {
-        final isApple = authService.currentUser?.providerData.any((p) => p.providerId == 'apple.com') == true;
-        displayName = isApple ? 'Apple User' : 'Collector';
-      }
     }
+    if (user.name.isNotEmpty &&
+        user.name != 'Collector' &&
+        user.name != 'Guest Collector' &&
+        (!isPrivateRelay || user.name.toLowerCase() != emailPrefix)) {
+      return _firstName(user.name);
+    }
+    final authName = authService.currentUser?.displayName;
+    if (authName != null &&
+        authName.isNotEmpty &&
+        authName != 'Collector' &&
+        authName != 'Guest Collector' &&
+        (!isPrivateRelay || authName.toLowerCase() != emailPrefix)) {
+      return _firstName(authName);
+    }
+    if (authService.currentUser?.email?.contains('@') == true && !isPrivateRelay) {
+      final prefix = authService.currentUser!.email!.split('@').first.trim();
+      return prefix.isNotEmpty ? (prefix[0].toUpperCase() + prefix.substring(1)) : 'Collector';
+    }
+    final isApple =
+        authService.currentUser?.providerData.any((p) => p.providerId == 'apple.com') == true;
+    return isApple ? 'Apple User' : 'Collector';
+  }
 
-    return FadeSlideTransition(
-      delay: const Duration(milliseconds: 40),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Greeting text: Hi, {name} 👋 & Subtitle
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+  void _startTour() {
+    Haptics.lightImpact();
+    ShowcaseView.get().startShowCase(widget.tourKeysInOrder);
+  }
+
+  Showcase _tourStep(
+    int i,
+    GlobalKey key,
+    Widget child, {
+    bool circle = false,
+    double radius = 26,
+  }) {
+    return Showcase.withWidget(
+      key: key,
+      container: HomeTourCard(
+        title: HomeScreen.tourSteps[i].title,
+        description: HomeScreen.tourSteps[i].description,
+        stepIndex: i,
+        totalSteps: HomeScreen.tourSteps.length,
+      ),
+      targetShapeBorder: circle ? const CircleBorder() : const RoundedRectangleBorder(),
+      targetBorderRadius: circle ? null : BorderRadius.circular(radius),
+      targetPadding: HomeTourStyle.holePadding,
+      overlayColor: HomeTourStyle.overlayColor,
+      overlayOpacity: HomeTourStyle.overlayOpacity,
+      onBarrierClick: () => ShowcaseView.get().dismiss(),
+      disableDefaultTargetGestures: true,
+      disableMovingAnimation: true,
+      child: HomeTourRing(
+        target: key,
+        active: widget.activeTourTarget,
+        radius: radius,
+        circle: circle,
+        child: child,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final homeVm = context.watch<HomeViewModel>();
+    final profileVm = context.watch<ProfileViewModel>();
+    final authService = context.watch<AuthService>();
+    final historyRepo = context.watch<HistoryRepository>();
+
+    final isGuest = authService.isAnonymous;
+    final isPremium = profileVm.user.isPremium;
+    final all = historyRepo.allReports;
+    final recent = homeVm.filteredReports;
+    final topPad = MediaQuery.paddingOf(context).top + 14;
+
+    var i = 0;
+    Widget rise(Widget child) => LenzRise(index: i++, child: child);
+    const side = EdgeInsets.symmetric(horizontal: 20);
+
+    return Scaffold(
+      backgroundColor: LenzColors.ivory,
+      body: LenzMoodBackground(
+        mood: _mood,
+        child: SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding: EdgeInsets.only(top: topPad, bottom: LenzTabBar.contentPadding(context)),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              rise(Padding(padding: side, child: _greeting(profileVm, authService))),
+              const SizedBox(height: 18),
+              rise(
+                Padding(
+                  padding: side,
+                  child: _tourStep(0, widget.tourHeroKey, _hero(), radius: 34),
+                ),
+              ),
+              const SizedBox(height: 14),
+              rise(
+                Padding(
+                  padding: side,
+                  child: _stats(
+                    isPremium: isPremium,
+                    scansLeft: profileVm.user.scansRemaining,
+                    checks: all.length,
+                    authentic: all.where((r) => r.verdict == Verdict.likelyAuthentic).length,
+                  ),
+                ),
+              ),
+              // Guests never see Pro: they get the create-account promo.
+              // Premium users see neither.
+              if (isGuest)
+                rise(
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+                    child: _Promo(
+                      icon: LenzIcons.gift,
+                      title: 'Create an account',
+                      text: 'Save your scans and get your account\'s free scans',
+                      onTap: () => GuestPaywallScreen.show(context),
+                    ),
+                  ),
+                )
+              else if (!isPremium)
+                rise(
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+                    child: _Promo(
+                      icon: LenzIcons.crown,
+                      title: 'Upgrade to Lenz Pro',
+                      text: 'Unlimited scans and saved reports',
+                      pro: true,
+                      onTap: () {
+                        Haptics.mediumImpact();
+                        widget.onOpenPremium?.call();
+                      },
+                    ),
+                  ),
+                ),
+              rise(_tourStep(1, widget.tourBrowseKey, _browse(homeVm, historyRepo))),
+              rise(
+                Padding(
+                  padding: side,
+                  child: _tourStep(2, widget.tourRecentKey, _recent(homeVm, recent)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------- greeting
+
+  Widget _greeting(ProfileViewModel profileVm, AuthService authService) {
+    final isGuest = authService.isAnonymous;
+    final name = _displayName(profileVm, authService);
+    final avatarPath = profileVm.user.avatarPath;
+    final hasAvatar = avatarPath != null && avatarPath.isNotEmpty;
+
+    final lenzPeek = OverflowBox(
+      alignment: Alignment.topLeft,
+      minWidth: 66,
+      maxWidth: 66,
+      maxHeight: 80,
+      child: Transform.translate(
+        offset: const Offset(-7, -4),
+        child: const SizedBox(
+          width: 66,
+          child: LenzCharacter(view: LenzView.peek, fx: false, interactive: false, wake: false),
+        ),
+      ),
+    );
+
+    final avatar = Semantics(
+      button: true,
+      label: 'Profile',
+      child: LenzPressable(
+        onTap: () {
+          Haptics.lightImpact();
+          widget.onOpenProfile();
+        },
+        pressedScale: .92,
+        child: Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: LenzColors.mint,
+            border: Border.all(color: LenzColors.paper, width: 3),
+            boxShadow: LenzShadows.sh1,
+          ),
+          child: ClipOval(
+            child: hasAvatar
+                ? AppImage(imagePath: avatarPath, fit: BoxFit.cover, placeholder: lenzPeek)
+                : lenzPeek,
+          ),
+        ),
+      ),
+    );
+
+    return Row(
+      children: [
+        _tourStep(3, widget.tourProfileKey, avatar, circle: true),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isGuest ? 'Guest mode' : 'Welcome back',
+                style: LenzText.cap.copyWith(fontSize: 13),
+              ),
+              Text(
+                'Hi, $name 👋',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: LenzText.title.copyWith(fontSize: 25),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 12),
+        Tooltip(
+          message: 'Show tour',
+          child: LenzIconButton(
+            icon: LenzIcons.help,
+            iconSize: 21,
+            semanticLabel: 'Show home tour',
+            onTap: _startTour,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // -------------------------------------------------------------------- hero
+
+  Widget _hero() {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final w = c.maxWidth;
+        final narrow = w < 330;
+        final lenzW = math.min(210.0, w * .6);
+        final bubbleW = narrow ? 96.0 : 124.0;
+        final headW = math.min(190.0, w - 40 - bubbleW - 6);
+        return Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(minHeight: 236),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(LenzRadii.hero),
+            gradient: LenzGradients.hero,
+            boxShadow: LenzShadows.hero,
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            children: [
+              const Positioned.fill(child: _HeroHatch()),
+              Positioned(
+                right: -26,
+                bottom: -34,
+                width: lenzW,
+                child: LenzCharacter(
+                  view: LenzView.bust,
+                  onTap: () => setState(() {
+                    var next = _heroBubble;
+                    while (next == _heroBubble) {
+                      next = _heroLines[_rng.nextInt(_heroLines.length)];
+                    }
+                    _heroBubble = next;
+                  }),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Flexible(
-                      child: Text(
-                        'Hi, $displayName',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: AppColors.nearBlack,
-                          fontSize: Responsive.fontSize(context, 27, minSize: 22, maxSize: 28),
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.5,
+                    SizedBox(
+                      width: headW,
+                      child: MediaQuery.withClampedTextScaling(
+                        // Decorative headline next to the bubble: keep it
+                        // from breaking mid-word on small phones.
+                        maxScaleFactor: narrow ? 1.0 : 1.15,
+                        child: Text(
+                          'Need me to check something?',
+                          style: LenzText.hero.copyWith(
+                            color: Colors.white,
+                            fontSize: narrow ? 20 : 25,
+                          ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '👋',
-                      style: TextStyle(
-                        fontSize: Responsive.fontSize(context, 25, minSize: 20, maxSize: 26),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: math.min(165.0, w - 40),
+                      child: const Text(
+                        'Show me the item and I will look for the details that matter.',
+                        style: LenzText.heroSub,
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    _HeroButton(onTap: widget.onStartScan),
                   ],
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Let’s check something authentic today.',
-                  style: TextStyle(
-                    color: AppColors.charcoalGray,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w400,
-                    letterSpacing: -0.1,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(width: 12),
-
-          // Home-tour replay button: always restarts the full tour from Step
-          // 1 regardless of the persisted "seen" flag (manual replay is
-          // independent of the automatic first-time trigger).
-          Semantics(
-            label: 'Show home tour',
-            button: true,
-            child: BounceButton(
-              onTap: () {
-                Haptics.lightImpact();
-                ShowcaseView.get().startShowCase(tourKeysInOrder);
-              },
-              child: Tooltip(
-                message: 'Show tour',
-                child: Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: AppColors.veryLightWarmGray,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: AppColors.nearBlack.withOpacity(0.08),
-                      width: 1,
+              ),
+              Positioned(
+                right: 12,
+                top: 12,
+                child: IgnorePointer(
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: narrow ? 1.0 : 1.15,
+                    child: LenzBubble(
+                      text: _heroBubble,
+                      maxWidth: bubbleW,
+                      style: LenzText.bubble.copyWith(fontSize: 12),
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.nearBlack.withOpacity(0.06),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    CupertinoIcons.question_circle,
-                    size: 19,
-                    color: AppColors.charcoalGray,
                   ),
                 ),
               ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ------------------------------------------------------------------- stats
+
+  Widget _stats({
+    required bool isPremium,
+    required int scansLeft,
+    required int checks,
+    required int authentic,
+  }) {
+    Widget stat(Widget value, String label) => Expanded(
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
+        decoration: BoxDecoration(
+          color: LenzColors.paper,
+          borderRadius: BorderRadius.circular(LenzRadii.stat),
+          border: Border.all(color: LenzColors.line),
+          boxShadow: LenzShadows.sh1,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: value),
+            const SizedBox(height: 6),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Text(label, maxLines: 1, style: LenzText.statLabel),
+            ),
+          ],
+        ),
+      ),
+    );
+    Widget count(int n) => AnimatedCount(
+      to: n,
+      delay: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 1100),
+      style: LenzText.stat,
+    );
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          isPremium
+              ? stat(const _InfinityGlyph(), 'Unlimited')
+              : stat(count(math.max(0, scansLeft)), 'Scans left'),
+          const SizedBox(width: 10),
+          stat(count(checks), 'Checks run'),
+          const SizedBox(width: 10),
+          stat(count(authentic), 'Authentic'),
+        ],
+      ),
+    );
+  }
+
+  // ------------------------------------------------------------------ browse
+
+  Widget _browse(HomeViewModel homeVm, HistoryRepository historyRepo) {
+    final categories = homeVm.categories;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20),
+          child: LenzSectionHeader('Browse your items'),
+        ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
+          clipBehavior: Clip.none,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final cat in categories)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: CategoryBrowseCard.fromItem(
+                    category: cat,
+                    caption: _checks(historyRepo.getByCategoryItem(cat).length),
+                    onTap: () {
+                      Haptics.selectionClick();
+                      widget.onOpenCategory(cat);
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  static String _checks(int n) => '$n ${n == 1 ? 'check' : 'checks'}';
+
+  // ------------------------------------------------------------------ recent
+
+  Widget _recent(HomeViewModel homeVm, List<AuthenticationReport> recent) {
+    final selected = homeVm.selectedCategoryItem;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LenzSectionHeader(
+          selected != null ? '${selected.label} checks' : 'Your recent checks',
+          actionLabel: 'See all',
+          onAction: widget.onOpenHistory,
+          margin: const EdgeInsets.fromLTRB(2, 6, 2, 12),
+        ),
+        if (recent.isNotEmpty)
+          for (final r in recent)
+            LenzReportTile(
+              report: r,
+              subtitle: '${r.product.brand} · ${r.product.categoryLabel}',
+              onTap: () => widget.onOpenReport(r),
+            )
+        else
+          _emptyRecent(selected?.label),
+      ],
+    );
+  }
+
+  Widget _emptyRecent(String? categoryLabel) {
+    final guest = isGuestSession(context);
+    return LenzCard(
+      padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
+      child: Column(
+        children: [
+          Transform.translate(
+            offset: const Offset(0, -6),
+            child: const SizedBox(
+              width: 160,
+              child: LenzCharacter(mood: LenzMood.unsure, view: LenzView.bust),
             ),
           ),
-
-          const SizedBox(width: 12),
-
-          // Profile Button at top right (replaces previous settings icon)
-          Showcase.withWidget(
-            key: tourProfileKey,
-            container: HomeTourCard(
-              title: tourSteps[3].title,
-              description: tourSteps[3].description,
-              stepIndex: 3,
-              totalSteps: tourSteps.length,
-            ),
-            targetShapeBorder: const CircleBorder(),
-            targetPadding: const EdgeInsets.all(4),
-            onBarrierClick: () => ShowcaseView.get().dismiss(),
-            disableDefaultTargetGestures: true,
-            disableMovingAnimation: true,
-            child: BounceButton(
-              onTap: () {
-                Haptics.lightImpact();
-                onOpenProfile();
-              },
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: AppColors.veryLightWarmGray,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.nearBlack.withOpacity(0.08),
-                    width: 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.nearBlack.withOpacity(0.06),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: ClipOval(
-                  child:
-                      (user.avatarPath != null && user.avatarPath!.isNotEmpty)
-                      ? AppImage(
-                          imagePath: user.avatarPath!,
-                          fit: BoxFit.cover,
-                          placeholder: Image.asset(
-                            'assets/images/mascot_home.png',
-                            fit: BoxFit.cover,
-                          ),
-                        )
-                      : Image.asset(
-                          'assets/images/mascot_home.png',
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Center(
-                            child: Icon(
-                              CupertinoIcons.person_fill,
-                              size: 21,
-                              color: AppColors.deepForestGreen,
-                            ),
-                          ),
-                        ),
-                ),
-              ),
+          Text(
+            guest
+                ? 'Guest scans are not saved'
+                : categoryLabel != null
+                ? 'No $categoryLabel scans yet'
+                : 'No checks yet',
+            textAlign: TextAlign.center,
+            style: LenzText.title.copyWith(fontSize: 18),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            guest
+                ? 'Create an account to keep your scans and favorites here.'
+                : categoryLabel != null
+                ? 'Scan a ${categoryLabel.toLowerCase()} item and Lenz will check its details.'
+                : 'Tap Scan an item to run your first inspection with Lenz.',
+            textAlign: TextAlign.center,
+            style: LenzText.sub,
+          ),
+          const SizedBox(height: 16),
+          IntrinsicWidth(
+            child: LenzButton(
+              label: guest ? 'Create account' : 'Start first scan',
+              icon: guest ? LenzIcons.user : LenzIcons.camera,
+              iconSize: 18,
+              size: LenzButtonSize.sm,
+              expand: false,
+              onPressed: guest ? () => GuestPaywallScreen.show(context) : widget.onStartScan,
             ),
           ),
         ],
       ),
     );
   }
+}
 
-  /// Pro Membership Promotional Banner on Home Screen
-  Widget _buildProBanner(BuildContext context) {
-    return FadeSlideTransition(
-      delay: const Duration(milliseconds: 60),
-      child: BounceButton(
-        onTap: () {
-          Haptics.mediumImpact();
-          onOpenPremium?.call();
-        },
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [
-                Color(0xFF14241B),
-                Color(0xFF1D3528),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+/// White "Scan an item" button of the hero (`.hero .btn`): h48, light
+/// gradient, deep drop shadow.
+class _HeroButton extends StatelessWidget {
+  const _HeroButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return LenzPressable(
+      onTap: onTap,
+      semanticLabel: 'Scan an item',
+      child: Container(
+        height: 48,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        decoration: BoxDecoration(
+          gradient: LenzGradients.light,
+          borderRadius: BorderRadius.circular(LenzRadii.button),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x80000000),
+              offset: Offset(0, 12),
+              blurRadius: 22,
+              spreadRadius: -10,
             ),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: const Color(0xFFD4AF37).withOpacity(0.35),
-              width: 1,
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const LenzIcon(LenzIcons.camera, size: 20, color: LenzColors.forest),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                'Scan an item',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: LenzText.button.copyWith(fontSize: 15, color: LenzColors.forest),
+              ),
             ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF14241B).withOpacity(0.18),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD4AF37).withOpacity(0.18),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  CupertinoIcons.sparkles,
-                  color: Color(0xFFD4AF37),
-                  size: 19,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Upgrade to Lenz Pro',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Unlock unlimited scans & instant AI authenticity',
-                      style: TextStyle(
-                        color: Color(0xFFC8D3CC),
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD4AF37),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'PRO',
-                      style: TextStyle(
-                        color: Color(0xFF14241B),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    SizedBox(width: 3),
-                    Icon(
-                      CupertinoIcons.chevron_right,
-                      size: 11,
-                      color: Color(0xFF14241B),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+          ],
         ),
       ),
     );
   }
+}
 
-  /// 3. Hero Card: "Need me to check something?" with Lenz Mascot (User uploaded image)
-  Widget _buildHeroCard(BuildContext context) {
-    return FadeSlideTransition(
-      delay: const Duration(milliseconds: 90),
+/// `.hero::before`: two faint diagonal hatches, masked to fade out towards
+/// the bottom-right (`mask-image: linear-gradient(120deg,#000,transparent 70%)`).
+class _HeroHatch extends StatelessWidget {
+  const _HeroHatch();
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback: (rect) => LenzGradients.css(
+          120,
+          const [Color(0xFF000000), Color(0x00000000)],
+          const [0, .7],
+        ).createShader(rect),
+        child: const CustomPaint(painter: _HatchPainter(), size: Size.infinite),
+      ),
+    );
+  }
+}
+
+class _HatchPainter extends CustomPainter {
+  const _HatchPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = Paint()
+      ..color = const Color.fromRGBO(255, 255, 255, .035)
+      ..strokeWidth = 2;
+    // Stripes every 22px measured perpendicular to the 45deg direction.
+    const step = 22 * math.sqrt2;
+    final span = size.width + size.height;
+    for (var d = -span; d < span; d += step) {
+      canvas.drawLine(Offset(d, 0), Offset(d + size.height, size.height), p);
+      canvas.drawLine(Offset(d + size.height, 0), Offset(d, size.height), p);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _HatchPainter oldDelegate) => false;
+}
+
+/// `.promo`: dark green strip with a gold hairline and a looping gold
+/// shimmer sweep (3.2s). [pro] adds the gold "PRO" pill, otherwise a chevron.
+class _Promo extends StatefulWidget {
+  const _Promo({
+    required this.icon,
+    required this.title,
+    required this.text,
+    required this.onTap,
+    this.pro = false,
+  });
+
+  final String icon;
+  final String title;
+  final String text;
+  final VoidCallback onTap;
+  final bool pro;
+
+  @override
+  State<_Promo> createState() => _PromoState();
+}
+
+class _PromoState extends State<_Promo> with SingleTickerProviderStateMixin {
+  late final AnimationController _shine = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 3200),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (LenzMotion.reduced(context)) {
+      _shine.stop();
+      _shine.value = .5;
+    } else if (!_shine.isAnimating) {
+      _shine.repeat();
+    }
+  }
+
+  @override
+  void dispose() {
+    _shine.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LenzPressable(
+      onTap: widget.onTap,
+      semanticLabel: widget.title,
       child: Container(
         decoration: BoxDecoration(
-          color: AppColors.veryLightWarmGray,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: AppColors.nearBlack.withOpacity(0.05),
-            width: 0.8,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.nearBlack.withOpacity(0.06),
-              blurRadius: 18,
-              offset: const Offset(0, 5),
-            ),
-          ],
+          borderRadius: BorderRadius.circular(LenzRadii.card),
+          gradient: LenzGradients.promo,
+          border: Border.all(color: const Color.fromRGBO(212, 175, 55, .45)),
         ),
-        child: Column(
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
           children: [
-            // Top Section: Left Text/CTA + Right Mascot
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: _shine,
+                  builder: (context, _) => CustomPaint(painter: _ShinePainter(_shine.value)),
+                ),
+              ),
+            ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(18, 16, 12, 10),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Left Content
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Color.fromRGBO(244, 217, 123, .2),
+                    ),
+                    alignment: Alignment.center,
+                    child: LenzIcon(widget.icon, size: 22, color: LenzColors.gold2),
+                  ),
+                  const SizedBox(width: 12),
                   Expanded(
-                    flex: 12,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Lenz Pill Tag
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 9,
-                            vertical: 3.5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.veryLightWarmGray,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 6.5,
-                                height: 6.5,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF2EA44F),
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 5),
-                              const Text(
-                                'Lenz',
-                                style: TextStyle(
-                                  color: AppColors.nearBlack,
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(width: 7),
-                              const Text(
-                                '·||·',
-                                style: TextStyle(
-                                  color: AppColors.deepForestGreen,
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-
-                        const SizedBox(height: 10),
-
-                        // Headline
+                        Text(widget.title, style: LenzText.item.copyWith(color: Colors.white)),
                         Text(
-                          'Need me to check\nsomething?',
-                          style: TextStyle(
-                            color: AppColors.nearBlack,
-                            fontSize: Responsive.fontSize(context, 20, minSize: 17, maxSize: 22),
-                            fontWeight: FontWeight.w800,
-                            height: 1.15,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-
-                        const SizedBox(height: 6),
-
-                        // Description
-                        const Text(
-                          'Show me the item and I\'ll look for the details that matter.',
-                          style: TextStyle(
-                            color: AppColors.charcoalGray,
-                            fontSize: 12,
-                            height: 1.3,
-                          ),
-                        ),
-
-                        const SizedBox(height: 14),
-
-                        // Pill Button: [Camera] Scan Anything ->
-                        BounceButton(
-                          onTap: onStartScan,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 10,
-                            ),
-                            decoration: BoxDecoration(
-                              color: AppColors.deepForestGreen,
-                              borderRadius: BorderRadius.circular(22),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.deepForestGreen.withOpacity(
-                                    0.25,
-                                  ),
-                                  blurRadius: 10,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
-                            ),
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: const [
-                                  Icon(
-                                    CupertinoIcons.camera,
-                                    color: Colors.white,
-                                    size: 16,
-                                  ),
-                                  SizedBox(width: 6),
-                                  Text(
-                                    'Scan Anything',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  SizedBox(width: 5),
-                                  Icon(
-                                    Icons.arrow_forward,
-                                    color: Colors.white,
-                                    size: 14,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
+                          widget.text,
+                          style: LenzText.itemSub.copyWith(color: const Color(0xFFBCD0C4)),
                         ),
                       ],
                     ),
                   ),
-
-                  const SizedBox(width: 4),
-
-                  // Right: Mascot Lenz (Using User Uploaded Image with Transparent Background)
-                  Expanded(
-                    flex: 9,
-                    child: Image.asset(
-                      'assets/images/home_mascot_lenz_user.png',
-                      height: Responsive.clamp(
-                        MediaQuery.sizeOf(context).width * 0.38,
-                        115.0,
-                        165.0,
+                  const SizedBox(width: 12),
+                  if (widget.pro)
+                    Container(
+                      height: 26,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        gradient: LenzGradients.gold,
+                        borderRadius: BorderRadius.circular(LenzRadii.pill),
                       ),
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // Subtle divider line
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Divider(
-                height: 1,
-                thickness: 0.8,
-                color: AppColors.nearBlack.withOpacity(0.06),
-              ),
-            ),
-
-            // Bottom status strip: 🛡️ 3K+ scans checked | ⏱️ Under 30 sec
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 11),
-              child: Row(
-                children: [
-                  const Icon(
-                    CupertinoIcons.shield,
-                    size: 14,
-                    color: AppColors.nearBlack,
-                  ),
-                  const SizedBox(width: 6),
-                  const Text(
-                    'Check up to 10K items',
-                    style: TextStyle(
-                      color: AppColors.charcoalGray,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const Spacer(),
-                  Container(
-                    width: 1,
-                    height: 11,
-                    color: AppColors.nearBlack.withOpacity(0.12),
-                  ),
-                  const Spacer(),
-                  const Icon(
-                    CupertinoIcons.clock,
-                    size: 14,
-                    color: AppColors.nearBlack,
-                  ),
-                  const SizedBox(width: 6),
-                  const Text(
-                    'Under 30 sec',
-                    style: TextStyle(
-                      color: AppColors.charcoalGray,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('PRO', style: LenzText.pill.copyWith(color: LenzColors.goldInk)),
+                          const SizedBox(width: 5),
+                          const LenzIcon(
+                            LenzIcons.chevR,
+                            size: 12,
+                            strokeWidth: 3,
+                            color: LenzColors.goldInk,
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    const LenzIcon(LenzIcons.chevR, size: 18, color: Colors.white),
                 ],
               ),
             ),
@@ -748,371 +842,73 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
+}
 
-  /// 5. "Browse your items" Section with dynamic vector icon cards
-  Widget _buildBrowseSection(BuildContext context, HomeViewModel homeVm) {
-    final categories = homeVm.categories;
+/// `linear-gradient(110deg, transparent 30%, rgba(244,217,123,.28) 50%,
+/// transparent 70%)` at `background-size: 200%`, swept from -200% to 200%.
+class _ShinePainter extends CustomPainter {
+  _ShinePainter(this.t);
+  final double t;
 
-    return FadeSlideTransition(
-      delay: const Duration(milliseconds: 120),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Section Header (Without 'See all' as requested)
-          const Text(
-            'Browse your items',
-            style: TextStyle(
-              color: AppColors.nearBlack,
-              fontSize: 16.5,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.3,
-            ),
-          ),
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width * 2; // background-size 200%
+    // background-position -200%..200% of (container - bg) = -w..w offset.
+    final dx = -size.width * 2 + t * size.width * 4;
+    final rect = Rect.fromLTWH(dx - (w - size.width) / 2, 0, w, size.height);
+    final shader = LenzGradients.css(
+      110,
+      const [Color(0x00F4D97B), Color(0x47F4D97B), Color(0x00F4D97B)],
+      const [.3, .5, .7],
+    ).createShader(rect);
+    canvas.drawRect(Offset.zero & size, Paint()..shader = shader);
+  }
 
-          const SizedBox(height: 12),
+  @override
+  bool shouldRepaint(covariant _ShinePainter old) => old.t != t;
+}
 
-          // Horizontal scrollable categories row with vector icons
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            child: Row(
-              children: categories.map((cat) {
-                return Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: BounceButton(
-                    onTap: () {
-                      Haptics.selectionClick();
-                      onOpenCategory(cat);
-                    },
-                    child: CategoryBrowseCard.fromItem(
-                      category: cat,
-                      isSelected: false,
-                      onTap: () {
-                        Haptics.selectionClick();
-                        onOpenCategory(cat);
-                      },
-                    ),
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-        ],
+/// "Unlimited" mark for Pro users' scan stat, drawn so it never depends on
+/// the font having a U+221E glyph (Nunito does not).
+class _InfinityGlyph extends StatelessWidget {
+  const _InfinityGlyph();
+
+  @override
+  Widget build(BuildContext context) {
+    final h = MediaQuery.textScalerOf(context).scale(26);
+    return Semantics(
+      label: 'Unlimited',
+      child: SizedBox(
+        width: h * 1.5,
+        height: h,
+        child: const CustomPaint(painter: _InfinityPainter()),
       ),
     );
   }
+}
 
-  /// 6. "Your recent checks" Section (ZERO DUMMY DATA)
-  Widget _buildRecentChecksSection(
-    BuildContext context,
-    HomeViewModel homeVm,
-    List<AuthenticationReport> recent,
-    bool hasFilteredReports,
-  ) {
-    return FadeSlideTransition(
-      delay: const Duration(milliseconds: 150),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Section Header
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                homeVm.selectedCategoryItem != null
-                    ? '${homeVm.selectedCategoryItem!.label} checks'
-                    : 'Your recent checks',
-                style: const TextStyle(
-                  color: AppColors.nearBlack,
-                  fontSize: 16.5,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.3,
-                ),
-              ),
-              GestureDetector(
-                onTap: onOpenHistory,
-                behavior: HitTestBehavior.opaque,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Text(
-                      'See all',
-                      style: TextStyle(
-                        color: AppColors.charcoalGray,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    SizedBox(width: 4),
-                    Icon(
-                      Icons.arrow_forward,
-                      size: 13,
-                      color: AppColors.charcoalGray,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+class _InfinityPainter extends CustomPainter {
+  const _InfinityPainter();
 
-          const SizedBox(height: 12),
-
-          // If there are real scans matching the filter, render them
-          if (hasFilteredReports)
-            ...recent.map(
-              (report) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: BounceButton(
-                  onTap: () => onOpenReport(report),
-                  child: _buildReportCard(context, report),
-                ),
-              ),
-            )
-          else
-            // Clean empty state card (Zero fake dummy data)
-            _buildEmptyRecentChecks(
-              context,
-              categoryLabel: homeVm.selectedCategoryItem?.label,
-            ),
-        ],
-      ),
-    );
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width, h = size.height;
+    final cy = h * .55, r = h * .28;
+    final p = Paint()
+      ..color = LenzColors.ink
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = h * .13
+      ..strokeCap = StrokeCap.round;
+    final left = w * .28, right = w * .72;
+    final path = Path()
+      ..moveTo(w / 2, cy)
+      ..cubicTo(right - r * .2, cy - r * 1.4, right + r * 1.6, cy - r * 1.2, right + r * 1.0, cy)
+      ..cubicTo(right + r * 1.6, cy + r * 1.2, right - r * .2, cy + r * 1.4, w / 2, cy)
+      ..cubicTo(left + r * .2, cy - r * 1.4, left - r * 1.6, cy - r * 1.2, left - r * 1.0, cy)
+      ..cubicTo(left - r * 1.6, cy + r * 1.2, left + r * .2, cy + r * 1.4, w / 2, cy);
+    canvas.drawPath(path, p);
   }
 
-  /// Clean Empty State Card for Recent Checks (Zero dummy Rolex)
-  Widget _buildEmptyRecentChecks(
-    BuildContext context, {
-    String? categoryLabel,
-  }) {
-    final title = categoryLabel != null
-        ? 'No $categoryLabel scans yet'
-        : 'No recent checks yet';
-    final desc = categoryLabel != null
-        ? 'Scan a $categoryLabel item and Lenz will verify its stitching, logos, and materials.'
-        : 'Tap "Scan Anything" above to run your first forensic inspection with Lenz.';
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 26),
-      decoration: BoxDecoration(
-        color: AppColors.veryLightWarmGray,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: AppColors.nearBlack.withOpacity(0.05),
-          width: 0.8,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.nearBlack.withOpacity(0.04),
-            blurRadius: 14,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 50,
-            height: 50,
-            decoration: const BoxDecoration(
-              color: AppColors.veryLightWarmGray,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              CupertinoIcons.doc_text_search,
-              size: 24,
-              color: AppColors.deepForestGreen,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            title,
-            style: const TextStyle(
-              color: AppColors.nearBlack,
-              fontSize: 15.5,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            desc,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppColors.charcoalGray,
-              fontSize: 12.5,
-              height: 1.35,
-            ),
-          ),
-          const SizedBox(height: 16),
-          BounceButton(
-            onTap: onStartScan,
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 18,
-                vertical: 9.5,
-              ),
-              decoration: BoxDecoration(
-                color: AppColors.deepForestGreen,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.deepForestGreen.withOpacity(0.2),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: const [
-                  Icon(CupertinoIcons.camera, size: 14, color: Colors.white),
-                  SizedBox(width: 6),
-                  Text(
-                    'Start First Scan',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Dynamic Report Card when real scan exists
-  Widget _buildReportCard(BuildContext context, AuthenticationReport report) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: AppColors.veryLightWarmGray,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: AppColors.nearBlack.withOpacity(0.05),
-          width: 0.8,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.nearBlack.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: AppImage(
-              imagePath: report.product.imageAsset,
-              width: 60,
-              height: 60,
-              fit: BoxFit.cover,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  report.product.name,
-                  style: const TextStyle(
-                    color: AppColors.nearBlack,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  report.product.subtitle,
-                  style: const TextStyle(
-                    color: AppColors.softGray,
-                    fontSize: 11.5,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3.5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: report.verdict == Verdict.likelyAuthentic
-                            ? const Color(0xFFE2EFE7)
-                            : report.verdict == Verdict.inconclusive
-                            ? const Color(0xFFFEF3C7)
-                            : const Color(0xFFFEE2E2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        report.verdict == Verdict.likelyAuthentic
-                            ? 'Authentic'
-                            : (report.verdict == Verdict.likelyReplica
-                                  ? 'Replica'
-                                  : 'Not Sure'),
-                        style: TextStyle(
-                          color: report.verdict == Verdict.likelyAuthentic
-                              ? AppColors.deepForestGreen
-                              : report.verdict == Verdict.inconclusive
-                              ? AppColors.warning
-                              : AppColors.danger,
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3.5,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.softWarmGray,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        report.strengthLabel,
-                        style: const TextStyle(
-                          color: AppColors.nearBlack,
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Container(
-            width: 32,
-            height: 32,
-            decoration: const BoxDecoration(
-              color: AppColors.veryLightWarmGray,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              CupertinoIcons.chevron_right,
-              size: 13,
-              color: AppColors.charcoalGray,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  @override
+  bool shouldRepaint(covariant _InfinityPainter oldDelegate) => false;
 }

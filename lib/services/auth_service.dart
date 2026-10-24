@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'device_id_service.dart';
 import 'revenue_cat_service.dart';
 
 class AuthService extends ChangeNotifier {
@@ -12,6 +13,15 @@ class AuthService extends ChangeNotifier {
   final FirebaseFirestore _firestore;
   final FirebaseFunctions _functions;
   final GoogleSignIn _googleSignIn;
+  final DeviceIdService _deviceId;
+
+  /// What the server said about the free scans at the last sign-up / sign-in:
+  /// how many were granted, and whether this phone had already used its grant.
+  int lastFreeScansGranted = 0;
+  bool freeScansAlreadyUsedOnDevice = false;
+
+  /// Same for a guest session: this phone already gave out its guest scans.
+  bool guestScansAlreadyUsedOnDevice = false;
 
   StreamSubscription<User?>? _authStateSubscription;
   bool _isInitialized = false;
@@ -23,7 +33,9 @@ class AuthService extends ChangeNotifier {
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
     GoogleSignIn? googleSignIn,
-  })  : _auth = auth ?? FirebaseAuth.instance,
+    DeviceIdService? deviceId,
+  })  : _deviceId = deviceId ?? DeviceIdService(),
+        _auth = auth ?? FirebaseAuth.instance,
         _firestore = firestore ?? FirebaseFirestore.instance,
         _functions = functions ?? FirebaseFunctions.instance,
         _googleSignIn = googleSignIn ?? GoogleSignIn() {
@@ -50,11 +62,13 @@ class AuthService extends ChangeNotifier {
       notifyListeners();
     });
 
-    // If no user is logged in, automatically start anonymous session as fallback
-    // so guests can immediately scan with their initial credits without blocking.
-    if (_auth.currentUser == null) {
-      signInAnonymously();
-    }
+    // Debug builds log the device id once at start (support / ledger repair).
+    if (kDebugMode) unawaited(_deviceId.id());
+
+    // No automatic guest sign-in: with nobody signed in the app shows the
+    // sign-in screen, and a guest session starts only when the user taps
+    // "Continue as guest" there. (Signing in on every launch would also create
+    // an anonymous account, with its own free scans, nobody asked for.)
   }
 
   /// Resolves the best-known name/email/photo for [user].
@@ -164,7 +178,10 @@ class AuthService extends ChangeNotifier {
           'email': resolved.email ?? '',
           'planName': isAnon ? 'Guest Plan' : 'Free Plan',
           'isPremium': false,
-          'scansRemaining': 3,
+          // Everyone starts with none: the server grants a guest's scans
+          // (claimGuestScans) and an account's free scans (finalizeAccountUpgrade)
+          // once per device.
+          'scansRemaining': 0,
           'avatarUrl': resolved.photoUrl ?? '',
           'createdAt': FieldValue.serverTimestamp(),
         });
@@ -232,7 +249,14 @@ class AuthService extends ChangeNotifier {
     }
 
     try {
-      await _functions.httpsCallable('finalizeAccountUpgrade').call();
+      final result = await _functions
+          .httpsCallable('finalizeAccountUpgrade')
+          .call<dynamic>({'deviceId': await _deviceId.id()});
+      final data = result.data;
+      if (data is Map) {
+        lastFreeScansGranted = (data['granted'] as num?)?.toInt() ?? 0;
+        freeScansAlreadyUsedOnDevice = data['alreadyUsedOnDevice'] == true;
+      }
     } catch (e) {
       if (kDebugMode) debugPrint('[AuthService] finalizeAccountUpgrade error: $e');
     }
@@ -307,6 +331,7 @@ class AuthService extends ChangeNotifier {
 
     try {
       final credential = await _auth.signInAnonymously();
+      await _claimGuestScans();
       return credential;
     } catch (e) {
       _authError = 'Guest sign-in failed: $e';
@@ -315,6 +340,20 @@ class AuthService extends ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  /// Asks the server for this guest's scans. It grants them once per device,
+  /// so signing out of an account and continuing as a guest again gets none.
+  Future<void> _claimGuestScans() async {
+    try {
+      final result = await _functions
+          .httpsCallable('claimGuestScans')
+          .call<dynamic>({'deviceId': await _deviceId.id()});
+      final data = result.data;
+      guestScansAlreadyUsedOnDevice = data is Map && data['alreadyUsedOnDevice'] == true;
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AuthService] claimGuestScans error: $e');
     }
   }
 
