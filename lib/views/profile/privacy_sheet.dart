@@ -1,11 +1,14 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../core/config/revenue_cat_config.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_typography.dart';
-import '../../widgets/animations/bounce_button.dart';
 
+import '../../core/config/revenue_cat_config.dart';
+import '../../widgets/lenz/lenz.dart';
+import '../../widgets/ui/ui.dart';
+import 'profile_sheet_parts.dart';
+
+/// Privacy and security sheet (prototype `ACT.privacy`, mood `pleased`).
+/// Paints its own ivory frame + grabber so it works inside a plain
+/// `showModalBottomSheet(backgroundColor: Colors.transparent, ...)`.
 class PrivacySecuritySheet extends StatelessWidget {
   const PrivacySecuritySheet({super.key});
 
@@ -22,182 +25,53 @@ class PrivacySecuritySheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.85,
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-      decoration: const BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 38,
-                height: 4.5,
-                decoration: BoxDecoration(
-                  color: AppColors.neutralPill,
-                  borderRadius: BorderRadius.circular(2.5),
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-            Text('Privacy & Security', style: AppTypography.titleLarge),
-            const SizedBox(height: 4),
-            Text(
-              'How your scan data and photos are guarded.',
-              style: AppTypography.caption,
-            ),
-            const SizedBox(height: 20),
-
-            // What We Collect section
-            Text(
-              'WHAT WE COLLECT',
-              style: AppTypography.captionMedium.copyWith(letterSpacing: 0.6),
-            ),
-            const SizedBox(height: 10),
-            _buildInfoCard(
-              icon: CupertinoIcons.photo,
-              title: 'Product Photos & AI Analysis',
-              description:
-                  'Photos you submit are securely analyzed using Google Gemini AI models '
-                  'to evaluate stitching, materials, hardware, and typography. '
-                  'Photos are hosted with Cloudinary so your reports remain accessible in your collection. '
-                  'You can permanently delete your photos and reports at any time from '
-                  'Profile > Delete Account.',
-            ),
-            const SizedBox(height: 10),
-            _buildInfoCard(
-              icon: CupertinoIcons.shield_lefthalf_fill,
-              title: 'Account & Scan Reports',
-              description:
-                  'Your authentication data, verification reports, and saved collection '
-                  'are protected with Firebase Cloud Security. We never sell your personal '
-                  'information to any third parties.',
-            ),
-            const SizedBox(height: 10),
-            _buildInfoCard(
-              icon: CupertinoIcons.lock,
-              title: 'Data In Transit & Storage',
-              description:
-                  'All network communication between your device and our servers is '
-                  'strictly encrypted via industry-standard TLS. Signing out clears '
-                  'local device caches while preserving your cloud account data.',
-            ),
-
-            const SizedBox(height: 20),
-
-            // Button to open Privacy Policy
-            GestureDetector(
-              onTap: _openPrivacyPolicy,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.deepForestGreen.withOpacity(0.3)),
-                  color: AppColors.deepForestGreen.withOpacity(0.05),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'View Privacy Policy',
-                      style: TextStyle(
-                        color: AppColors.deepForestGreen,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                    ),
-                    SizedBox(width: 6),
-                    Icon(
-                      CupertinoIcons.arrow_up_right,
-                      size: 14,
-                      color: AppColors.deepForestGreen,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 14),
-
-            // Close button
-            BounceButton(
-              onTap: () => Navigator.of(context).pop(),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(
-                  color: AppColors.deepForestGreen,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  'Done',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14.5,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoCard({
-    required IconData icon,
-    required String title,
-    required String description,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return LenzSheetFrame(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: AppColors.accent.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, size: 18, color: AppColors.deepForestGreen),
+          const LenzSheetHead(
+            title: 'Privacy and security',
+            subtitle: 'How your scan data and photos are guarded.',
+            mood: LenzMood.pleased,
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: AppTypography.titleMedium.copyWith(fontSize: 14),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: AppColors.textSecondary,
-                    height: 1.35,
-                  ),
-                ),
-              ],
-            ),
+          const LenzInfoCard(
+            icon: LenzIcons.camera,
+            title: 'Product photos and AI analysis',
+            body:
+                'Photos you submit are sent to our server and analyzed with Google Gemini AI models '
+                'to evaluate stitching, materials, hardware, and typography. '
+                'With an account, your photos are stored with our image host (Cloudinary) so your '
+                'reports stay in your history. As a guest nothing is saved: your report is shown '
+                'once and not kept. You can permanently delete your photos and reports at any time '
+                'from Profile > Delete account.',
+          ),
+          const LenzInfoCard(
+            icon: LenzIcons.cloud,
+            title: 'Account and scan reports',
+            body:
+                'Your sign-in details, reports and favorites are kept in Firebase (Google Cloud) '
+                'with access limited to your own account. To limit free scans to one set per '
+                'phone, we also keep a one-way hash of a device identifier. We never sell your '
+                'personal information.',
+          ),
+          const LenzInfoCard(
+            icon: LenzIcons.lock,
+            title: 'Data in transit and storage',
+            body:
+                'All network communication between your device and our servers is '
+                'strictly encrypted via industry-standard TLS. Signing out clears '
+                'local device caches while preserving your cloud account data.',
+          ),
+          const SizedBox(height: 6),
+          LenzExternalLinkButton(
+            label: 'View Privacy Policy',
+            onPressed: _openPrivacyPolicy,
+          ),
+          const SizedBox(height: 10),
+          LenzButton(
+            label: 'Done',
+            onPressed: () => Navigator.of(context).pop(),
           ),
         ],
       ),

@@ -1,17 +1,15 @@
 import 'dart:async';
-import 'dart:ui' as ui;
 
-import 'package:camera/camera.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
-import '../../core/theme/app_colors.dart';
 import '../../viewmodels/scan_flow_viewmodel.dart';
-import '../../widgets/animations/bounce_button.dart';
 import '../../widgets/camera/android_zoom_slider.dart';
+import '../../widgets/camera/lenz_camera_chrome.dart';
+import '../../widgets/lenz/lenz.dart';
+import '../../widgets/ui/ui.dart';
 import 'camera_preview_widget.dart';
 import '../../services/haptics.dart';
 
@@ -19,18 +17,22 @@ class DirectScanView extends StatefulWidget {
   final VoidCallback onClose;
   final void Function(String? imagePath)? onCapture;
 
-  const DirectScanView({super.key, required this.onClose, this.onCapture});
+  /// Test-only stand-in for the live camera feed (widget tests have no
+  /// camera). Production never sets it.
+  @visibleForTesting
+  final Widget? previewOverride;
+
+  const DirectScanView({super.key, required this.onClose, this.onCapture, this.previewOverride});
 
   @override
   State<DirectScanView> createState() => _DirectScanViewState();
 }
 
-class _DirectScanViewState extends State<DirectScanView>
-    with TickerProviderStateMixin {
-  final GlobalKey<CameraPreviewWidgetState> _cameraKey =
-      GlobalKey<CameraPreviewWidgetState>();
-  CameraController? _cameraController;
+class _DirectScanViewState extends State<DirectScanView> with TickerProviderStateMixin {
+  final GlobalKey<CameraPreviewWidgetState> _cameraKey = GlobalKey<CameraPreviewWidgetState>();
   bool _isCapturing = false;
+  bool _frozen = false;
+  bool _cameraUnavailable = false;
   bool _isCaptureSlow = false;
   Timer? _slowCaptureTimer;
   bool _isFlashOn = false;
@@ -42,6 +44,12 @@ class _DirectScanViewState extends State<DirectScanView>
   late AnimationController _guidanceAnimationController;
   late Animation<double> _guidanceAnimation;
   Timer? _guidanceTimer;
+
+  // White capture flash (presentation only).
+  late final AnimationController _flashController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 380),
+  );
 
   @override
   void initState() {
@@ -70,6 +78,7 @@ class _DirectScanViewState extends State<DirectScanView>
     _guidanceTimer?.cancel();
     _slowCaptureTimer?.cancel();
     _guidanceAnimationController.dispose();
+    _flashController.dispose();
     super.dispose();
   }
 
@@ -109,6 +118,7 @@ class _DirectScanViewState extends State<DirectScanView>
     _dismissGuidance();
 
     setState(() => _isCapturing = true);
+    if (!LenzMotion.reduced(context)) _flashController.forward(from: 0);
     // A capture that's still running after a couple of seconds isn't
     // frozen — but with no feedback it looks that way, so say so instead
     // of leaving the shutter button as the only (unchanged) thing on screen.
@@ -137,9 +147,7 @@ class _DirectScanViewState extends State<DirectScanView>
       if (widget.onCapture != null) {
         widget.onCapture!(capturedPath);
       } else {
-        context.read<ScanFlowViewModel>().captureInitialPhoto(
-          imagePath: capturedPath,
-        );
+        context.read<ScanFlowViewModel>().captureInitialPhoto(imagePath: capturedPath);
       }
     }
   }
@@ -160,9 +168,7 @@ class _DirectScanViewState extends State<DirectScanView>
         if (widget.onCapture != null) {
           widget.onCapture!(picked.path);
         } else {
-          context.read<ScanFlowViewModel>().captureInitialPhoto(
-            imagePath: picked.path,
-          );
+          context.read<ScanFlowViewModel>().captureInitialPhoto(imagePath: picked.path);
         }
       }
     } catch (e) {
@@ -182,486 +188,175 @@ class _DirectScanViewState extends State<DirectScanView>
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final viewfinderWidth = (screenWidth * 0.78).clamp(280.0, 350.0);
-    final viewfinderHeight = viewfinderWidth * 1.05;
+    final mq = MediaQuery.of(context);
+    final compact = mq.size.height < 720;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: LenzColors.camera,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // ─── 1. Background: Live Camera Feed Blurred ───
-          Positioned.fill(
-            child: IgnorePointer(child: _buildBlurredBackground(context)),
-          ),
+          // ─── 1. Camera scene + full-bleed live feed (prototype `.feed`) ───
+          const Positioned.fill(child: LenzCameraBackdrop()),
+          Positioned.fill(child: _buildPreview()),
 
-          // ─── 2. Foreground UI ───
+          // ─── 2. Chrome ───
           SafeArea(
             bottom: false,
             child: Column(
               children: [
-                // Top Bar: [X]  [Scan Product + Subtitle]  [Flash]
-                _buildTopBar(context),
-
-                // Middle Viewport: Perfectly Centered Viewfinder + Floating Guidance Pill
-                Expanded(
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // Centered Viewfinder Card
-                      Center(
-                        child: _buildViewfinder(
-                          viewfinderWidth,
-                          viewfinderHeight,
-                        ),
-                      ),
-
-                      // Floating Guidance Pill (positioned below viewfinder without altering its centering)
-                      Positioned(
-                        bottom: 12,
-                        left: 0,
-                        right: 0,
-                        child: Center(
-                          child: FadeTransition(
-                            opacity: _guidanceAnimation,
-                            child: SlideTransition(
-                              position: Tween<Offset>(
-                                begin: const Offset(0, 0.25),
-                                end: Offset.zero,
-                              ).animate(_guidanceAnimation),
-                              child: GestureDetector(
-                                onTap: () {
-                                  Haptics.lightImpact();
-                                  _dismissGuidance();
-                                },
-                                child: _buildGuidancePill(),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                LenzCameraTopBar(
+                  title: 'Scan product',
+                  onClose: widget.onClose,
+                  onFlash: _toggleFlash,
+                  flashOn: _isFlashOn,
                 ),
-
-                // Bottom Control Card: Gallery, Shutter Button, Flip Camera, Zoom Slider
-                _buildBottomControlCard(context),
+                Expanded(child: _buildViewport(compact)),
+                _buildBottomControls(context, compact),
               ],
             ),
           ),
+
+          // ─── 3. Capture flash ───
+          Positioned.fill(child: LenzCaptureFlash(animation: _flashController)),
         ],
       ),
     );
   }
 
-  /// Full-screen blurred live camera background
-  Widget _buildBlurredBackground(BuildContext context) {
-    final ctrl = _cameraController;
-    if (ctrl == null || !ctrl.value.isInitialized) {
-      return Container(color: const Color(0xFF141618));
-    }
+  Widget _buildPreview() {
+    return widget.previewOverride ??
+        CameraPreviewWidget(
+          key: _cameraKey,
+          onZoomChanged: (zoom) {
+            if (mounted) setState(() => _zoomLevel = zoom);
+            _dismissGuidance();
+          },
+          onUnavailableChanged: (v) {
+            if (mounted) setState(() => _cameraUnavailable = v);
+          },
+          onFrozenChanged: (v) {
+            if (mounted) setState(() => _frozen = v);
+          },
+          onControllerReady: (ctrl) {
+            if (mounted) {
+              setState(() {
+                _zoomLevel = _cameraKey.currentState?.currentZoom ?? 1.0;
+                _minZoom = _cameraKey.currentState?.minZoom ?? 1.0;
+                _maxZoom = _cameraKey.currentState?.maxZoom ?? 4.0;
+              });
+            }
+          },
+        );
+  }
 
-    final previewSize = ctrl.value.previewSize;
-    if (previewSize == null) {
-      return Container(color: const Color(0xFF141618));
-    }
-
+  /// Viewfinder brackets + static tip chips, then Lenz with his hint.
+  Widget _buildViewport(bool compact) {
+    final lenzWidth = compact ? 92.0 : 118.0;
     return LayoutBuilder(
-      builder: (context, constraints) {
-        final isPortrait =
-            MediaQuery.of(context).orientation == Orientation.portrait;
-        final double previewWidth = isPortrait
-            ? previewSize.height
-            : previewSize.width;
-        final double previewHeight = isPortrait
-            ? previewSize.width
-            : previewSize.height;
-        final double previewAspect = previewWidth / previewHeight;
-
-        final double containerWidth = constraints.maxWidth;
-        final double containerHeight = constraints.maxHeight;
-        final double containerAspect = containerWidth / containerHeight;
-
-        double scale = 1.0;
-        if (containerAspect > previewAspect) {
-          scale = containerWidth / (containerHeight * previewAspect);
-        } else {
-          scale = (containerHeight * previewAspect) / containerWidth;
-        }
-
-        // Scale by extra 1.25x so blur edges don't show bleed/vignetting at borders
-        scale *= 1.25;
-
+      builder: (context, c) {
+        // Lenz (bust) is ~0.96 x his width tall.
+        final lenzHeight = lenzWidth * 0.96;
+        final chips = _buildTipChips();
+        final avail = c.maxHeight - lenzHeight - 56 - 24;
+        final vf = (c.maxWidth * 0.76).clamp(120.0, avail.clamp(120.0, 340.0));
         return Stack(
-          fit: StackFit.expand,
           children: [
-            ClipRect(
-              child: ImageFiltered(
-                imageFilter: ui.ImageFilter.blur(
-                  sigmaX: 25,
-                  sigmaY: 25,
-                  tileMode: TileMode.decal,
-                ),
-                child: Center(
-                  child: Transform.scale(
-                    scale: scale,
-                    child: AspectRatio(
-                      aspectRatio: previewAspect,
-                      child: CameraPreview(ctrl),
+            if (!_cameraUnavailable)
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                bottom: lenzHeight,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: vf, maxHeight: vf),
+                        child: AspectRatio(
+                          aspectRatio: 1,
+                          child: LenzViewfinder(frozen: _frozen || _isCapturing),
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 18),
+                    chips,
+                  ],
                 ),
               ),
-            ),
-            // Semi-transparent dark scrim for optimal readability of UI controls
-            Container(color: Colors.black.withOpacity(0.42)),
+            if (!_cameraUnavailable)
+              Positioned(
+                left: 14,
+                right: 14,
+                bottom: 0,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      width: lenzWidth,
+                      child: LenzCharacter(
+                        mood: _cameraUnavailable
+                            ? LenzMood.sorry
+                            : _isCapturing
+                            ? LenzMood.shocked
+                            : LenzMood.inspect,
+                        view: LenzView.bust,
+                      ),
+                    ),
+                    // Shows once on open for a few seconds, then fades (tap to dismiss).
+                    if (!_cameraUnavailable)
+                      Flexible(
+                        child: FadeTransition(
+                          opacity: _guidanceAnimation,
+                          child: GestureDetector(
+                            onTap: () {
+                              Haptics.lightImpact();
+                              _dismissGuidance();
+                            },
+                            child: const Padding(
+                              padding: EdgeInsets.only(top: 8),
+                              child: LenzBubble(
+                                text: 'Center the item. Good light, in focus.',
+                                dark: true,
+                                maxWidth: 200,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
           ],
         );
       },
     );
   }
 
-  /// Sharp Center Viewfinder Card with Corner Reticle Brackets
-  Widget _buildViewfinder(double width, double height) {
-    return Container(
-      width: width,
-      height: height,
-      decoration: BoxDecoration(
-        color: Colors.black,
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withOpacity(0.28), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.38),
-            blurRadius: 24,
-            offset: const Offset(0, 8),
-          ),
+  /// Advice only: the app does not measure light, centring or focus, so the
+  /// chips stay neutral (they never turn green).
+  Widget _buildTipChips() {
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          LenzTipChip(icon: LenzIcons.sparkles, label: 'Well lit'),
+          LenzTipChip(icon: LenzIcons.scan, label: 'Centered'),
+          LenzTipChip(icon: LenzIcons.eye, label: 'In focus'),
         ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(26.5),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Live camera feed
-            CameraPreviewWidget(
-              key: _cameraKey,
-              onZoomChanged: (zoom) {
-                if (mounted) setState(() => _zoomLevel = zoom);
-                _dismissGuidance();
-              },
-              onControllerReady: (ctrl) {
-                if (mounted) {
-                  setState(() {
-                    _cameraController = ctrl;
-                    _zoomLevel = _cameraKey.currentState?.currentZoom ?? 1.0;
-                    _minZoom = _cameraKey.currentState?.minZoom ?? 1.0;
-                    _maxZoom = _cameraKey.currentState?.maxZoom ?? 4.0;
-                  });
-                }
-              },
-            ),
-
-            // Reticle Brackets (4 corners)
-            // Top-left: vibrant mint green accent
-            _buildCornerBracket(
-              top: 14,
-              left: 14,
-              color: const Color(0xFF22C55E),
-              isTop: true,
-              isLeft: true,
-            ),
-            // Top-right: clean white
-            _buildCornerBracket(
-              top: 14,
-              right: 14,
-              color: Colors.white.withOpacity(0.92),
-              isTop: true,
-              isLeft: false,
-            ),
-            // Bottom-left: clean white
-            _buildCornerBracket(
-              bottom: 14,
-              left: 14,
-              color: Colors.white.withOpacity(0.92),
-              isTop: false,
-              isLeft: true,
-            ),
-            // Bottom-right: clean white
-            _buildCornerBracket(
-              bottom: 14,
-              right: 14,
-              color: Colors.white.withOpacity(0.92),
-              isTop: false,
-              isLeft: false,
-            ),
-          ],
-        ),
       ),
     );
   }
 
-  /// 1. Top Bar matching luxury reference design
-  Widget _buildTopBar(BuildContext context) {
+  /// Zoom ruler, then gallery / shutter / flip (prototype `.camctl`).
+  Widget _buildBottomControls(BuildContext context, bool compact) {
+    final bottom = MediaQuery.of(context).padding.bottom;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // Close button [X]
-          BounceButton(
-            onTap: widget.onClose,
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.35),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: Colors.white.withOpacity(0.20),
-                  width: 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: const Center(
-                child: Icon(
-                  CupertinoIcons.xmark,
-                  color: Colors.white,
-                  size: 18,
-                ),
-              ),
-            ),
-          ),
-
-          // Title & Subtitle in Center
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: const [
-                    Icon(
-                      Icons.filter_center_focus_rounded,
-                      size: 21,
-                      color: Color(0xFF22C55E),
-                    ),
-                    SizedBox(width: 7),
-                    Text(
-                      'Scan Product',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18.5,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Place the item inside the frame and\ntake a clear photo.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.85),
-                    fontSize: 11.5,
-                    height: 1.25,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          // Flash button [⚡]
-          BounceButton(
-            onTap: _toggleFlash,
-            child: Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: _isFlashOn
-                    ? const Color(0xFF22C55E)
-                    : Colors.black.withOpacity(0.35),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: _isFlashOn
-                      ? const Color(0xFF22C55E)
-                      : Colors.white.withOpacity(0.20),
-                  width: 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Center(
-                child: Icon(
-                  _isFlashOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
-                  color: Colors.white,
-                  size: 20,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Reticle Corner Bracket (L-shape with rounded corner)
-  Widget _buildCornerBracket({
-    double? top,
-    double? bottom,
-    double? left,
-    double? right,
-    required Color color,
-    required bool isTop,
-    required bool isLeft,
-  }) {
-    const double size = 38.0;
-    const double thickness = 3.5;
-    const double radius = 14.0;
-
-    return Positioned(
-      top: top,
-      bottom: bottom,
-      left: left,
-      right: right,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          border: Border(
-            top: isTop
-                ? BorderSide(color: color, width: thickness)
-                : BorderSide.none,
-            bottom: !isTop
-                ? BorderSide(color: color, width: thickness)
-                : BorderSide.none,
-            left: isLeft
-                ? BorderSide(color: color, width: thickness)
-                : BorderSide.none,
-            right: !isLeft
-                ? BorderSide(color: color, width: thickness)
-                : BorderSide.none,
-          ),
-          borderRadius: BorderRadius.only(
-            topLeft: isTop && isLeft
-                ? const Radius.circular(radius)
-                : Radius.zero,
-            topRight: isTop && !isLeft
-                ? const Radius.circular(radius)
-                : Radius.zero,
-            bottomLeft: !isTop && isLeft
-                ? const Radius.circular(radius)
-                : Radius.zero,
-            bottomRight: !isTop && !isLeft
-                ? const Radius.circular(radius)
-                : Radius.zero,
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Android-style Horizontal Zoom Slider: Quick Presets + Swipe Ruler
-  Widget _buildZoomSlider() {
-    return AndroidCameraZoomSlider(
-      currentZoom: _zoomLevel,
-      minZoom: _minZoom,
-      maxZoom: _maxZoom,
-      onZoomChanged: _handleZoomChanged,
-    );
-  }
-
-  /// Status guidance pill: "Keep the item centered · Well lit and in focus"
-  Widget _buildGuidancePill() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.nearBlack.withOpacity(0.78),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withOpacity(0.18), width: 1),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.32),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            Icons.filter_center_focus_rounded,
-            size: 22,
-            color: Color(0xFF22C55E),
-          ),
-          const SizedBox(width: 11),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Keep the item centered',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.2,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                'Well lit and in focus',
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.80),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// 3. Bottom Control Card (Gallery, Shutter Button, Flip Camera, Mode Switcher)
-  Widget _buildBottomControlCard(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: AppColors.veryLightWarmGray,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(36)),
-        border: Border(
-          top: BorderSide(
-            color: AppColors.nearBlack.withOpacity(0.05),
-            width: 1.0,
-          ),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.20),
-            blurRadius: 20,
-            offset: const Offset(0, -6),
-          ),
-        ],
-      ),
-      padding: const EdgeInsets.fromLTRB(28, 18, 28, 36),
+      padding: EdgeInsets.fromLTRB(24, compact ? 8 : 12, 24, bottom + (compact ? 14 : 24)),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -670,152 +365,31 @@ class _DirectScanViewState extends State<DirectScanView>
           if (_isCaptureSlow) ...[
             Text(
               'Still capturing…',
-              style: TextStyle(
-                color: AppColors.charcoalGray.withOpacity(0.8),
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
+              style: LenzText.cap.copyWith(color: Colors.white.withValues(alpha: .85)),
             ),
             const SizedBox(height: 8),
           ],
-
-          // Android Camera Zoom Slider above shutter
-          _buildZoomSlider(),
-          const SizedBox(height: 16),
-
-          // Camera controls row
+          AndroidCameraZoomSlider(
+            currentZoom: _zoomLevel,
+            minZoom: _minZoom,
+            maxZoom: _maxZoom,
+            onZoomChanged: _handleZoomChanged,
+            dark: true,
+          ),
+          SizedBox(height: compact ? 10 : 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Gallery Button
-              BounceButton(
+              LenzCameraControl(
+                icon: LenzIcons.image,
                 onTap: _pickFromGallery,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        color: AppColors.pureWhite,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: AppColors.nearBlack.withOpacity(0.07),
-                          width: 1,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.nearBlack.withOpacity(0.04),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.image_outlined,
-                          size: 25,
-                          color: AppColors.nearBlack,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Gallery',
-                      style: TextStyle(
-                        color: AppColors.charcoalGray,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
+                semanticLabel: 'Gallery',
               ),
-
-              // Central Shutter Button
-              BounceButton(
-                scaleLower: 0.92,
-                onTap: _handleCapture,
-                child: Container(
-                  width: 82,
-                  height: 82,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.pureWhite,
-                    border: Border.all(
-                      color: AppColors.deepForestGreen,
-                      width: 3.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.deepForestGreen.withOpacity(0.18),
-                        blurRadius: 14,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  padding: const EdgeInsets.all(5),
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.deepForestGreen,
-                    ),
-                    child: _isCapturing
-                        ? const Center(
-                            child: CupertinoActivityIndicator(
-                              color: Colors.white,
-                              radius: 12,
-                            ),
-                          )
-                        : null,
-                  ),
-                ),
-              ),
-
-              // Flip Camera Button
-              BounceButton(
+              LenzShutterButton(onTap: _handleCapture, busy: _isCapturing),
+              LenzCameraControl(
+                icon: LenzIcons.refresh,
                 onTap: _flipCamera,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        color: AppColors.pureWhite,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: AppColors.nearBlack.withOpacity(0.07),
-                          width: 1,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.nearBlack.withOpacity(0.04),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.flip_camera_ios_outlined,
-                          size: 24,
-                          color: AppColors.nearBlack,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      'Flip Camera',
-                      style: TextStyle(
-                        color: AppColors.charcoalGray,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
+                semanticLabel: 'Flip Camera',
               ),
             ],
           ),

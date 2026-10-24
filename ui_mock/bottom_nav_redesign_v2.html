@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lenz — Bottom nav, 2 new concepts</title>
+<link rel="stylesheet" href="lenz_mock.css">
+<style>
+  /* ---------- fake Home content behind the nav ---------- */
+  .home{position:absolute;inset:0;padding:58px 18px 0;overflow:hidden}
+  .home .hi{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+  .home .av{width:42px;height:42px;border-radius:50%;background:var(--mint);overflow:hidden;flex:none}
+  .home .av>div{width:150%;margin:-6px 0 0 -14px}
+  .home .hi b{display:block;font-weight:900;font-size:21px;line-height:1.1}
+  .home .hi small{font-weight:700;color:var(--muted);font-size:12px}
+  .hero{height:150px;border-radius:30px;background:linear-gradient(135deg,#1D4C3A,#0C2219);color:#fff;padding:18px;position:relative;overflow:hidden}
+  .hero b{display:block;font-weight:900;font-size:21px;line-height:1.05;width:150px}
+  .hero i{display:inline-block;margin-top:14px;font-style:normal;font-weight:900;font-size:12px;background:#fff;color:var(--forest);padding:9px 13px;border-radius:99px}
+  .hero .m{position:absolute;right:-26px;bottom:-34px;width:176px}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:12px 0}
+  .tiles div{background:#fff;border-radius:20px;padding:12px;box-shadow:var(--sh1)}
+  .tiles b{display:block;font-weight:900;font-size:22px} .tiles small{font-weight:700;color:var(--muted);font-size:11px}
+  .rowc{background:#fff;border-radius:22px;padding:12px;display:flex;gap:12px;align-items:center;box-shadow:var(--sh1);margin-bottom:9px}
+  .rowc .th{width:50px;height:50px;border-radius:16px;background:var(--mint2);flex:none}
+  .rowc b{display:block;font-weight:900;font-size:15px} .rowc small{font-weight:700;color:var(--muted);font-size:12px}
+  .rowc em{margin-left:auto;font-style:normal;font-weight:900;font-size:11px;padding:5px 10px;border-radius:99px;background:var(--okSoft);color:var(--ok)}
+  .toast{position:absolute;left:50%;top:60px;transform:translate(-50%,-14px);opacity:0;background:var(--forest);color:#fff;font-weight:800;font-size:12.5px;padding:9px 16px;border-radius:99px;z-index:70;transition:.35s var(--spring);white-space:nowrap}
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+
+  /* =====================================================================
+     1 · LENS DOCK — a magnifier ring slides under the active tab and enlarges its icon;
+         the scan button is a camera-aperture shutter
+     ===================================================================== */
+  .navL{position:absolute;left:14px;right:14px;bottom:18px;height:70px;border-radius:35px;z-index:60;
+    display:grid;grid-template-columns:1fr 1fr 78px 1fr 1fr;align-items:center;
+    background:linear-gradient(180deg,rgba(255,255,255,.94),rgba(250,246,243,.86));
+    -webkit-backdrop-filter:blur(22px) saturate(1.5);backdrop-filter:blur(22px) saturate(1.5);
+    border:1px solid rgba(255,255,255,.95);
+    box-shadow:0 22px 44px -16px rgba(18,47,36,.42),0 2px 6px rgba(18,47,36,.06),inset 0 1px 0 #fff}
+  .navL .tab{position:relative;z-index:2;height:70px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:#86908A;transition:color .3s}
+  .navL .tab svg{transition:transform .5s var(--spring)}
+  .navL .tab span{font-weight:800;font-size:10.5px;letter-spacing:.01em;transition:.3s}
+  .navL .tab.on{color:var(--forest)} .navL .tab.on svg{transform:translateY(-1px) scale(1.16)} .navL .tab.on span{font-weight:900}
+  /* the magnifier: glass disc + metal ring + short handle */
+  .navL .lens{position:absolute;z-index:1;top:50%;left:0;width:58px;height:58px;margin:-31px 0 0 -29px;pointer-events:none;
+    transition:transform .6s var(--spring)}
+  .navL .lens .glass{position:absolute;inset:0;border-radius:50%;
+    background:radial-gradient(circle at 32% 26%,rgba(255,255,255,.95) 0,rgba(214,232,222,.75) 42%,rgba(190,222,204,.55) 100%);
+    box-shadow:inset 0 0 0 3px #1D4C3A,inset 0 0 0 4.5px rgba(255,255,255,.55),0 8px 16px -6px rgba(18,47,36,.45)}
+  .navL .lens .glass::after{content:"";position:absolute;left:12px;top:9px;width:14px;height:7px;border-radius:50%;background:rgba(255,255,255,.9);transform:rotate(-30deg);filter:blur(.4px)}
+  .navL .lens .handle{position:absolute;right:-7px;bottom:-4px;width:17px;height:6px;border-radius:4px;background:linear-gradient(180deg,#2E6B52,#122F24);transform:rotate(45deg);transform-origin:left center;
+    box-shadow:0 3px 6px rgba(18,47,36,.35)}
+  /* aperture shutter */
+  .navL .scan{position:relative;justify-self:center;width:62px;height:62px;margin-top:-26px;border-radius:50%;color:#fff;display:grid;place-items:center;
+    background:radial-gradient(120% 120% at 30% 15%,#3C8C69 0,#1D4C3A 46%,#0E261C 100%);
+    box-shadow:0 0 0 5px var(--ivory),0 0 0 7px rgba(212,175,55,.85),0 16px 28px -8px rgba(18,47,36,.75),inset 0 2px 0 rgba(255,255,255,.26);
+    transition:transform .4s var(--spring)}
+  .navL .scan svg{transition:transform .6s var(--spring)}
+  .navL .scan:active{transform:scale(.92)} .navL .scan:active svg{transform:rotate(60deg)}
+  .navL .scan.snap svg{animation:shut .7s var(--ease)}
+  @keyframes shut{0%{transform:rotate(0) scale(1)}35%{transform:rotate(70deg) scale(.7)}100%{transform:rotate(120deg) scale(1)}}
+
+  /* =====================================================================
+     2 · MASCOT RIDER — a dark docked bar; Lenz himself peeks over the active tab and hops between tabs
+     ===================================================================== */
+  .navM{position:absolute;left:0;right:0;bottom:0;height:calc(80px + 12px);z-index:60;
+    background:linear-gradient(180deg,#245A45 0,#143528 50%,#0D261C 100%);border-radius:28px 28px 0 0;
+    box-shadow:0 -14px 34px -12px rgba(18,47,36,.5),inset 0 1px 0 rgba(255,255,255,.16)}
+  .navM::before{content:"";position:absolute;left:22px;right:22px;top:9px;height:0;border-top:2px dashed rgba(255,255,255,.1)}
+  .navM .tabs{position:absolute;left:0;right:0;bottom:12px;height:68px;display:grid;grid-template-columns:1fr 1fr 96px 1fr 1fr;padding:0 6px}
+  .navM .tab{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:3px;padding-bottom:8px;color:rgba(214,232,222,.55);transition:color .3s}
+  .navM .tab span{font-weight:800;font-size:11px;transition:.3s}
+  .navM .tab.on{color:#fff} .navM .tab.on span{font-weight:900}
+  .navM .tab svg{transition:transform .4s var(--spring),opacity .3s}
+  .navM .tab.on svg{transform:translateY(2px) scale(1.08)}
+  .navM .rider{position:absolute;left:0;top:-30px;width:60px;height:60px;margin-left:-30px;z-index:3;pointer-events:none;
+    transition:transform .65s var(--spring)}
+  .navM .rider .pop{width:100%;height:100%}
+  .navM .rider.hop .pop{animation:hop .6s var(--ease)}
+  @keyframes hop{0%{transform:translateY(0)}35%{transform:translateY(-16px) scale(1.06,.96)}70%{transform:translateY(0) scale(.96,1.05)}100%{transform:none}}
+  .navM .rider .face{width:100%;height:100%;border-radius:50%;overflow:hidden;background:radial-gradient(circle at 50% 30%,#fff,var(--mint));
+    box-shadow:0 0 0 4px #143528,0 0 0 6px var(--gold2),0 10px 18px -4px rgba(0,0,0,.55)}
+  .navM .rider .face>div{width:140%;margin:-4px 0 0 -12%}
+  .navM .scan{position:absolute;left:50%;top:-30px;width:68px;height:68px;margin-left:-34px;border-radius:50%;color:#3a2c05;display:grid;place-items:center;
+    background:linear-gradient(180deg,#F8E394,#D4AF37);box-shadow:0 0 0 6px #143528,0 14px 26px -8px rgba(212,175,55,.8),inset 0 2px 0 rgba(255,255,255,.6);
+    transition:transform .35s var(--spring)}
+  .navM .scan::before{content:"";position:absolute;inset:-6px;border-radius:50%;border:2px solid rgba(244,217,123,.6);animation:ring 2.6s infinite}
+  .navM .scan:active{transform:scale(.9)}
+  @keyframes ring{0%{transform:scale(.94);opacity:.9}100%{transform:scale(1.45);opacity:0}}
+
+  .small-cap{font-weight:800;font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="page-head">
+  <a class="back" href="redesign_index.html">← All mock-ups</a>
+  <h1>Bottom navigation — 2 new concepts</h1>
+  <p>Both are built around what Lenz is: a detective with a magnifier. Same five destinations and behaviour as today
+     (Home · History · Scan · Saved · Profile). Each is shown on a standard 390 px phone and on a small 320 px phone. Tap the tabs and the scan button.</p>
+</div>
+
+<div class="row" id="row"></div>
+
+<div class="note">
+  <b>Concept 1 — Lens dock.</b> A glass magnifier ring slides under the active tab and enlarges its icon, so the “current place” is literally
+  Lenz looking at it. The scan button is a camera-aperture shutter in a gold ring; the aperture twists when pressed. Bright, ivory, calm — it sits on the
+  app’s light screens like a piece of the app.<br><br>
+  <b>Concept 2 — Mascot rider.</b> A docked deep-forest bar where Lenz himself (the same animated character as the rest of the app) peeks over the
+  active tab and hops to the next one when you switch. The gold scan lens pulses softly. It gives the nav personality no other app has, and it reuses the
+  existing mascot, so there is nothing new to draw.<br><br>
+  Both keep the 5 slots, labels, 44 px+ touch targets, safe-area padding, the hide-on-full-screen-layer rule and reduced-motion support
+  (the lens / mascot then jump instead of gliding). Tell me which one and I will build it in Flutter as a drop-in for <b>LenzTabBar</b>.
+</div>
+
+<script src="lenz_mock.js"></script>
+<script>
+const TABS = [['home','Home'],['clock','History'],null,['heart','Saved'],['user','Profile']];
+const home = `<div class="blob"></div><div class="home">
+  <div class="hi"><div class="av"><div data-lenz="peek"></div></div><div><small>Welcome back</small><b>Hi, Alex 👋</b></div></div>
+  <div class="hero"><b>Need me to check something?</b><i>Scan an item</i><div class="m" data-lenz="bust"></div></div>
+  <div class="tiles"><div><b>3</b><small>Scans left</small></div><div><b>7</b><small>Checks run</small></div><div><b>4</b><small>Authentic</small></div></div>
+  <div class="rowc"><div class="th"></div><div><b>Neverfull MM</b><small>Louis Vuitton · Today</small></div><em>Authentic</em></div>
+  <div class="rowc"><div class="th"></div><div><b>Submariner Date</b><small>Rolex · Yesterday</small></div><em>Authentic</em></div>
+  <div class="rowc"><div class="th"></div><div><b>Air Jordan 1 High</b><small>Nike · Oct 14</small></div><em>Authentic</em></div>
+</div><div class="toast"></div>`;
+
+const APERTURE = `<svg class="ic" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="9.2"/><path d="M12 2.8l3.6 6.2M20.6 8.2l-7.2 0M19.9 16.1l-3.6-6.2M12 21.2l-3.6-6.2M3.4 15.8l7.2 0M4.1 7.9l3.6 6.2"/></svg>`;
+const tabBtn = (t, i) => `<button class="tab" data-i="${i}" aria-label="${t[1]}">${LM.ic(t[0], 24, 2.1)}<span>${t[1]}</span></button>`;
+
+function phone(host, w, h, label, markup) {
+  const fig = document.createElement('figure'); fig.className = 'fig';
+  fig.innerHTML = `<div class="phone" style="--w:${w}px;--h:${h}px"><div class="status"><span>9:41</span><i>●●● ▮</i></div>${home}${markup}</div><figcaption><span class="tag">${label}</span></figcaption>`;
+  host.appendChild(fig);
+  return fig.querySelector('.phone');
+}
+const row = document.getElementById('row');
+const SIZES = [[390, 844, 'Standard · 390×844'], [320, 600, 'Small · 320×600']];
+
+// ---------- 1 · lens dock ----------
+const lensMarkup = `<nav class="navL">${tabBtn(TABS[0],0)}${tabBtn(TABS[1],1)}<button class="scan" aria-label="Scan an item">${APERTURE}</button>${tabBtn(TABS[3],2)}${tabBtn(TABS[4],3)}
+  <div class="lens"><div class="glass"></div><div class="handle"></div></div></nav>`;
+// ---------- 2 · mascot rider ----------
+const riderMarkup = `<nav class="navM"><div class="tabs">${tabBtn(TABS[0],0)}${tabBtn(TABS[1],1)}<div></div>${tabBtn(TABS[3],2)}${tabBtn(TABS[4],3)}</div>
+  <div class="rider"><div class="pop"><div class="face"><div data-lenz="peek"></div></div></div></div>
+  <button class="scan" aria-label="Scan an item">${LM.ic('scan', 30, 2.3)}</button></nav>`;
+
+const groups = [['Concept 1 · Lens dock', lensMarkup, 'navL'], ['Concept 2 · Mascot rider', riderMarkup, 'navM']];
+groups.forEach(([title, markup, cls]) => {
+  const h = document.createElement('div'); h.style.cssText = 'width:100%;text-align:center;font-weight:900;font-size:20px;letter-spacing:-.02em;margin-top:6px';
+  h.textContent = title; row.appendChild(h);
+  const wrap = document.createElement('div'); wrap.className = 'row'; wrap.style.cssText = 'width:100%'; row.appendChild(wrap);
+  SIZES.forEach(([w, ph, label]) => {
+    const p = phone(wrap, w, ph, label, markup);
+    const nav = p.querySelector('.' + cls), tabs = [...nav.querySelectorAll('.tab')], toast = p.querySelector('.toast');
+    const lens = nav.querySelector('.lens'), rider = nav.querySelector('.rider');
+    let cur = 0;
+    const place = (i) => {
+      const nb = nav.getBoundingClientRect(), tb = tabs[i].getBoundingClientRect();
+      const cx = (tb.left - nb.left + tb.width / 2) / (nb.width / nav.offsetWidth);
+      if (lens) lens.style.transform = `translateX(${cx}px)`;
+      if (rider) rider.style.transform = `translateX(${cx}px)`;
+    };
+    const set = (i, hop) => {
+      cur = i; tabs.forEach((t, k) => t.classList.toggle('on', k === i)); place(i);
+      if (rider && hop) { rider.classList.remove('hop'); void rider.offsetWidth; rider.classList.add('hop'); }
+    };
+    tabs.forEach((t, i) => t.addEventListener('click', () => set(i, true)));
+    nav.querySelector('.scan').addEventListener('click', (e) => {
+      e.currentTarget.classList.remove('snap'); void e.currentTarget.offsetWidth; e.currentTarget.classList.add('snap');
+      toast.textContent = 'Opening scanner…'; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 1300);
+    });
+    set(0, false); setTimeout(() => place(cur), 60); window.addEventListener('resize', () => place(cur));
+  });
+});
+LM.mount();
+</script>
+</body>
+</html>

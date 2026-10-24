@@ -1,11 +1,14 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../core/config/revenue_cat_config.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_typography.dart';
-import '../../widgets/animations/bounce_button.dart';
 
+import '../../core/config/revenue_cat_config.dart';
+import '../../widgets/lenz/lenz.dart';
+import '../../widgets/ui/ui.dart';
+import 'profile_sheet_parts.dart';
+
+/// Terms of service sheet (prototype `ACT.terms`, mood `focus`). Paints its
+/// own ivory frame + grabber so it works inside a plain
+/// `showModalBottomSheet(backgroundColor: Colors.transparent, ...)`.
 class TermsOfServiceSheet extends StatelessWidget {
   const TermsOfServiceSheet({super.key});
 
@@ -20,179 +23,64 @@ class TermsOfServiceSheet extends StatelessWidget {
     }
   }
 
+  static const _sectionTitle = TextStyle(
+    fontFamily: LenzText.family,
+    color: LenzColors.ink,
+    fontSize: 16,
+    fontWeight: FontWeight.w900,
+  );
+
+  static const _sections = <(String, String)>[
+    (
+      'Subscription and auto-renewal',
+      'Subscriptions automatically renew unless auto-renew is turned off at least 24 hours before the end of the current billing period. Payment will be charged to your Apple ID account at confirmation of purchase.',
+    ),
+    (
+      '3-day free trial',
+      'Any unused portion of a free trial period, if offered, will be forfeited when purchasing a subscription. You can cancel your free trial anytime in your Apple ID account settings without being charged.',
+    ),
+    (
+      'Cancellation and refunds',
+      'You can manage or cancel your subscription anytime in your iPhone Settings > Apple ID > Subscriptions. All refunds are handled directly by Apple according to App Store policy.',
+    ),
+    (
+      'Authentication disclaimer',
+      'Lenz gives an AI-assisted opinion on product authenticity, not an official brand authentication or a guarantee. A result that an item "looks authentic" does not guarantee that it is genuine, and a result that it "looks fake" does not prove that it is counterfeit. Results are intended for advisory purposes and do not replace certified manufacturer appraisals.',
+    ),
+  ];
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.85,
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-      decoration: const BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 38,
-                height: 4.5,
-                decoration: BoxDecoration(
-                  color: AppColors.neutralPill,
-                  borderRadius: BorderRadius.circular(2.5),
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-            Text('Terms of Service', style: AppTypography.titleLarge),
-            const SizedBox(height: 4),
-            Text(
-              'Lenz Subscription & Usage Agreement',
-              style: AppTypography.caption,
-            ),
-            const SizedBox(height: 20),
-
-            _buildSection(
-              icon: CupertinoIcons.creditcard,
-              title: 'Subscription & Auto-Renewal',
-              description:
-                  'Subscriptions automatically renew unless auto-renew is turned off at least 24 hours before the end of the current billing period. Payment will be charged to your Apple ID account at confirmation of purchase.',
-            ),
-            const SizedBox(height: 10),
-
-            _buildSection(
-              icon: CupertinoIcons.timer,
-              title: '3-Day Free Trial',
-              description:
-                  'Any unused portion of a free trial period, if offered, will be forfeited when purchasing a subscription. You can cancel your free trial anytime in your Apple ID account settings without being charged.',
-            ),
-            const SizedBox(height: 10),
-
-            _buildSection(
-              icon: CupertinoIcons.arrow_counterclockwise,
-              title: 'Cancellation & Refunds',
-              description:
-                  'You can manage or cancel your subscription anytime in your iPhone Settings > Apple ID > Subscriptions. All refunds are handled directly by Apple according to App Store policy.',
-            ),
-            const SizedBox(height: 10),
-
-            _buildSection(
-              icon: CupertinoIcons.shield_lefthalf_fill,
-              title: 'Authentication Disclaimer',
-              description:
-                  'Lenz gives an AI-assisted opinion on product authenticity, not an official brand authentication or a guarantee. A result that an item "looks authentic" does not guarantee that it is genuine, and a result that it "looks fake" does not prove that it is counterfeit. Results are intended for advisory purposes and do not replace certified manufacturer appraisals.',
-            ),
-            const SizedBox(height: 20),
-
-            // Button to open Terms of Service
-            GestureDetector(
-              onTap: _openTermsOfService,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.deepForestGreen.withOpacity(0.3)),
-                  color: AppColors.deepForestGreen.withOpacity(0.05),
-                ),
-                child: const Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'View Terms of Service',
-                      style: TextStyle(
-                        color: AppColors.deepForestGreen,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                    ),
-                    SizedBox(width: 6),
-                    Icon(
-                      CupertinoIcons.arrow_up_right,
-                      size: 14,
-                      color: AppColors.deepForestGreen,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 14),
-
-            // Done button
-            BounceButton(
-              onTap: () => Navigator.of(context).pop(),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(
-                  color: AppColors.deepForestGreen,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  'Done',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14.5,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSection({
-    required IconData icon,
-    required String title,
-    required String description,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return LenzSheetFrame(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: AppColors.deepForestGreen.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, size: 18, color: AppColors.deepForestGreen),
+          const LenzSheetHead(
+            title: 'Terms of service',
+            subtitle: 'Lenz subscription and usage agreement.',
+            mood: LenzMood.focus,
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: AppTypography.titleMedium.copyWith(fontSize: 14),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  description,
-                  style: AppTypography.bodyMedium.copyWith(
-                    color: AppColors.textSecondary,
-                    height: 1.35,
-                  ),
-                ),
-              ],
+          for (final s in _sections)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(s.$1, style: _sectionTitle),
+                  const SizedBox(height: 3),
+                  Text(s.$2, style: LenzText.sub.copyWith(fontSize: 13.5)),
+                ],
+              ),
             ),
+          LenzExternalLinkButton(
+            label: 'View Terms of Service',
+            onPressed: _openTermsOfService,
+          ),
+          const SizedBox(height: 10),
+          LenzButton(
+            label: 'Done',
+            onPressed: () => Navigator.of(context).pop(),
           ),
         ],
       ),

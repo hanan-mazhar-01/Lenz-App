@@ -1,137 +1,234 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_typography.dart';
+
 import '../../models/authentication_result.dart';
 import '../../models/product.dart';
 import '../../viewmodels/favorites_viewmodel.dart';
-import '../../widgets/animations/bounce_button.dart';
-import '../../widgets/animations/fade_slide_transition.dart';
 import '../../widgets/cards/animated_favorite_button.dart';
 import '../../widgets/cards/category_chip.dart';
-import '../../widgets/cards/glass_card.dart';
-import '../../widgets/common/app_image.dart';
+import '../../widgets/cards/report_list_tile.dart';
+import '../../widgets/cards/tab_title.dart';
 import '../../widgets/common/empty_state.dart';
-import '../../widgets/mascot/detective_mascot_widget.dart';
+import '../../widgets/common/guest_session.dart';
+import '../paywall/guest_paywall_screen.dart';
+import '../../widgets/lenz/lenz.dart';
+import '../../widgets/ui/ui.dart';
 
+/// Favorites ("Saved") tab (prototype `SCREENS.favorites`): two-column cards
+/// of the reports the user hearted. Only the user's own reports appear.
 class FavoritesScreen extends StatelessWidget {
   final ValueChanged<AuthenticationReport> onOpenReport;
 
   const FavoritesScreen({super.key, required this.onOpenReport});
 
+  static const Color _mood = Color(0xFFF5D9DE);
+
   @override
   Widget build(BuildContext context) {
     final favoritesVm = context.watch<FavoritesViewModel>();
     final items = favoritesVm.favoriteReports;
+    final categories = ProductCategory.values
+        .where((c) => favoritesVm.allFavorites.any((r) => r.product.category == c))
+        .toList();
+    final topPad = MediaQuery.paddingOf(context).top + 14;
+    final bottomPad = LenzTabBar.contentPadding(context);
+    final selected = favoritesVm.selectedCategory;
+    final isGuest = isGuestSession(context);
+
+    final children = <Widget>[
+      Padding(
+        padding: EdgeInsets.fromLTRB(20, topPad + 6, 20, 0),
+        child: const LenzRise(
+          child: LenzTabTitle(
+            title: 'Favorites',
+            subtitle: 'Reports you want to keep close.',
+            mood: LenzMood.joy,
+          ),
+        ),
+      ),
+      // Category filter (only categories the user has favourites in, §33).
+      if (favoritesVm.allFavorites.isNotEmpty)
+        SizedBox(
+          height: 34 + 18,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 6),
+            children: [
+              CategoryFilterChip(
+                label: 'All',
+                isSelected: selected == null,
+                onTap: () => favoritesVm.selectCategory(null),
+              ),
+              for (final cat in categories) ...[
+                const SizedBox(width: 8),
+                CategoryFilterChip(
+                  label: cat.label,
+                  isSelected: selected == cat,
+                  onTap: () => favoritesVm.selectCategory(cat),
+                ),
+              ],
+            ],
+          ),
+        ),
+    ];
+
+    final Widget body;
+    if (items.isEmpty) {
+      body = Padding(
+        padding: EdgeInsets.only(bottom: bottomPad - 40),
+        child: isGuest
+            ? EmptyState(
+                title: 'Create an account to save favorites',
+                message: "Guests can't save favorites. Create an account or sign in to keep the reports you love.",
+                actionLabel: 'Create account',
+                actionIcon: LenzIcons.user,
+                onAction: () => GuestPaywallScreen.show(context),
+                mood: LenzMood.hello,
+                view: LenzView.full,
+                characterWidth: 220,
+              )
+            : EmptyState(
+                title: selected == null
+                    ? 'Nothing saved yet'
+                    : 'No ${selected.label.toLowerCase()} saved yet',
+                message: 'Tap the heart on any report to keep it here. Only reports from your own scans appear.',
+                mood: LenzMood.unsure,
+                view: LenzView.full,
+                characterWidth: 220,
+              ),
+      );
+    } else {
+      body = LayoutBuilder(
+        builder: (context, c) {
+          final rows = <Widget>[];
+          for (var i = 0; i < items.length; i += 2) {
+            rows.add(
+              LenzRise(
+                index: i ~/ 2,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(child: _card(favoritesVm, items[i])),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: i + 1 < items.length
+                              ? _card(favoritesVm, items[i + 1])
+                              : const SizedBox.shrink(),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
+          return ListView(
+            physics: const BouncingScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(20, 10, 20, bottomPad),
+            children: rows,
+          );
+        },
+      );
+    }
 
     return Scaffold(
-      backgroundColor: AppColors.backgroundOf(context),
-      body: SafeArea(
-        bottom: false,
+      backgroundColor: LenzColors.ivory,
+      body: LenzMoodBackground(
+        mood: _mood,
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 10),
-              child: Text('Favorites', style: AppTypography.displayMedium),
-            ),
+            ...children,
+            Expanded(child: body),
+          ],
+        ),
+      ),
+    );
+  }
 
-            // Category Filter Chips
-            SizedBox(
-              height: 36,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                children: [
-                  CategoryFilterChip(
-                    label: 'All',
-                    isSelected: favoritesVm.selectedCategory == null,
-                    onTap: () => favoritesVm.selectCategory(null),
+  Widget _card(FavoritesViewModel vm, AuthenticationReport report) {
+    return _FavoriteCard(
+      report: report,
+      onTap: () => onOpenReport(report),
+      onToggle: () => vm.toggleFavorite(report.id),
+    );
+  }
+}
+
+/// `.fav-card`: photo tile, name, brand, verdict pill, heart toggle.
+class _FavoriteCard extends StatelessWidget {
+  const _FavoriteCard({required this.report, required this.onTap, required this.onToggle});
+  final AuthenticationReport report;
+  final VoidCallback onTap;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return LenzPressable(
+      onTap: onTap,
+      semanticLabel: '${report.product.name}, ${report.verdict.label}',
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: LenzColors.paper,
+          borderRadius: BorderRadius.circular(LenzRadii.card),
+          border: Border.all(color: LenzColors.line),
+          boxShadow: LenzShadows.sh1,
+        ),
+        child: Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LenzReportThumb(
+                  report: report,
+                  width: double.infinity,
+                  height: 104,
+                  radius: 20,
+                  artSize: 62,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  report.product.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: LenzText.item.copyWith(fontSize: 15),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 2, bottom: 8),
+                  child: Text(
+                    report.product.brand,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: LenzText.cap,
                   ),
-                  const SizedBox(width: 8),
-                  // Only categories the user has favourites in (§33).
-                  ...ProductCategory.values
-                      .where((c) => favoritesVm.allFavorites.any((r) => r.product.category == c))
-                      .map((cat) {
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: CategoryFilterChip(
-                        label: cat.label,
-                        isSelected: favoritesVm.selectedCategory == cat,
-                        onTap: () => favoritesVm.selectCategory(cat),
-                      ),
-                    );
-                  }),
-                ],
-              ),
+                ),
+                const Spacer(),
+                LenzPill.verdict(report.verdict),
+              ],
             ),
-
-            const SizedBox(height: 12),
-
-            // Favorites List or Empty State
-            Expanded(
-              child: items.isEmpty
-                  ? EmptyState(
-                      title: favoritesVm.selectedCategory == null
-                          ? 'No favourites yet'
-                          : 'No ${favoritesVm.selectedCategory!.label.toLowerCase()} favourites',
-                      message:
-                          'Tap the heart on any report you want to keep close. Only reports from your own scans appear here.',
-                      mascotState: MascotState.idle,
-                      mascotSize: 86,
-                    )
-                  : ListView.separated(
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 80),
-                      itemCount: items.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 10),
-                      itemBuilder: (context, i) {
-                        final report = items[i];
-                        return FadeSlideTransition(
-                          delay: Duration(milliseconds: 60 + (i * 35)),
-                          child: BounceButton(
-                            onTap: () => onOpenReport(report),
-                            child: GlassCard(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                              borderRadius: 18,
-                              child: Row(
-                                children: [
-                                  AppImage(
-                                    imagePath: report.product.imageAsset,
-                                    width: 48,
-                                    height: 48,
-                                    fit: BoxFit.contain,
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  const SizedBox(width: 14),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          report.product.name,
-                                          style: AppTypography.titleMedium.copyWith(fontSize: 15),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          report.product.subtitle,
-                                          style: AppTypography.caption,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  AnimatedFavoriteButton(
-                                    isFavorite: report.isFavorite,
-                                    onToggle: () => favoritesVm.toggleFavorite(report.id),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
+            Positioned(
+              right: 4,
+              top: 4,
+              child: Container(
+                width: 32,
+                height: 32,
+                decoration: const BoxDecoration(
+                  color: LenzColors.paper,
+                  shape: BoxShape.circle,
+                  boxShadow: LenzShadows.sh1,
+                ),
+                alignment: Alignment.center,
+                child: AnimatedFavoriteButton(
+                  isFavorite: report.isFavorite,
+                  onToggle: onToggle,
+                  size: 17,
+                ),
+              ),
             ),
           ],
         ),

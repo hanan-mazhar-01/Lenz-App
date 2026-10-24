@@ -1,18 +1,19 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_typography.dart';
+
 import '../../models/evidence.dart';
 import '../../models/evidence_validation.dart';
-import '../../widgets/animations/bounce_button.dart';
-import '../../widgets/animations/fade_slide_transition.dart';
-import '../../widgets/cards/glass_card.dart';
 import '../../widgets/common/app_image.dart';
+import '../../widgets/lenz/lenz.dart';
+import '../../widgets/ui/ui.dart';
 
 /// Review screen shown after every submitted photo.
 ///
 /// Presents photo quality and authentication usefulness as separate numbers,
 /// and refuses a photo that does not show the requested area (§10-14).
+///
+/// Lenz layout (prototype `SCREENS.quality`): the photo with the part label
+/// and a status pill, Lenz reacting, meters bound to the validation's real
+/// scores (amber when weak), then Keep / Retake / Keep anyway.
 class PhotoQualityView extends StatelessWidget {
   final EvidenceItem item;
   final String? photoPath;
@@ -38,12 +39,9 @@ class PhotoQualityView extends StatelessWidget {
     this.onKeepAnyway,
   });
 
-  Color _scoreColor(int score) {
-    if (score >= 85) return AppColors.success;
-    if (score >= 70) return AppColors.accent;
-    if (score >= 45) return AppColors.warning;
-    return AppColors.danger;
-  }
+  /// Below this a measurement is shown amber (same 70 line as the old
+  /// colour scale's "good").
+  static const int _warnBelow = 70;
 
   @override
   Widget build(BuildContext context) {
@@ -51,384 +49,366 @@ class PhotoQualityView extends StatelessWidget {
     final quality = validation.quality;
     final isWrongEvidence = verdict == EvidenceVerdict.rejectedWrongEvidence;
     final isRejected = verdict != EvidenceVerdict.accepted;
+    final canKeepAnyway = validation.isOverridable && onKeepAnyway != null;
 
     // One consistent plain-English line, plus short fix-it hints (§22, §23).
     final note = validation.usefulnessExplanation;
     final tips = {
       if (quality.firstFix != null) quality.firstFix!,
       ...validation.issues.where((i) => i.length < 60),
-    }.toList();
+    }.where((t) => t != validation.headline).toList();
+
+    final mood = isWrongEvidence
+        ? LenzMood.sorry
+        : isRejected
+        ? LenzMood.unsure
+        : LenzMood.happy;
+    final coachText = isRejected
+        ? '${validation.guidance} ${validation.callToAction}'
+        : '${validation.headline}! $note';
+
+    // The prototype's three meters, bound to the real measurements. A
+    // sub-score of 0 means the model did not report it: it is left out
+    // rather than drawn as an empty bar.
+    final meters = <_MeterRow>[
+      if (quality.sharpness > 0) _MeterRow('Sharpness', quality.sharpness),
+      if (quality.lighting > 0) _MeterRow('Lighting', quality.lighting),
+      _MeterRow(
+        'Right part',
+        validation.matchConfidence,
+        caption: validation.matchToRequestedEvidence
+            ? 'Shows the ${item.title.toLowerCase()}'
+            : "Doesn't show the ${item.title.toLowerCase()}",
+        warn: !validation.matchToRequestedEvidence,
+      ),
+    ];
+    final details = <_MeterRow>[
+      _MeterRow('Photo quality', quality.qualityScore, caption: quality.simpleSummary),
+      _MeterRow(
+        'Check usefulness',
+        validation.authenticationUsefulness,
+        caption: validation.usefulnessLabel,
+      ),
+      if (quality.framing > 0) _MeterRow('Framing', quality.framing),
+      if (quality.detail > 0) _MeterRow('Close-up', quality.detail),
+    ];
+
+    final safeBottom = MediaQuery.of(context).padding.bottom;
 
     return Scaffold(
-      backgroundColor: AppColors.backgroundOf(context),
-      appBar: AppBar(
-        leading: IconButton(
-          icon: const Icon(CupertinoIcons.chevron_back),
-          onPressed: onRetake,
-        ),
-        title: Text(item.title),
-      ),
-      body: SafeArea(
-        child: ListView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-          children: [
-            // ---------------------------------------------------- headline
-            FadeSlideTransition(
-              delay: const Duration(milliseconds: 40),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    validation.headline,
-                    style: AppTypography.titleLarge.copyWith(
-                      color: isRejected ? AppColors.danger : AppColors.textPrimaryOf(context),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    validation.guidance,
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: AppColors.textSecondaryOf(context),
-                    ),
-                  ),
-                  if (isRejected) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      validation.callToAction,
-                      style: AppTypography.captionMedium.copyWith(color: AppColors.danger),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
+      backgroundColor: LenzColors.ivory,
+      body: LenzMoodBackground(
+        mood: isRejected ? const Color(0xFFF6E4B8) : const Color(0xFFCFEED6),
+        child: SafeArea(
+          bottom: false,
+          child: ListView(
+            physics: const BouncingScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(20, 12, 20, 24 + safeBottom),
+            children: [
+              LenzTopBar(title: 'Photo quality', onBack: onRetake),
 
-            // ------------------------------------------------ the photo
-            FadeSlideTransition(
-              delay: const Duration(milliseconds: 70),
-              child: GlassCard(
-                padding: const EdgeInsets.all(10),
-                child: Stack(
-                  children: [
-                    AppImage(
-                      imagePath: photoPath ?? '',
-                      height: 190,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    if (isWrongEvidence)
-                      Positioned(
-                        top: 8,
-                        left: 8,
-                        right: 8,
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              // ------------------------------------------------ the photo
+              LenzRise(
+                index: 0,
+                child: LenzCard(
+                  radius: 32,
+                  padding: const EdgeInsets.all(12),
+                  child: SizedBox(
+                    height: 210,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          const DecoratedBox(
                             decoration: BoxDecoration(
-                              color: AppColors.danger,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              'Looks like: ${validation.evidenceTypeDetected}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w700,
+                              gradient: RadialGradient(
+                                center: Alignment(0, -.2),
+                                radius: .8,
+                                colors: [Color(0xFF3B5F50), Color(0xFF14221C)],
                               ),
                             ),
                           ),
-                        ),
+                          if (photoPath != null && photoPath!.isNotEmpty)
+                            AppImage(
+                              imagePath: photoPath!,
+                              fit: BoxFit.cover,
+                              placeholder: const SizedBox.shrink(),
+                            ),
+                          Positioned(
+                            left: 12,
+                            top: 12,
+                            right: 12,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Flexible(child: _pillBox(LenzPill(label: item.title))),
+                                const SizedBox(width: 8),
+                                isRejected
+                                    ? LenzPill(
+                                        label: validation.headline,
+                                        icon: LenzIcons.warn,
+                                        iconStrokeWidth: 3,
+                                        variant: isWrongEvidence
+                                            ? LenzPillVariant.fake
+                                            : LenzPillVariant.unsure,
+                                      )
+                                    : const LenzPill(
+                                        label: 'Looks good',
+                                        icon: LenzIcons.check,
+                                        iconStrokeWidth: 3,
+                                        variant: LenzPillVariant.auth,
+                                      ),
+                              ],
+                            ),
+                          ),
+                          if (isWrongEvidence)
+                            Positioned(
+                              left: 12,
+                              right: 12,
+                              bottom: 12,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: _pillBox(
+                                  LenzPill(
+                                    label: 'Looks like: ${validation.evidenceTypeDetected}',
+                                    variant: LenzPillVariant.fake,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                  ],
+                    ),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 14),
 
-            // ------------------------- the three independent measurements
-            FadeSlideTransition(
-              delay: const Duration(milliseconds: 100),
-              child: GlassCard(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                child: Column(
-                  children: [
-                    _metricRow(
-                      context,
-                      label: 'Photo Quality',
-                      value: quality.qualityScore,
-                      caption: quality.simpleSummary,
-                    ),
-                    const Divider(height: 20),
-                    _metricRow(
-                      context,
-                      label: 'Right Part',
-                      value: validation.matchConfidence,
-                      caption: validation.matchToRequestedEvidence
-                          ? 'Shows the ${item.title.toLowerCase()}'
-                          : "Doesn't show the ${item.title.toLowerCase()}",
-                    ),
-                    const Divider(height: 20),
-                    _metricRow(
-                      context,
-                      label: 'Check Usefulness',
-                      value: validation.authenticationUsefulness,
-                      caption: validation.usefulnessLabel,
-                    ),
-                  ],
+              // -------------------------------------------- Lenz reacts
+              LenzRise(
+                index: 1,
+                child: LenzCoach(
+                  mood: mood,
+                  text: coachText,
+                  width: 118,
+                  margin: const EdgeInsets.only(top: 6, bottom: 8),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
 
-            // -------------------------------------- quality sub-breakdown
-            if (quality.sharpness + quality.lighting + quality.framing + quality.detail > 0)
-              FadeSlideTransition(
-                delay: const Duration(milliseconds: 130),
-                child: GlassCard(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              // ------------------------------------- the real measurements
+              LenzRise(
+                index: 2,
+                child: LenzCard(
+                  radius: 28,
+                  padding: const EdgeInsets.all(16),
+                  child: Column(children: [for (final m in meters) _meter(m)]),
+                ),
+              ),
+              const SizedBox(height: 12),
+              LenzRise(
+                index: 3,
+                child: LenzCard(
+                  radius: 24,
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
                         'PHOTO DETAILS',
-                        style: AppTypography.captionMedium.copyWith(
-                          letterSpacing: 0.8,
-                          color: AppColors.textSecondaryOf(context),
-                        ),
+                        style: LenzText.cap.copyWith(fontSize: 11.5, letterSpacing: .8),
                       ),
-                      const SizedBox(height: 10),
-                      _bar(context, 'Sharpness', quality.sharpness),
-                      _bar(context, 'Lighting', quality.lighting),
-                      _bar(context, 'Framing', quality.framing),
-                      _bar(context, 'Close-up', quality.detail),
+                      const SizedBox(height: 4),
+                      for (final m in details) _detail(m),
                     ],
                   ),
                 ),
               ),
 
-            if (note.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              FadeSlideTransition(
-                delay: const Duration(milliseconds: 150),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isRejected ? AppColors.dangerBg : AppColors.accentSoft,
-                    borderRadius: BorderRadius.circular(12),
+              if (note.isNotEmpty && isRejected) ...[
+                const SizedBox(height: 12),
+                LenzRise(
+                  index: 4,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: LenzColors.warnSoft,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const LenzIcon(
+                          LenzIcons.warn,
+                          size: 16,
+                          strokeWidth: 2.4,
+                          color: LenzColors.warn,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(note, style: LenzText.cap.copyWith(color: LenzColors.warn)),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        isRejected
-                            ? CupertinoIcons.exclamationmark_triangle_fill
-                            : CupertinoIcons.checkmark_seal_fill,
-                        size: 16,
-                        color: isRejected ? AppColors.danger : AppColors.accent,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          note,
-                          style: AppTypography.captionMedium.copyWith(
-                            color: isRejected ? AppColors.danger : AppColors.accent,
+                ),
+              ],
+
+              if (tips.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                for (final t in tips)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4, left: 4),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Padding(
+                          padding: EdgeInsets.only(top: 6, right: 8),
+                          child: SizedBox(
+                            width: 5,
+                            height: 5,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: LenzColors.muted,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                        Expanded(child: Text(t, style: LenzText.cap)),
+                      ],
+                    ),
                   ),
+              ],
+
+              const SizedBox(height: 16),
+
+              // ---------------------------------------------------- actions
+              LenzRise(
+                index: 5,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (!isRejected) ...[
+                      LenzButton(
+                        label: 'Keep photo',
+                        icon: LenzIcons.check,
+                        iconStrokeWidth: 2.6,
+                        onPressed: onKeep,
+                      ),
+                      const SizedBox(height: 8),
+                      LenzButton(
+                        label: 'Retake',
+                        variant: LenzButtonVariant.ghost,
+                        onPressed: onRetake,
+                      ),
+                    ] else ...[
+                      LenzButton(
+                        label: 'Retake photo',
+                        icon: LenzIcons.refresh,
+                        variant: canKeepAnyway
+                            ? LenzButtonVariant.ghost
+                            : LenzButtonVariant.primary,
+                        onPressed: onRetake,
+                      ),
+                      if (canKeepAnyway) ...[
+                        const SizedBox(height: 8),
+                        LenzButton(
+                          label: 'Keep anyway',
+                          variant: LenzButtonVariant.soft,
+                          onPressed: onKeepAnyway,
+                        ),
+                      ],
+                    ],
+                    const SizedBox(height: 4),
+                    Center(
+                      child: TextButton(
+                        onPressed: onChooseAnother,
+                        child: Text(
+                          'Choose another photo',
+                          style: LenzText.link.copyWith(color: LenzColors.forest2),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
-
-            if (tips.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              ...tips.map(
-                (i) => Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Padding(
-                        padding: EdgeInsets.only(top: 5, right: 8),
-                        child: Icon(CupertinoIcons.circle_fill, size: 5, color: AppColors.textTertiary),
-                      ),
-                      Expanded(child: Text(i, style: AppTypography.caption)),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-
-            const SizedBox(height: 22),
-
-            // ---------------------------------------------------- actions
-            FadeSlideTransition(
-              delay: const Duration(milliseconds: 180),
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _secondaryButton(context, 'Retake', onRetake),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _secondaryButton(context, 'Choose Another Photo', onChooseAnother),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  if (!isRejected)
-                    _primaryButton('Use this photo', onKeep)
-                  else if (validation.isOverridable && onKeepAnyway != null)
-                    _outlineButton(context, 'Use it anyway', onKeepAnyway!),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _metricRow(
-    BuildContext context, {
-    required String label,
-    required int value,
-    required String caption,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+  static Widget _pillBox(Widget pill) =>
+      FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: pill);
+
+  Widget _meter(_MeterRow m) {
+    final warn = m.warn || m.value < _warnBelow;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
             children: [
-              Text(
-                label,
-                style: AppTypography.titleMedium.copyWith(
-                  fontSize: 14,
-                  color: AppColors.textPrimaryOf(context),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(m.label, style: LenzText.item.copyWith(fontSize: 15.5)),
+                    if (m.caption != null)
+                      Text(m.caption!, style: LenzText.itemSub.copyWith(fontSize: 12)),
+                  ],
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(caption, style: AppTypography.caption.copyWith(fontSize: 11)),
+              const SizedBox(width: 8),
+              LenzPill(
+                label: '${m.value}%',
+                variant: warn ? LenzPillVariant.unsure : LenzPillVariant.auth,
+              ),
             ],
           ),
-        ),
-        const SizedBox(width: 10),
-        Text(
-          '$value%',
-          style: AppTypography.titleLarge.copyWith(
-            fontSize: 22,
-            color: _scoreColor(value),
-          ),
-        ),
-      ],
+          const SizedBox(height: 8),
+          warn ? LenzMeter.warn(value: m.value / 100) : LenzMeter(value: m.value / 100),
+        ],
+      ),
     );
   }
 
-  Widget _bar(BuildContext context, String label, int value) {
+  Widget _detail(_MeterRow m) {
+    final warn = m.value < _warnBelow;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          SizedBox(
-            width: 74,
-            child: Text(label, style: AppTypography.caption.copyWith(fontSize: 11.5)),
-          ),
           Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: (value / 100).clamp(0.0, 1.0),
-                minHeight: 6,
-                backgroundColor: AppColors.neutralPill,
-                valueColor: AlwaysStoppedAnimation(_scoreColor(value)),
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(m.label, style: LenzText.item.copyWith(fontSize: 14)),
+                if (m.caption != null)
+                  Text(m.caption!, style: LenzText.itemSub.copyWith(fontSize: 12)),
+              ],
             ),
           ),
-          SizedBox(
-            width: 34,
-            child: Text(
-              '$value',
-              textAlign: TextAlign.right,
-              style: AppTypography.captionMedium.copyWith(fontSize: 11.5),
+          const SizedBox(width: 8),
+          Text(
+            '${m.value}%',
+            style: LenzText.item.copyWith(
+              fontSize: 15,
+              color: warn ? LenzColors.warn : LenzColors.ok,
             ),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _primaryButton(String text, VoidCallback onTap) {
-    return BounceButton(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 15),
-        decoration: BoxDecoration(
-          color: AppColors.buttonDark,
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 15),
-        ),
-      ),
-    );
-  }
-
-  Widget _secondaryButton(BuildContext context, String text, VoidCallback onTap) {
-    return BounceButton(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
-        decoration: BoxDecoration(
-          color: AppColors.neutralPillOf(context),
-          borderRadius: BorderRadius.circular(22),
-        ),
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: AppColors.textPrimaryOf(context),
-            fontWeight: FontWeight.w600,
-            fontSize: 13.5,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _outlineButton(BuildContext context, String text, VoidCallback onTap) {
-    return BounceButton(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: AppColors.warning, width: 1.4),
-        ),
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: AppColors.warning,
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
-          ),
-        ),
-      ),
-    );
-  }
+class _MeterRow {
+  final String label;
+  final int value;
+  final String? caption;
+  final bool warn;
+  const _MeterRow(this.label, this.value, {this.caption, this.warn = false});
 }

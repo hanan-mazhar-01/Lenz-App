@@ -1,61 +1,36 @@
-import 'package:flutter/cupertino.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_typography.dart';
-import '../../models/authentication_result.dart';
+import 'package:flutter/widgets.dart';
 
+import '../../models/authentication_result.dart';
+import '../ui/ui.dart';
+
+/// Verdict pill in the Lenz style (`.pill.auth|fake|unsure`): soft verdict
+/// colour, verdict icon and the full verdict label
+/// (Appears Authentic / Likely Replica / Unable to Verify).
 class VerdictBadge extends StatelessWidget {
   final Verdict verdict;
   final bool isSmall;
 
-  const VerdictBadge({
-    super.key,
-    required this.verdict,
-    this.isSmall = false,
-  });
+  const VerdictBadge({super.key, required this.verdict, this.isSmall = false});
 
   @override
   Widget build(BuildContext context) {
-    Color bg;
-    Color fg;
-    IconData icon;
-
-    switch (verdict) {
-      case Verdict.likelyAuthentic:
-        bg = AppColors.successBg;
-        fg = AppColors.success;
-        icon = CupertinoIcons.checkmark_circle_fill;
-        break;
-      case Verdict.likelyReplica:
-        bg = AppColors.dangerBg;
-        fg = AppColors.danger;
-        icon = CupertinoIcons.exclamationmark_triangle_fill;
-        break;
-      case Verdict.inconclusive:
-        bg = AppColors.neutralPill;
-        fg = AppColors.textSecondary;
-        icon = CupertinoIcons.question_circle_fill;
-        break;
-    }
-
+    final v = LenzVerdictStyle.of(verdict);
+    final fontSize = isSmall ? 11.0 : 12.0;
     return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: isSmall ? 8 : 10,
-        vertical: isSmall ? 3 : 5,
-      ),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(20),
-      ),
+      height: isSmall ? 22 : 26,
+      padding: EdgeInsets.symmetric(horizontal: isSmall ? 8 : 10),
+      decoration: BoxDecoration(color: v.soft, borderRadius: BorderRadius.circular(LenzRadii.pill)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: isSmall ? 11 : 13, color: fg),
-          const SizedBox(width: 4),
-          Text(
-            verdict.label,
-            style: AppTypography.badge.copyWith(
-              color: fg,
-              fontSize: isSmall ? 10.5 : 12,
+          LenzIcon(v.icon, size: isSmall ? 12 : 13, strokeWidth: 2.4, color: v.color),
+          SizedBox(width: isSmall ? 4 : 5),
+          Flexible(
+            child: Text(
+              v.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: LenzText.pill.copyWith(color: v.color, fontSize: fontSize),
             ),
           ),
         ],
@@ -63,4 +38,3 @@ class VerdictBadge extends StatelessWidget {
     );
   }
 }
-

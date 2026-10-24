@@ -1,14 +1,19 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import '../../core/theme/app_colors.dart';
+
 import '../../models/evidence.dart';
 import '../../models/product.dart';
-import '../../widgets/animations/bounce_button.dart';
-import '../../widgets/animations/fade_slide_transition.dart';
+import '../../widgets/camera/capture_guide_overlay.dart';
+import '../../widgets/camera/lenz_camera_chrome.dart';
 import '../../widgets/common/app_image.dart';
+import '../../widgets/lenz/lenz.dart';
+import '../../widgets/ui/ui.dart';
 
 /// The requested capture plan. Every angle is a request, not a requirement —
 /// the user may supply what they have and analyse at any time (§4, §27).
+///
+/// Lenz layout (prototype `SCREENS.evidence`): journey stepper at Evidence, a
+/// progress ring of photos supplied, Lenz coaching, one row per requested
+/// part (Done / Skipped / Capture), and the bottom action.
 class DynamicEvidenceView extends StatelessWidget {
   final Product product;
   final List<EvidenceItem> evidenceItems;
@@ -47,353 +52,253 @@ class DynamicEvidenceView extends StatelessWidget {
     return 0;
   }
 
+  bool _hasPhoto(EvidenceItem item) {
+    final photo = capturedImages[item.id];
+    return photo != null && photo.isNotEmpty;
+  }
+
   @override
   Widget build(BuildContext context) {
     final total = evidenceItems.length;
     final allCaptured = evidenceItems.every(
       (e) => capturedImages.containsKey(e.id) || e.isUnavailable,
     );
+    final done = evidenceItems.where(_hasPhoto).length;
+    final nextIndex = allCaptured ? -1 : _firstUncapturedIndex;
+    final next = nextIndex >= 0 && nextIndex < total ? evidenceItems[nextIndex] : null;
+    final safeBottom = MediaQuery.of(context).padding.bottom;
+    final narrow = MediaQuery.of(context).size.width < 360;
+
+    final coachText = allCaptured
+        ? (canAnalyze ? 'Nice work! Ready when you are.' : 'That covers every photo on the list.')
+        : next != null
+        ? 'Next up: ${next.title}.'
+        : "We'll guide you through the photos we need.";
 
     return Scaffold(
-      backgroundColor: AppColors.warmIvory,
-      body: SafeArea(
-        child: Column(
+      backgroundColor: LenzColors.ivory,
+      body: LenzMoodBackground(
+        mood: const Color(0xFFE4E0F4),
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            // ───────────────────── Top bar: back arrow
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 20, 0),
-              child: Row(
+            SafeArea(
+              bottom: false,
+              child: ListView(
+                physics: const BouncingScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(20, 12, 20, 120 + safeBottom),
                 children: [
-                  BounceButton(
-                    onTap: onBack,
-                    child: Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: AppColors.veryLightWarmGray,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: AppColors.nearBlack.withOpacity(0.06),
-                        ),
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          CupertinoIcons.chevron_back,
-                          color: AppColors.nearBlack,
-                          size: 18,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // ───────────────────── Header: Title + photo count pill
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: FadeSlideTransition(
-                delay: const Duration(milliseconds: 40),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  LenzTopBar(title: 'Evidence', onBack: onBack),
+                  const LenzJourneyStepper(step: 2, rider: LenzJourneyRider()),
+                  LenzRise(
+                    index: 0,
+                    child: Row(
                       children: [
-                        Expanded(
-                          child: Text(
-                            'We need a closer look',
-                            style: TextStyle(
-                              color: AppColors.nearBlack,
-                              fontSize: 26,
-                              fontWeight: FontWeight.w800,
-                              height: 1.15,
-                              letterSpacing: -0.5,
-                            ),
+                        LenzRing(
+                          value: total == 0 ? 0 : done / total,
+                          size: narrow ? 82 : 96,
+                          strokeWidth: narrow ? 10 : 11,
+                          color: LenzColors.leaf,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              FittedBox(
+                                child: Text(
+                                  '$done/$total',
+                                  style: LenzText.stat.copyWith(fontSize: 26, height: 1),
+                                ),
+                              ),
+                              Text('photos', style: LenzText.cap.copyWith(fontSize: 11)),
+                            ],
                           ),
                         ),
                         const SizedBox(width: 12),
-                        // Photo count pill
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 7,
-                          ),
-                          decoration: BoxDecoration(
-                            color: AppColors.veryLightWarmGray,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: AppColors.nearBlack.withOpacity(0.06),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(
-                                CupertinoIcons.camera_fill,
-                                size: 14,
-                                color: AppColors.nearBlack,
-                              ),
-                              const SizedBox(width: 5),
                               Text(
-                                '$total photos',
-                                style: TextStyle(
-                                  color: AppColors.nearBlack,
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                                'We need a closer look',
+                                style: LenzText.display.copyWith(fontSize: 25),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                "We'll guide you through the photos we need.",
+                                style: LenzText.sub,
                               ),
                             ],
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 6),
-                    Text(
-                      "We'll guide you through the photos we need.",
-                      style: TextStyle(
-                        color: AppColors.charcoalGray,
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w400,
-                        height: 1.3,
+                  ),
+                  LenzRise(
+                    index: 1,
+                    child: LenzCoach(
+                      mood: allCaptured ? LenzMood.pleased : LenzMood.think,
+                      text: coachText,
+                      width: 104,
+                      margin: const EdgeInsets.only(top: 6, bottom: 8),
+                    ),
+                  ),
+                  for (var i = 0; i < evidenceItems.length; i++)
+                    LenzRise(
+                      index: 2 + i,
+                      child: _row(i, evidenceItems[i], isNext: i == nextIndex),
+                    ),
+                ],
+              ),
+            ),
+
+            // ───────────────────── Bottom action over an ivory fade
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + safeBottom),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0x00FCF8F6), LenzColors.ivory],
+                    stops: [0, .38],
+                  ),
+                ),
+                child: allCaptured
+                    ? LenzButton(
+                        label: 'Check $acceptedCount photo${acceptedCount == 1 ? '' : 's'}',
+                        icon: LenzIcons.sparkles,
+                        pulse: canAnalyze,
+                        onPressed: canAnalyze ? onAnalyze : null,
+                      )
+                    : LenzButton(
+                        label: done == 0 ? 'Start capturing' : 'Take next photo',
+                        icon: LenzIcons.camera,
+                        onPressed: () => onSelectPart(_firstUncapturedIndex),
                       ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _row(int index, EvidenceItem item, {required bool isNext}) {
+    final photo = capturedImages[item.id];
+    final hasPhoto = photo != null && photo.isNotEmpty;
+    final skipped = !hasPhoto && item.isUnavailable;
+
+    Widget thumb;
+    if (hasPhoto) {
+      thumb = Stack(
+        fit: StackFit.expand,
+        children: [
+          AppImage(imagePath: photo, fit: BoxFit.cover),
+          const DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0x99BFE3CB), Color(0xCC7FCB97)],
+              ),
+            ),
+          ),
+          const Center(
+            child: LenzIcon(LenzIcons.check, size: 26, strokeWidth: 3, color: Colors.white),
+          ),
+        ],
+      );
+    } else if (item.imageAsset.isNotEmpty) {
+      thumb = AppImage(imagePath: item.imageAsset, fit: BoxFit.cover);
+    } else {
+      thumb = Center(
+        child: CaptureGuideIllustration(
+          type: item.guideType,
+          size: 40,
+          background: Colors.transparent,
+          foreground: LenzColors.forest,
+        ),
+      );
+    }
+
+    final Widget trailing;
+    if (hasPhoto) {
+      trailing = const LenzPill(label: 'Done', variant: LenzPillVariant.auth);
+    } else if (skipped) {
+      trailing = const LenzPill(
+        label: 'Skipped',
+        background: Color(0xFFEEEEEE),
+        foreground: Color(0xFF777777),
+      );
+    } else if (isNext) {
+      trailing = const LenzPill(
+        label: 'Capture',
+        icon: LenzIcons.camera,
+        background: LenzColors.forest,
+        foreground: Colors.white,
+      );
+    } else {
+      trailing = const LenzIcon(LenzIcons.chevR, size: 18, color: LenzColors.ink);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: LenzPressable(
+        onTap: () => onSelectPart(index),
+        pressedScale: .97,
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: LenzColors.paper,
+            borderRadius: BorderRadius.circular(LenzRadii.item),
+            border: Border.all(
+              color: isNext ? LenzColors.leaf : LenzColors.line,
+              width: isNext ? 2 : 1,
+            ),
+            boxShadow: [
+              if (isNext) const BoxShadow(color: Color.fromRGBO(46, 164, 79, .12), spreadRadius: 6),
+              ...LenzShadows.sh1,
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  color: LenzColors.mint2,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: thumb,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: LenzText.item,
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      skipped ? 'Skipped' : item.guide,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: LenzText.itemSub,
                     ),
                   ],
                 ),
               ),
-            ),
-
-            const SizedBox(height: 18),
-
-            // ───────────────────── Evidence items list
-            Expanded(
-              child: ListView.builder(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                itemCount: evidenceItems.length,
-                itemBuilder: (context, index) {
-                  final item = evidenceItems[index];
-                  final photo = capturedImages[item.id];
-                  final hasPhoto = photo != null && photo.isNotEmpty;
-
-                  return FadeSlideTransition(
-                    delay: Duration(milliseconds: 60 + (index * 30)),
-                    child: Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: BounceButton(
-                        onTap: () => onSelectPart(index),
-                        child: Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: hasPhoto
-                                ? AppColors.pureWhite
-                                : AppColors.veryLightWarmGray,
-                            borderRadius: BorderRadius.circular(18),
-                            border: hasPhoto
-                                ? Border.all(
-                                    color: AppColors.deepForestGreen
-                                        .withOpacity(0.25),
-                                    width: 1.2,
-                                  )
-                                : null,
-                          ),
-                          child: Row(
-                            children: [
-                              // Thumbnail or placeholder
-                              Container(
-                                width: 60,
-                                height: 60,
-                                decoration: BoxDecoration(
-                                  color: hasPhoto
-                                      ? Colors.transparent
-                                      : AppColors.softWarmGray,
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                clipBehavior: Clip.antiAlias,
-                                child: hasPhoto
-                                    ? AppImage(
-                                        imagePath: photo,
-                                        width: 60,
-                                        height: 60,
-                                        fit: BoxFit.cover,
-                                        borderRadius:
-                                            BorderRadius.circular(14),
-                                      )
-                                    : item.imageAsset.isNotEmpty
-                                        ? AppImage(
-                                            imagePath: item.imageAsset,
-                                            width: 60,
-                                            height: 60,
-                                            fit: BoxFit.cover,
-                                            borderRadius:
-                                                BorderRadius.circular(14),
-                                          )
-                                        : Center(
-                                            child: Icon(
-                                              item.isUnavailable
-                                                  ? CupertinoIcons.nosign
-                                                  : CupertinoIcons.camera,
-                                              size: 22,
-                                              color: AppColors.softGray,
-                                            ),
-                                          ),
-                              ),
-
-                              const SizedBox(width: 12),
-
-                              // Number badge
-                              Container(
-                                width: 26,
-                                height: 26,
-                                decoration: BoxDecoration(
-                                  color: hasPhoto
-                                      ? AppColors.deepForestGreen
-                                      : AppColors.nearBlack.withOpacity(0.08),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    '${item.index}',
-                                    style: TextStyle(
-                                      color: hasPhoto
-                                          ? Colors.white
-                                          : AppColors.nearBlack,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ),
-
-                              const SizedBox(width: 10),
-
-                              // Title + guide text
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      item.title,
-                                      style: TextStyle(
-                                        color: AppColors.nearBlack,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w700,
-                                        height: 1.2,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      hasPhoto
-                                          ? 'Photo added ✓'
-                                          : item.isUnavailable
-                                              ? 'Skipped'
-                                              : item.guide,
-                                      style: TextStyle(
-                                        color: hasPhoto
-                                            ? AppColors.deepForestGreen
-                                            : item.isUnavailable
-                                                ? AppColors.softGray
-                                                : AppColors.charcoalGray,
-                                        fontSize: 12.5,
-                                        fontWeight: hasPhoto
-                                            ? FontWeight.w600
-                                            : FontWeight.w400,
-                                        height: 1.3,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ),
-                              ),
-
-                              const SizedBox(width: 8),
-
-                              // Checkmark or Chevron
-                              if (hasPhoto)
-                                Container(
-                                  width: 24,
-                                  height: 24,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.deepForestGreen,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Center(
-                                    child: Icon(
-                                      Icons.check_rounded,
-                                      color: Colors.white,
-                                      size: 15,
-                                    ),
-                                  ),
-                                )
-                              else
-                                Icon(
-                                  CupertinoIcons.chevron_right,
-                                  size: 16,
-                                  color: AppColors.softGray,
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-
-            // ───────────────────── Bottom button: Start capturing / Check photos
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-              child: BounceButton(
-                onTap: allCaptured
-                    ? (canAnalyze ? onAnalyze : null)
-                    : () => onSelectPart(_firstUncapturedIndex),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 17),
-                  decoration: BoxDecoration(
-                    color: AppColors.deepForestGreen,
-                    borderRadius: BorderRadius.circular(28),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.deepForestGreen.withOpacity(0.2),
-                        blurRadius: 14,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        allCaptured
-                            ? 'Check $acceptedCount photo${acceptedCount == 1 ? '' : 's'}'
-                            : 'Start capturing',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16.5,
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      const Icon(
-                        Icons.arrow_forward_rounded,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
+              const SizedBox(width: 8),
+              trailing,
+            ],
+          ),
         ),
       ),
     );

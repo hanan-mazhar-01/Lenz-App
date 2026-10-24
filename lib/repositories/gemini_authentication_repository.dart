@@ -203,7 +203,7 @@ class GeminiAuthenticationRepository {
       images: [prepared.toInlineData()],
       schema: AuthenticityPrompts.identificationSchema,
       maxOutputTokens: 1200,
-      timeout: const Duration(seconds: 30),
+      timeout: const Duration(seconds: 60),
       parse: (json) {
         if (json['status'] == null && json['product_detected'] == null) {
           throw const FormatException('identification without status');
@@ -276,7 +276,7 @@ class GeminiAuthenticationRepository {
       images: const [],
       schema: AuthenticityPrompts.recommendationSchema(ctx.profile),
       maxOutputTokens: 1500,
-      timeout: const Duration(seconds: 30),
+      timeout: const Duration(seconds: 60),
       parse: (json) {
         if (json['ranked'] is! List) throw const FormatException('ranking without "ranked"');
         return AiEvidenceRanking.fromJson(json, validIds);
@@ -361,7 +361,7 @@ class GeminiAuthenticationRepository {
       images: [prepared.toInlineData()],
       schema: AuthenticityPrompts.photoCheckSchema(ctx.profile),
       maxOutputTokens: 700,
-      timeout: const Duration(seconds: 30),
+      timeout: const Duration(seconds: 60),
       parse: (j) {
         for (final k in ['matched_request_id', 'usable', 'detail_readability', 'shows_requested_part']) {
           if (j[k] == null) throw FormatException('photo check without $k');
@@ -591,7 +591,7 @@ class GeminiAuthenticationRepository {
       images: [full.toInlineData()],
       schema: AuthenticityPrompts.photoAnalysisSchema(ctx.profile),
       maxOutputTokens: 3000,
-      timeout: const Duration(seconds: 45),
+      timeout: const Duration(seconds: 75),
       parse: (json) {
         final list = json['assessments'];
         if (list is! List) throw const FormatException('analysis without assessments');
@@ -686,7 +686,7 @@ class GeminiAuthenticationRepository {
       images: const [],
       schema: AuthenticityPrompts.finalEvaluationSchema(mismatches),
       maxOutputTokens: 2500,
-      timeout: const Duration(seconds: 45),
+      timeout: const Duration(seconds: 75),
       parse: (json) {
         if (json['variation_checks'] is! List || json['identity_consistent'] is! bool) {
           throw const FormatException('final evaluation missing required fields');

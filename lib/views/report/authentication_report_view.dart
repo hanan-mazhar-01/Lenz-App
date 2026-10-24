@@ -1,21 +1,27 @@
-import 'dart:math' as math;
-import 'package:flutter/cupertino.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import '../../core/theme/app_colors.dart';
 import '../../models/authentication_result.dart';
 import '../../models/evidence.dart';
-import '../../widgets/animations/bounce_button.dart';
-import '../../widgets/animations/fade_slide_transition.dart';
 import '../../widgets/cards/animated_favorite_button.dart';
 import '../../widgets/common/app_image.dart';
-import '../../services/haptics.dart';
+import '../../widgets/lenz/lenz.dart';
+import '../../widgets/ui/lenz_confetti.dart';
+import '../../widgets/ui/ui.dart';
 
+/// The verdict report (prototype `SCREENS.report`): verdict hero with Lenz
+/// reacting to the result, summary card with the evidence-strength ring,
+/// per-part evidence list and the disclaimer.
+///
+/// Every value shown comes from the real [AuthenticationReport]. Engine v3+
+/// reports carry no numeric confidence: the ring shows the qualitative
+/// evidence strength (Strong / Moderate / Limited); only legacy reports that
+/// stored a percentage show one.
 class AuthenticationReportView extends StatefulWidget {
   final AuthenticationReport report;
   final VoidCallback onDone;
   final VoidCallback onToggleFavorite;
   final ValueChanged<EvidenceItem> onSelectPart;
-  final VoidCallback onOpenDetectYourself;
   final VoidCallback? onCaptureMoreEvidence;
 
   const AuthenticationReportView({
@@ -24,7 +30,6 @@ class AuthenticationReportView extends StatefulWidget {
     required this.onDone,
     required this.onToggleFavorite,
     required this.onSelectPart,
-    required this.onOpenDetectYourself,
     this.onCaptureMoreEvidence,
   });
 
@@ -32,527 +37,356 @@ class AuthenticationReportView extends StatefulWidget {
   State<AuthenticationReportView> createState() => _AuthenticationReportViewState();
 }
 
+/// Lenz's first line per verdict (prototype `BUB`) and the line after a tap.
+const Map<LenzVerdictKind, (String, String)> _bubbles = {
+  LenzVerdictKind.auth: ('This one passes my inspection!', 'Told you, a good one!'),
+  LenzVerdictKind.fake: ('Oh no. I found some red flags.', 'Trust the details, not the tag.'),
+  LenzVerdictKind.unsure: ("Hmm, I can't say for sure.", 'More photos, please!'),
+};
+
+LenzMood _moodFor(LenzVerdictKind k) => switch (k) {
+      LenzVerdictKind.auth => LenzMood.happy,
+      LenzVerdictKind.fake => LenzMood.shocked,
+      LenzVerdictKind.unsure => LenzMood.unsure,
+    };
+
 class _AuthenticationReportViewState extends State<AuthenticationReportView> {
+  final LenzConfettiController _confetti = LenzConfettiController();
+  Timer? _confettiTimer;
+  bool _tapped = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Confetti only for an authentic verdict (prototype: 600ms after mount).
+    if (widget.report.verdict == Verdict.likelyAuthentic) {
+      _confettiTimer = Timer(const Duration(milliseconds: 600), () {
+        if (!mounted) return;
+        final w = MediaQuery.sizeOf(context).width;
+        _confetti.burst(origin: Offset(w / 2, 260), count: 130);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _confettiTimer?.cancel();
+    _confetti.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final report = widget.report;
-    final int score = report.authenticationConfidence;
+    final v = LenzVerdictStyle.of(report.verdict);
+    final pad = MediaQuery.paddingOf(context);
+    final bubble = _bubbles[v.kind]!;
 
     return Scaffold(
-      backgroundColor: AppColors.warmIvory,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(
-            CupertinoIcons.chevron_back,
-            color: AppColors.nearBlack,
-            size: 24,
-          ),
-          onPressed: widget.onDone,
-        ),
-        centerTitle: true,
-        title: const Text(
-          'Authentication Report',
-          style: TextStyle(
-            color: AppColors.nearBlack,
-            fontSize: 18.5,
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.3,
-          ),
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: AnimatedFavoriteButton(
-              isFavorite: report.isFavorite,
-              onToggle: widget.onToggleFavorite,
-            ),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: ListView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 34),
-          children: [
-            // 1. Product Card
-            FadeSlideTransition(
-              delay: const Duration(milliseconds: 40),
-              child: _buildProductCard(context, report),
-            ),
-
-            const SizedBox(height: 18),
-
-            // 2. Score Ring + Verdict Badge + 1-line Reason
-            FadeSlideTransition(
-              delay: const Duration(milliseconds: 80),
-              child: _buildScoreAndVerdictSection(context, score, report),
-            ),
-
-            const SizedBox(height: 18),
-
-            // 3. Quick Summary Card
-            FadeSlideTransition(
-              delay: const Duration(milliseconds: 120),
-              child: _buildQuickSummaryCard(context, report),
-            ),
-
-            // 3b. Scores, limitations, next photo, repeat-scan note
-            if (_hasAssessmentDetails(report)) ...[
-              const SizedBox(height: 14),
-              FadeSlideTransition(
-                delay: const Duration(milliseconds: 140),
-                child: _buildAssessmentDetailsCard(report),
-              ),
-            ],
-
-            const SizedBox(height: 22),
-
-            // 4. Evidence List Section (Only shows items with user photos + percentage indicator line)
-            FadeSlideTransition(
-              delay: const Duration(milliseconds: 160),
-              child: _buildEvidenceSection(context, report),
-            ),
-
-            const SizedBox(height: 20),
-
-            // 5. "Check It Yourself" Button
-            FadeSlideTransition(
-              delay: const Duration(milliseconds: 200),
-              child: _buildCheckYourselfButton(context),
-            ),
-
-            const SizedBox(height: 24),
-
-            // 6. Disclaimer
-            const Center(
-              child: Text(
-                'AI assessment, not a professional certification.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppColors.softGray,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 1. Product Card matching the reference mockup
-  Widget _buildProductCard(BuildContext context, AuthenticationReport report) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.veryLightWarmGray,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: AppColors.nearBlack.withOpacity(0.06),
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.nearBlack.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
+      backgroundColor: LenzColors.ivory,
+      body: Stack(
+        fit: StackFit.expand,
         children: [
-          // Product Thumbnail
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: AppColors.nearBlack.withOpacity(0.08),
-                width: 0.8,
-              ),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(15),
-              child: AppImage(
-                imagePath: report.product.imageAsset,
-                width: 64,
-                height: 64,
-                fit: BoxFit.cover,
-              ),
-            ),
-          ),
-
-          const SizedBox(width: 16),
-
-          // Product Name & Category
-          Expanded(
+          LenzBlob(color: v.bg, height: 520),
+          SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(
-                  report.product.name,
-                  style: const TextStyle(
-                    color: AppColors.nearBlack,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.3,
+                // Back / favorite row (the app has no share feature).
+                Padding(
+                  padding: EdgeInsets.fromLTRB(20, pad.top + 14, 20, 0),
+                  child: Row(
+                    children: [
+                      LenzIconButton(
+                        icon: LenzIcons.chevL,
+                        semanticLabel: 'Back',
+                        onTap: widget.onDone,
+                      ),
+                      const Spacer(),
+                      LenzIconButton(
+                        semanticLabel: 'Favorite',
+                        onTap: widget.onToggleFavorite,
+                        child: AnimatedFavoriteButton(
+                          isFavorite: report.isFavorite,
+                          onToggle: widget.onToggleFavorite,
+                        ),
+                      ),
+                    ],
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '${report.product.category.label} · ${report.product.brand}',
-                  style: const TextStyle(
-                    color: AppColors.charcoalGray,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
+                // Verdict hero: Lenz reacting + bubble.
+                SizedBox(
+                  height: 260,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Positioned(
+                        top: -2,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: SizedBox(
+                            width: 270,
+                            child: LenzCharacter(
+                              mood: _moodFor(v.kind),
+                              view: LenzView.bust,
+                              onTap: () => setState(() => _tapped = true),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 18,
+                        top: 34,
+                        child: LenzBubble(
+                          key: ValueKey(_tapped),
+                          text: _tapped ? bubble.$2 : bubble.$1,
+                          maxWidth: 150,
+                        ),
+                      ),
+                    ],
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
+                _sheet(context, report, v, pad),
               ],
             ),
           ),
+          Positioned.fill(child: LenzConfetti(controller: _confetti)),
         ],
       ),
     );
   }
 
-  /// 2. Score Ring + Verdict Badge + Single line Reason
-  Widget _buildScoreAndVerdictSection(
-    BuildContext context,
-    int score,
-    AuthenticationReport report,
-  ) {
-    // Determine verdict state:
-    final bool isAuthentic = report.verdict == Verdict.likelyAuthentic;
-    final bool isReplica = report.verdict == Verdict.likelyReplica;
+  Widget _sheet(BuildContext context, AuthenticationReport report, LenzVerdictStyle v, EdgeInsets pad) {
+    final children = <Widget>[
+      _verdictHeader(report, v),
+      _summaryCard(report, v),
+      if (_hasAssessmentDetails(report)) _assessmentDetailsCard(report),
+      _evidenceSection(report),
+      const Text(
+        'AI-assisted opinion, not an official authentication.',
+        textAlign: TextAlign.center,
+        style: LenzText.tiny,
+      ),
+      _actions(report),
+    ];
 
-    final Color ringColor = isAuthentic
-        ? AppColors.deepForestGreen
-        : (isReplica ? const Color(0xFF991B1B) : const Color(0xFFD97706));
-
-    final Color badgeBg = isAuthentic
-        ? AppColors.deepForestGreen
-        : (isReplica ? const Color(0xFF991B1B) : const Color(0xFF5F6264));
-
-    final IconData badgeIcon = isAuthentic
-        ? CupertinoIcons.shield_lefthalf_fill
-        : (isReplica
-            ? CupertinoIcons.exclamationmark_shield_fill
-            : CupertinoIcons.question_circle_fill);
-
-    // Use the Verdict enum's own label directly so this always matches
-    // exactly what the rest of the app (history cards, stats, etc.) calls
-    // the same verdict - it previously said "Replica"/"Uncertain" here
-    // while everywhere else said "Likely Replica"/"Inconclusive".
-    final String badgeText = report.verdict.label;
-
-    // Engine v3 reports carry no percentage: the same ring shows the
-    // evidence strength word instead of "0%".
-    final bool qualitative = report.usesQualitativeStrength;
-    final String strengthWord = (() {
-      final s = report.evidenceStrength ?? 'limited';
-      return '${s[0].toUpperCase()}${s.substring(1)}';
-    })();
-    final double ringProgress = qualitative
-        ? (report.evidenceStrength == 'strong' ? 1.0 : report.evidenceStrength == 'moderate' ? 0.66 : 0.33)
-        : (score / 100).clamp(0.0, 1.0);
-
-    // 1-line reason explaining the confidence percentage clearly
-    String singleLineReason;
-    if (qualitative && (isAuthentic || isReplica)) {
-      singleLineReason = report.rationale.isNotEmpty
-          ? report.rationale.split('.').first
-          : (isAuthentic ? 'Based on the details visible in your photos.' : 'Based on product-specific inconsistencies.');
-    } else if (isAuthentic) {
-      singleLineReason = '$score% confidence, based on the details visible in your photos.';
-    } else if (isReplica) {
-      singleLineReason = '$score% confidence, based on multiple product-specific inconsistencies.';
-    } else {
-      singleLineReason = report.rationale.isNotEmpty
-          ? report.rationale.split('.').first
-          : 'More evidence needed to determine authenticity.';
-    }
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        // Circular Score Ring showing confidence percentage
-        SizedBox(
-          width: 88,
-          height: 88,
-          child: CustomPaint(
-            painter: _ScoreRingPainter(
-              progress: ringProgress,
-              color: ringColor,
-            ),
-            child: Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    qualitative ? strengthWord : '$score%',
-                    style: TextStyle(
-                      color: AppColors.nearBlack,
-                      fontSize: qualitative ? 16 : 22.5,
-                      fontWeight: FontWeight.w800,
-                      height: 1.0,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    qualitative ? 'Evidence' : (isReplica ? 'Replica' : (isAuthentic ? 'Authentic' : 'Confidence')),
-                    style: const TextStyle(
-                      color: AppColors.charcoalGray,
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w700,
-                      height: 1.0,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+    return Container(
+      constraints: const BoxConstraints(minHeight: 560),
+      padding: EdgeInsets.fromLTRB(20, 26, 20, 34 + pad.bottom),
+      decoration: const BoxDecoration(
+        color: LenzColors.paper,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(40)),
+        boxShadow: [
+          BoxShadow(
+            color: Color.fromRGBO(18, 47, 36, .3),
+            offset: Offset(0, -24),
+            blurRadius: 60,
+            spreadRadius: -24,
           ),
-        ),
+        ],
+      ),
+      child: LenzStagger(spacing: 16, children: children),
+    );
+  }
 
-        const SizedBox(width: 18),
-
-        // Verdict Badge Pill + 1-line reason underneath
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+  // ------------------------------------------------------------ verdict head
+  Widget _verdictHeader(AuthenticationReport report, LenzVerdictStyle v) {
+    return Column(
+      children: [
+        Container(
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: v.soft,
+            borderRadius: BorderRadius.circular(LenzRadii.pill),
+          ),
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Verdict Badge Pill
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8.5),
-                decoration: BoxDecoration(
-                  color: badgeBg,
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: badgeBg.withOpacity(0.24),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
+              LenzIcon(v.icon, size: 17, strokeWidth: 2.4, color: v.color),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  report.verdict.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: LenzText.pill.copyWith(fontSize: 14.5, color: v.color),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(badgeIcon, color: Colors.white, size: 17),
-                    const SizedBox(width: 8),
-                    Text(
-                      badgeText,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 8),
-
-              // 1-line explanation underneath verdict
-              Text(
-                singleLineReason,
-                style: const TextStyle(
-                  color: AppColors.charcoalGray,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w400,
-                  height: 1.3,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          report.product.name,
+          textAlign: TextAlign.center,
+          style: LenzText.display.copyWith(fontSize: 30),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '${report.product.category.label} · ${report.product.brand}',
+          textAlign: TextAlign.center,
+          style: LenzText.cap,
         ),
       ],
     );
   }
 
-  /// 3. Quick Summary Card
-  Widget _buildQuickSummaryCard(BuildContext context, AuthenticationReport report) {
-    // Derive clean summary bullet points from quickSummaryPoints or positive findings or defaults
-    // Only real findings: never pad with generic filler text.
-    final List<String> bulletPoints = [];
-    if (report.quickSummaryPoints.isNotEmpty) {
-      bulletPoints.addAll(report.quickSummaryPoints.take(3));
-    } else if (report.positiveFindings.isNotEmpty) {
-      bulletPoints.addAll(report.positiveFindings.take(2));
+  // ------------------------------------------------------------ summary card
+  Widget _summaryCard(AuthenticationReport report, LenzVerdictStyle v) {
+    final isAuthentic = report.verdict == Verdict.likelyAuthentic;
+    final isReplica = report.verdict == Verdict.likelyReplica;
+    final score = report.authenticationConfidence;
+
+    // Engine v3 reports carry no percentage: the ring shows the evidence
+    // strength word instead (same binding as before the redesign).
+    final qualitative = report.usesQualitativeStrength;
+    final strengthWord = (() {
+      final s = report.evidenceStrength ?? 'limited';
+      return '${s[0].toUpperCase()}${s.substring(1)}';
+    })();
+    final ringProgress = qualitative
+        ? (report.evidenceStrength == 'strong'
+            ? 1.0
+            : report.evidenceStrength == 'moderate'
+                ? 0.66
+                : 0.33)
+        : (score / 100).clamp(0.0, 1.0);
+
+    String reason;
+    if (qualitative && (isAuthentic || isReplica)) {
+      reason = report.rationale.isNotEmpty
+          ? report.rationale.split('.').first
+          : (isAuthentic ? 'Based on the details visible in your photos.' : 'Based on product-specific inconsistencies.');
+    } else if (isAuthentic) {
+      reason = '$score% confidence, based on the details visible in your photos.';
+    } else if (isReplica) {
+      reason = '$score% confidence, based on multiple product-specific inconsistencies.';
+    } else {
+      reason = report.rationale.isNotEmpty
+          ? report.rationale.split('.').first
+          : 'More evidence needed to determine authenticity.';
     }
-    if (bulletPoints.isEmpty && report.rationale.isNotEmpty) {
-      bulletPoints.add(report.rationale);
+
+    // Only real findings: never pad with generic filler text.
+    final bullets = <String>[];
+    if (report.quickSummaryPoints.isNotEmpty) {
+      bullets.addAll(report.quickSummaryPoints.take(3));
+    } else if (report.positiveFindings.isNotEmpty) {
+      bullets.addAll(report.positiveFindings.take(2));
+    }
+    if (bullets.isEmpty && report.rationale.isNotEmpty && report.rationale.split('.').first != reason) {
+      bullets.add(report.rationale);
     }
     final suspicious = report.suspiciousFindings.map((s) => s.toLowerCase()).toSet();
 
+    final ringCenter = qualitative
+        ? Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(strengthWord, style: LenzText.title.copyWith(fontSize: 18, height: 1)),
+              const SizedBox(height: 3),
+              Text('evidence', style: LenzText.cap.copyWith(fontSize: 10.5)),
+            ],
+          )
+        : Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedCount(
+                to: score,
+                suffix: '%',
+                delay: const Duration(milliseconds: 400),
+                duration: const Duration(milliseconds: 1300),
+                style: LenzText.title.copyWith(fontSize: 28, height: 1),
+              ),
+              const SizedBox(height: 3),
+              Text('confidence', style: LenzText.cap.copyWith(fontSize: 10.5)),
+            ],
+          );
+
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.veryLightWarmGray,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: AppColors.nearBlack.withOpacity(0.06),
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.nearBlack.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        color: Color.alphaBlend(v.soft.withValues(alpha: .2), LenzColors.paper),
+        borderRadius: BorderRadius.circular(30),
+        border: Border.all(color: v.color.withValues(alpha: .13)),
+        boxShadow: LenzShadows.sh1,
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header: Document icon + Quick Summary
           Row(
-            children: const [
-              Icon(
-                Icons.article_outlined,
-                size: 20,
-                color: AppColors.nearBlack,
+            children: [
+              LenzRing(
+                value: ringProgress,
+                size: 104,
+                strokeWidth: 12,
+                color: v.color,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Padding(padding: const EdgeInsets.all(18), child: ringCenter),
+                ),
               ),
-              SizedBox(width: 8),
-              Text(
-                'Quick Summary',
-                style: TextStyle(
-                  color: AppColors.nearBlack,
-                  fontSize: 16.5,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.2,
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Quick summary', style: LenzText.item.copyWith(fontSize: 16)),
+                    const SizedBox(height: 4),
+                    Text(reason, style: LenzText.sub.copyWith(fontSize: 13.5)),
+                  ],
                 ),
               ),
             ],
           ),
-
-          const SizedBox(height: 14),
-
-          // Bullet points
-          ...bulletPoints.map(
-            (point) => Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: _bulletIcon(point, report, suspicious),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      point,
-                      style: const TextStyle(
-                        color: AppColors.charcoalGray,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        height: 1.35,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          if (bullets.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            for (final b in bullets) _Bullet(text: b, tone: _toneFor(b, report, suspicious), fontSize: 13.5),
+          ],
         ],
       ),
     );
   }
 
-  Widget _bulletIcon(String point, AuthenticationReport report, Set<String> suspicious) {
+  _Tone _toneFor(String point, AuthenticationReport report, Set<String> suspicious) {
     final p = point.toLowerCase();
-    final isConcern = suspicious.contains(p) || p.startsWith('needs a closer look');
-    final isInfo = p.startsWith('next photo') ||
-        p.contains('earlier scan') ||
-        report.limitations.any((l) => l.toLowerCase() == p);
-    if (isConcern) {
-      return const Icon(CupertinoIcons.exclamationmark_circle_fill, color: Color(0xFF991B1B), size: 16);
+    if (suspicious.contains(p) || p.startsWith('needs a closer look')) return _Tone.bad;
+    if (p.startsWith('next photo') || p.contains('earlier scan') || report.limitations.any((l) => l.toLowerCase() == p)) {
+      return _Tone.warn;
     }
-    if (isInfo) {
-      return const Icon(CupertinoIcons.info_circle_fill, color: Color(0xFFD97706), size: 16);
-    }
-    return const Icon(CupertinoIcons.checkmark_circle_fill, color: AppColors.deepForestGreen, size: 16);
+    return _Tone.good;
   }
 
+  // ------------------------------------------------------ assessment details
   bool _hasAssessmentDetails(AuthenticationReport report) =>
       report.imageQualityScore > 0 ||
       report.limitations.isNotEmpty ||
       report.recommendedViews.isNotEmpty ||
       (report.consistency?.note.isNotEmpty ?? false);
 
-  /// Scores are kept separate on purpose: how good the photos are, how
-  /// sure the analysis is, and what the item is are different questions
-  /// from whether it's authentic (§15).
-  Widget _buildAssessmentDetailsCard(AuthenticationReport report) {
+  /// Photo quality, analysis confidence and identification are separate
+  /// questions from authenticity (§15); shown only when the report has them.
+  Widget _assessmentDetailsCard(AuthenticationReport report) {
     Widget scoreTile(String label, int value) => Expanded(
           child: Column(
             children: [
-              Text(
-                value > 0 ? '$value%' : '—',
-                style: const TextStyle(
-                  color: AppColors.nearBlack,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.3,
-                ),
-              ),
+              Text(value > 0 ? '$value%' : '—', style: LenzText.title.copyWith(fontSize: 19)),
               const SizedBox(height: 2),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.charcoalGray, fontSize: 11, fontWeight: FontWeight.w600),
-              ),
+              Text(label, textAlign: TextAlign.center, style: LenzText.cap.copyWith(fontSize: 11)),
             ],
           ),
         );
-
     Widget heading(String text) => Padding(
-          padding: const EdgeInsets.only(top: 14, bottom: 6),
-          child: Text(
-            text,
-            style: const TextStyle(color: AppColors.nearBlack, fontSize: 14, fontWeight: FontWeight.w800),
-          ),
+          padding: const EdgeInsets.only(top: 12, bottom: 2),
+          child: Text(text, style: LenzText.item.copyWith(fontSize: 15)),
         );
+    final note = report.consistency?.note ?? '';
 
-    Widget line(IconData icon, Color color, String text) => Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(padding: const EdgeInsets.only(top: 2), child: Icon(icon, size: 15, color: color)),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  text,
-                  style: const TextStyle(color: AppColors.charcoalGray, fontSize: 13, height: 1.35),
-                ),
-              ),
-            ],
-          ),
-        );
-
-    final consistencyNote = report.consistency?.note ?? '';
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppColors.veryLightWarmGray,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.nearBlack.withValues(alpha: 0.06)),
-      ),
+    return LenzCard(
+      radius: 28,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -564,384 +398,247 @@ class _AuthenticationReportViewState extends State<AuthenticationReportView> {
                 scoreTile('Item identified', report.identificationConfidence),
               ],
             ),
-          if (consistencyNote.isNotEmpty) ...[
+          if (note.isNotEmpty) ...[
             heading('Earlier scans'),
-            line(CupertinoIcons.arrow_2_circlepath, AppColors.deepForestGreen, consistencyNote),
+            _Bullet(text: note, tone: _Tone.good, icon: LenzIcons.refresh, fontSize: 13.5),
           ],
           if (report.limitations.isNotEmpty) ...[
             heading('Limitations'),
-            for (final l in report.limitations) line(CupertinoIcons.info_circle, const Color(0xFFD97706), l),
+            for (final l in report.limitations) _Bullet(text: l, tone: _Tone.warn, icon: LenzIcons.info, fontSize: 13.5),
           ],
           if (report.recommendedViews.isNotEmpty) ...[
             heading(report.needsMoreImages ? 'More photos needed' : 'Recommended next photo'),
-            for (final v in report.recommendedViews) line(CupertinoIcons.camera, AppColors.deepForestGreen, v),
+            for (final r in report.recommendedViews) _Bullet(text: r, tone: _Tone.good, icon: LenzIcons.camera, fontSize: 13.5),
           ],
         ],
       ),
     );
   }
 
-  /// 4. Evidence List Section (Only shows items with user-supplied photos + progress indicator)
-  Widget _buildEvidenceSection(BuildContext context, AuthenticationReport report) {
-    // Only show evidence items where the user actually captured or provided a photo
-    final evidenceList = report.evidenceItems
-        .where((e) => e.hasPhoto || e.capturedImagePath.isNotEmpty)
-        .toList();
+  // ---------------------------------------------------------------- evidence
+  Widget _evidenceSection(AuthenticationReport report) {
+    // Only parts the user actually supplied a photo for.
+    final list = report.evidenceItems.where((e) => e.hasPhoto || e.capturedImagePath.isNotEmpty).toList();
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            const Text(
-              'Evidence',
-              style: TextStyle(
-                color: AppColors.nearBlack,
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.3,
-              ),
-            ),
-            if (evidenceList.isNotEmpty)
-              Text(
-                '${evidenceList.length} verified item${evidenceList.length == 1 ? '' : 's'}',
-                style: const TextStyle(
-                  color: AppColors.charcoalGray,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w500,
+        Padding(
+          padding: const EdgeInsets.fromLTRB(2, 4, 2, 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              const Expanded(child: Text('Evidence', style: LenzText.section)),
+              if (list.isNotEmpty)
+                Text(
+                  '${list.length} verified item${list.length == 1 ? '' : 's'}',
+                  style: LenzText.cap,
                 ),
-              ),
-          ],
-        ),
-
-        const SizedBox(height: 10),
-
-        Container(
-          decoration: BoxDecoration(
-            color: AppColors.veryLightWarmGray,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: AppColors.nearBlack.withOpacity(0.06),
-              width: 1,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.nearBlack.withOpacity(0.03),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
             ],
           ),
-          child: evidenceList.isEmpty
-              ? const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-                  child: Center(
-                    child: Text(
-                      'No specific part photos were provided for this scan.',
-                      style: TextStyle(color: AppColors.charcoalGray, fontSize: 13),
-                    ),
-                  ),
-                )
-              : ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
-                  itemCount: evidenceList.length,
-                  separatorBuilder: (_, __) => const Divider(
-                    height: 16,
-                    thickness: 0.8,
-                    color: Color(0xFFE8E2DD),
-                  ),
-                  itemBuilder: (context, i) {
-                    final item = evidenceList[i];
-                    final int itemPercent = item.score > 0
-                        ? item.score
-                        : (item.photoQualityScore > 0 ? item.photoQualityScore : report.authenticationConfidence);
-
-                    // v3 parts have no percentage: colour and label by status.
-                    final bool qualitative = report.usesQualitativeStrength;
-                    final Color progressColor = qualitative
-                        ? (item.status == EvidenceStatus.consistent
-                            ? AppColors.deepForestGreen
-                            : item.status == EvidenceStatus.suspicious
-                                ? const Color(0xFFDC2626)
-                                : const Color(0xFFD97706))
-                        : itemPercent >= 75
-                            ? AppColors.deepForestGreen
-                            : (itemPercent >= 45 ? const Color(0xFFD97706) : const Color(0xFFDC2626));
-                    final String badge = qualitative ? item.status.label : '$itemPercent%';
-                    // Qualitative parts: how much of the photo's detail could be
-                    // judged clearly (measured per report), not a fixed bar.
-                    final double bar = qualitative
-                        ? (item.clarity > 0
-                            ? (item.clarity / 100.0).clamp(0.05, 1.0)
-                            : (item.status == EvidenceStatus.inconclusive ? 0.4 : 1.0))
-                        : (itemPercent / 100.0).clamp(0.03, 1.0);
-
-                    return InkWell(
-                      onTap: () => widget.onSelectPart(item),
-                      borderRadius: BorderRadius.circular(14),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            // Evidence thumbnail image
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                width: 46,
-                                height: 46,
-                                decoration: BoxDecoration(
-                                  color: AppColors.warmIvory,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: AppColors.nearBlack.withOpacity(0.08),
-                                    width: 1,
-                                  ),
-                                ),
-                                child: item.displayImage.isNotEmpty
-                                    ? AppImage(
-                                        imagePath: item.displayImage,
-                                        width: 46,
-                                        height: 46,
-                                        fit: BoxFit.cover,
-                                        placeholder: Center(
-                                          child: Icon(
-                                            _resolveEvidenceIcon(item.title),
-                                            size: 20,
-                                            color: AppColors.deepForestGreen,
-                                          ),
-                                        ),
-                                      )
-                                    : Center(
-                                        child: Icon(
-                                          _resolveEvidenceIcon(item.title),
-                                          size: 20,
-                                          color: AppColors.deepForestGreen,
-                                        ),
-                                      ),
-                              ),
-                            ),
-
-                            const SizedBox(width: 14),
-
-                            // Item title & Progress indicator line
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          item.title,
-                                          style: const TextStyle(
-                                            color: AppColors.nearBlack,
-                                            fontSize: 14.5,
-                                            fontWeight: FontWeight.w700,
-                                            letterSpacing: -0.2,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      // Percentage badge text
-                                      Text(
-                                        badge,
-                                        style: TextStyle(
-                                          color: progressColor,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  // Indicator line: filled to itemPercent out of 100%
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(3),
-                                    child: Container(
-                                      height: 5.5,
-                                      width: double.infinity,
-                                      color: const Color(0xFFE2DDD7),
-                                      child: Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: FractionallySizedBox(
-                                          widthFactor: bar,
-                                          child: Container(
-                                            decoration: BoxDecoration(
-                                              color: progressColor,
-                                              borderRadius: BorderRadius.circular(3),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            const SizedBox(width: 10),
-
-                            // Chevron right
-                            const Icon(
-                              CupertinoIcons.chevron_right,
-                              size: 15,
-                              color: AppColors.softGray,
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
         ),
+        if (list.isEmpty)
+          LenzCard(
+            radius: 24,
+            padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
+            child: Text(
+              'No specific part photos were provided for this scan.',
+              textAlign: TextAlign.center,
+              style: LenzText.sub.copyWith(fontSize: 13.5),
+            ),
+          )
+        else
+          for (final item in list) _evidenceRow(report, item),
       ],
     );
   }
 
-  /// 5. "Check Yourself" Button
-  Widget _buildCheckYourselfButton(BuildContext context) {
-    return BounceButton(
-      onTap: () {
-        Haptics.lightImpact();
-        widget.onOpenDetectYourself();
-      },
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-        decoration: BoxDecoration(
-          color: AppColors.deepForestGreen,
-          borderRadius: BorderRadius.circular(22),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.deepForestGreen.withOpacity(0.24),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
+  Widget _evidenceRow(AuthenticationReport report, EvidenceItem item) {
+    final qualitative = report.usesQualitativeStrength;
+    final itemPercent = item.score > 0
+        ? item.score
+        : (item.photoQualityScore > 0 ? item.photoQualityScore : report.authenticationConfidence);
+
+    final _Tone tone = qualitative
+        ? (item.status == EvidenceStatus.consistent
+            ? _Tone.good
+            : item.status == EvidenceStatus.suspicious
+                ? _Tone.bad
+                : _Tone.warn)
+        : itemPercent >= 75
+            ? _Tone.good
+            : (itemPercent >= 45 ? _Tone.warn : _Tone.bad);
+    final String badge = qualitative ? _statusWord(item.status) : '$itemPercent%';
+    // Qualitative parts: how much of the photo's detail could be judged
+    // clearly (measured per report), not a fixed bar.
+    final double bar = qualitative
+        ? (item.clarity > 0
+            ? (item.clarity / 100.0).clamp(0.05, 1.0)
+            : (item.status == EvidenceStatus.inconclusive ? 0.4 : 1.0))
+        : (itemPercent / 100.0).clamp(0.03, 1.0);
+
+    final img = item.displayImage;
+    final statusIcon = tone == _Tone.good ? LenzIcons.check : (tone == _Tone.bad ? LenzIcons.x : LenzIcons.help);
+    final iconThumb = Center(child: LenzIcon(statusIcon, size: 26, strokeWidth: 2.8, color: tone.fg));
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: LenzCard(
+        radius: 24,
+        padding: const EdgeInsets.all(12),
+        onTap: () => widget.onSelectPart(item),
         child: Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(7),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.16),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                CupertinoIcons.search,
-                color: Colors.white,
-                size: 17,
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
+            SizedBox(
+              width: 58,
+              height: 58,
+              child: Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  const Text(
-                    'Check It Yourself',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.2,
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(color: tone.soft, borderRadius: BorderRadius.circular(18)),
+                      clipBehavior: Clip.antiAlias,
+                      child: img.isNotEmpty
+                          ? AppImage(imagePath: img, width: 58, height: 58, fit: BoxFit.cover, placeholder: iconThumb)
+                          : iconThumb,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Hands-on physical tips for ${widget.report.product.name}',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.78),
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w400,
+                  if (img.isNotEmpty)
+                    Positioned(
+                      right: -4,
+                      bottom: -4,
+                      child: Container(
+                        width: 22,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          color: tone.soft,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: LenzColors.paper, width: 2),
+                        ),
+                        child: Center(child: LenzIcon(statusIcon, size: 12, strokeWidth: 3.2, color: tone.fg)),
+                      ),
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            Icon(
-              CupertinoIcons.arrow_right,
-              color: Colors.white.withOpacity(0.8),
-              size: 17,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: LenzText.item),
+                  const SizedBox(height: 8),
+                  _ToneBar(value: bar, color: tone.fg),
+                ],
+              ),
             ),
+            const SizedBox(width: 10),
+            LenzPill(label: badge, background: tone.soft, foreground: tone.fg),
           ],
         ),
       ),
     );
   }
 
-  IconData _resolveEvidenceIcon(String title) {
-    final lower = title.toLowerCase();
-    if (lower.contains('dial') || lower.contains('face')) {
-      return CupertinoIcons.time;
-    } else if (lower.contains('crown') || lower.contains('logo') || lower.contains('stamp')) {
-      return Icons.military_tech_outlined;
-    } else if (lower.contains('serial') || lower.contains('code') || lower.contains('tag')) {
-      return Icons.numbers_rounded;
-    } else if (lower.contains('stitch') || lower.contains('seam')) {
-      return Icons.linear_scale_rounded;
-    } else if (lower.contains('sole') || lower.contains('heel') || lower.contains('shoe')) {
-      return Icons.hiking_rounded;
-    } else if (lower.contains('leather') || lower.contains('material')) {
-      return Icons.texture_rounded;
-    }
-    return CupertinoIcons.viewfinder;
+  Widget _actions(AuthenticationReport report) {
+    final capture = widget.onCaptureMoreEvidence;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (capture != null) ...[
+          LenzButton(
+            label: 'Capture more evidence',
+            icon: LenzIcons.camera,
+            variant: LenzButtonVariant.ghost,
+            onPressed: capture,
+          ),
+          const SizedBox(height: 8),
+        ],
+        LenzButton(label: 'Done', onPressed: widget.onDone),
+      ],
+    );
   }
 }
 
-/// Custom painter for the circular score ring
-class _ScoreRingPainter extends CustomPainter {
-  final double progress;
-  final Color color;
+/// Prototype wording for the post-analysis part states.
+String _statusWord(EvidenceStatus s) => switch (s) {
+      EvidenceStatus.consistent => 'Consistent',
+      EvidenceStatus.suspicious => 'Flagged',
+      EvidenceStatus.inconclusive => 'Unclear',
+      _ => s.label,
+    };
 
-  _ScoreRingPainter({
-    required this.progress,
-    required this.color,
-  });
+enum _Tone {
+  good(LenzColors.ok, LenzColors.okSoft, LenzIcons.check),
+  bad(LenzColors.bad, LenzColors.badSoft, LenzIcons.x),
+  warn(LenzColors.warn, LenzColors.warnSoft, LenzIcons.help);
+
+  const _Tone(this.fg, this.soft, this.icon);
+  final Color fg;
+  final Color soft;
+  final String icon;
+}
+
+/// The prototype's `.bullet` with a tinted `.d` dot.
+class _Bullet extends StatelessWidget {
+  const _Bullet({required this.text, required this.tone, this.icon, this.fontSize = 14.5});
+
+  final String text;
+  final _Tone tone;
+  final String? icon;
+  final double fontSize;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = (size.width - 8) / 2;
-
-    // Background track ring
-    final bgPaint = Paint()
-      ..color = const Color(0xFFE2DDD7)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 6.0;
-    canvas.drawCircle(center, radius, bgPaint);
-
-    // Active progress arc
-    final activePaint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 6.5
-      ..strokeCap = StrokeCap.round;
-
-    final sweepAngle = 2 * math.pi * progress;
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      -math.pi / 2,
-      sweepAngle,
-      false,
-      activePaint,
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            margin: const EdgeInsets.only(top: 1),
+            decoration: BoxDecoration(color: tone.soft, shape: BoxShape.circle),
+            child: Center(child: LenzIcon(icon ?? tone.icon, size: 13, strokeWidth: 3.2, color: tone.fg)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Text(text, style: LenzText.bullet.copyWith(fontSize: fontSize))),
+        ],
+      ),
     );
   }
+}
+
+/// Thin animated bar under an evidence row (clarity / legacy percentage).
+class _ToneBar extends StatelessWidget {
+  const _ToneBar({required this.value, required this.color});
+
+  final double value;
+  final Color color;
 
   @override
-  bool shouldRepaint(covariant _ScoreRingPainter oldDelegate) =>
-      oldDelegate.progress != progress || oldDelegate.color != color;
+  Widget build(BuildContext context) {
+    return LenzAnimatedDouble(
+      value: value,
+      initialValue: 0,
+      duration: LenzMotion.meter,
+      delay: LenzMotion.meterDelay,
+      curve: LenzMotion.ease,
+      builder: (context, v) => Container(
+        height: 6,
+        decoration: BoxDecoration(color: LenzColors.meterTrack, borderRadius: BorderRadius.circular(6)),
+        alignment: Alignment.centerLeft,
+        child: FractionallySizedBox(
+          widthFactor: v.clamp(0.0, 1.0),
+          heightFactor: 1,
+          child: DecoratedBox(
+            decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(6)),
+          ),
+        ),
+      ),
+    );
+  }
 }

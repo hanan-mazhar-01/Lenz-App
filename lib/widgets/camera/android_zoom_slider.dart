@@ -1,4 +1,7 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+
 import '../../core/theme/app_colors.dart';
 import '../../services/haptics.dart';
 
@@ -10,12 +13,16 @@ class AndroidCameraZoomSlider extends StatefulWidget {
   final double maxZoom;
   final ValueChanged<double> onZoomChanged;
 
+  /// Frosted-glass look for the dark Lenz camera screens.
+  final bool dark;
+
   const AndroidCameraZoomSlider({
     super.key,
     required this.currentZoom,
     this.minZoom = 1.0,
     this.maxZoom = 4.0,
     required this.onZoomChanged,
+    this.dark = false,
   });
 
   @override
@@ -40,8 +47,10 @@ class _AndroidCameraZoomSliderState extends State<AndroidCameraZoomSlider> {
     // 180 horizontal pixels traverses roughly 3.0x zoom
     final double deltaX = details.localPosition.dx - _dragStartX;
     const double sensitivity = 0.012;
-    final double targetZoom = (_dragStartZoom + (deltaX * sensitivity))
-        .clamp(widget.minZoom, widget.maxZoom);
+    final double targetZoom = (_dragStartZoom + (deltaX * sensitivity)).clamp(
+      widget.minZoom,
+      widget.maxZoom,
+    );
 
     final int tick = (targetZoom * 10).round();
     if (tick != _lastHapticTick) {
@@ -70,91 +79,121 @@ class _AndroidCameraZoomSliderState extends State<AndroidCameraZoomSlider> {
       onHorizontalDragUpdate: _onDragUpdate,
       onHorizontalDragEnd: _onDragEnd,
       onHorizontalDragCancel: () => setState(() => _isDragging = false),
-      child: Container(
-        width: 260,
-        height: 38,
-        decoration: BoxDecoration(
-          color: _isDragging
-              ? AppColors.pureWhite
-              : AppColors.pureWhite.withOpacity(0.85),
-          borderRadius: BorderRadius.circular(19),
-          border: Border.all(
-            color: _isDragging
-                ? AppColors.deepForestGreen.withOpacity(0.35)
-                : AppColors.nearBlack.withOpacity(0.06),
-            width: 1,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.nearBlack.withOpacity(0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+      child: dark ? _darkRuler() : _lightRuler(),
+    );
+  }
+
+  bool get dark => widget.dark;
+
+  Widget _darkRuler() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(19),
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          width: 260,
+          height: 38,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(_isDragging ? 0.22 : 0.14),
+            borderRadius: BorderRadius.circular(19),
+            border: Border.all(
+              color: _isDragging
+                  ? const Color(0xFF6BE08F).withOpacity(0.6)
+                  : Colors.white.withOpacity(0.2),
+              width: 1,
             ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(19),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Sliding ruler ticks painter
-              CustomPaint(
-                size: const Size(260, 38),
-                painter: _RulerPainter(
-                  currentZoom: widget.currentZoom,
-                  minZoom: widget.minZoom,
-                  maxZoom: widget.maxZoom,
-                ),
-              ),
-
-              // Center indicator needle (accent color with zoom readout bubble)
-              Positioned(
-                top: 0,
-                bottom: 0,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 2.5,
-                      height: 20,
-                      decoration: BoxDecoration(
-                        color: AppColors.deepForestGreen,
-                        borderRadius: BorderRadius.circular(2),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.deepForestGreen.withOpacity(0.4),
-                            blurRadius: 4,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // Dynamic Zoom Value pill shown while dragging or floating on top
-              Positioned(
-                right: 12,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppColors.deepForestGreen.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '${widget.currentZoom.toStringAsFixed(1)}x',
-                    style: const TextStyle(
-                      color: AppColors.deepForestGreen,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                ),
-              ),
-            ],
           ),
+          child: _rulerContent(),
         ),
+      ),
+    );
+  }
+
+  Widget _lightRuler() {
+    return Container(
+      width: 260,
+      height: 38,
+      decoration: BoxDecoration(
+        color: _isDragging ? AppColors.pureWhite : AppColors.pureWhite.withOpacity(0.85),
+        borderRadius: BorderRadius.circular(19),
+        border: Border.all(
+          color: _isDragging
+              ? AppColors.deepForestGreen.withOpacity(0.35)
+              : AppColors.nearBlack.withOpacity(0.06),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.nearBlack.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: _rulerContent(),
+    );
+  }
+
+  Widget _rulerContent() {
+    final accent = dark ? const Color(0xFF6BE08F) : AppColors.deepForestGreen;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(19),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Sliding ruler ticks painter
+          CustomPaint(
+            size: const Size(260, 38),
+            painter: _RulerPainter(
+              currentZoom: widget.currentZoom,
+              minZoom: widget.minZoom,
+              maxZoom: widget.maxZoom,
+              tickColor: dark ? Colors.white : AppColors.nearBlack,
+            ),
+          ),
+
+          // Center indicator needle (accent color with zoom readout bubble)
+          Positioned(
+            top: 0,
+            bottom: 0,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 2.5,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: accent,
+                    borderRadius: BorderRadius.circular(2),
+                    boxShadow: [BoxShadow(color: accent.withOpacity(0.4), blurRadius: 4)],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Dynamic Zoom Value pill shown while dragging or floating on top
+          Positioned(
+            right: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: accent.withOpacity(dark ? 0.2 : 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '${widget.currentZoom.toStringAsFixed(1)}x',
+                style: TextStyle(
+                  fontFamily: 'Nunito',
+                  color: dark ? Colors.white : AppColors.deepForestGreen,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.2,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -165,11 +204,13 @@ class _RulerPainter extends CustomPainter {
   final double currentZoom;
   final double minZoom;
   final double maxZoom;
+  final Color tickColor;
 
   _RulerPainter({
     required this.currentZoom,
     required this.minZoom,
     required this.maxZoom,
+    this.tickColor = AppColors.nearBlack,
   });
 
   @override
@@ -181,12 +222,12 @@ class _RulerPainter extends CustomPainter {
     const double pixelsPerTenth = 6.0;
 
     final Paint minorPaint = Paint()
-      ..color = AppColors.nearBlack.withOpacity(0.2)
+      ..color = tickColor.withOpacity(0.2)
       ..strokeWidth = 1.0
       ..strokeCap = StrokeCap.round;
 
     final Paint majorPaint = Paint()
-      ..color = AppColors.nearBlack.withOpacity(0.55)
+      ..color = tickColor.withOpacity(0.55)
       ..strokeWidth = 1.5
       ..strokeCap = StrokeCap.round;
 
@@ -225,6 +266,7 @@ class _RulerPainter extends CustomPainter {
   bool shouldRepaint(covariant _RulerPainter oldDelegate) {
     return oldDelegate.currentZoom != currentZoom ||
         oldDelegate.minZoom != minZoom ||
-        oldDelegate.maxZoom != maxZoom;
+        oldDelegate.maxZoom != maxZoom ||
+        oldDelegate.tickColor != tickColor;
   }
 }

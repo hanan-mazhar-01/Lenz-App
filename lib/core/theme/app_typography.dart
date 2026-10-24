@@ -1,106 +1,84 @@
-import 'package:flutter/foundation.dart' show TargetPlatform, defaultTargetPlatform;
 import 'package:flutter/material.dart';
+
 import 'app_colors.dart';
+import 'lenz_text.dart';
 
-/// Typography definitions matching Apple's Human Interface Guidelines (SF Pro aesthetic).
+/// Legacy typography tokens, kept so un-migrated screens compile.
 ///
-/// Neither platform bundles a custom font, so text renders in each OS's
-/// system default: Roboto on Android, SF Pro on iOS. SF Pro has a visibly
-/// smaller x-height than Roboto at the same nominal [fontSize], which reads
-/// as "too small" on iOS even though the box model size is identical. Sizes
-/// below are nudged up slightly on iOS via [_size] so both platforms read as
-/// the same perceived size, without changing Android at all.
+/// Every style is now Nunito (600/700/800/900) mapped onto the closest style
+/// of the Lenz type scale ([LenzText]). New code should use [LenzText].
 abstract final class AppTypography {
-  static double _size(double base) {
-    if (defaultTargetPlatform != TargetPlatform.iOS) return base;
-    return base + (base * 0.07).clamp(0.5, 2.0);
-  }
+  /// 32 / 900 / -.035em (prototype `.display`).
+  static TextStyle get displayLarge => LenzText.display.copyWith(
+        color: AppColors.textPrimary,
+      );
 
-  static TextStyle get displayLarge => TextStyle(
-    fontSize: _size(30),
-    fontWeight: FontWeight.w700,
-    letterSpacing: -0.8,
-    color: AppColors.textPrimary,
-    height: 1.18,
-  );
+  /// 25 / 900 / -.03em (prototype `.hero h3`).
+  static TextStyle get displayMedium => LenzText.hero.copyWith(
+        color: AppColors.textPrimary,
+      );
 
-  static TextStyle get displayMedium => TextStyle(
-    fontSize: _size(24),
-    fontWeight: FontWeight.w700,
-    letterSpacing: -0.6,
-    color: AppColors.textPrimary,
-    height: 1.22,
-  );
+  /// 22 / 900 / -.025em (prototype `.title`).
+  static TextStyle get titleLarge => LenzText.title.copyWith(
+        color: AppColors.textPrimary,
+      );
 
-  static TextStyle get titleLarge => TextStyle(
-    fontSize: _size(20),
-    fontWeight: FontWeight.w600,
-    letterSpacing: -0.4,
-    color: AppColors.textPrimary,
-    height: 1.25,
-  );
+  /// 17 / 900 (between `.item b` 15.5 and `.topbar h2` 19).
+  static TextStyle get titleMedium => LenzText.of(
+        17,
+        weight: FontWeight.w900,
+        color: AppColors.textPrimary,
+        height: 1.25,
+        letterSpacingEm: -.015,
+      );
 
-  static TextStyle get titleMedium => TextStyle(
-    fontSize: _size(17),
-    fontWeight: FontWeight.w600,
-    letterSpacing: -0.3,
-    color: AppColors.textPrimary,
-    height: 1.3,
-  );
+  /// 15.5 / 800 (prototype `.setting`).
+  static TextStyle get bodyLarge => LenzText.setting.copyWith(
+        color: AppColors.textPrimary,
+        height: 1.4,
+      );
 
-  static TextStyle get bodyLarge => TextStyle(
-    fontSize: _size(15),
-    fontWeight: FontWeight.w400,
-    letterSpacing: -0.2,
-    color: AppColors.textPrimary,
-    height: 1.4,
-  );
+  /// 14.5 / 700 muted (prototype `.sub`).
+  static TextStyle get bodyMedium => LenzText.sub.copyWith(
+        color: AppColors.textSecondary,
+      );
 
-  static TextStyle get bodyMedium => TextStyle(
-    fontSize: _size(14),
-    fontWeight: FontWeight.w400,
-    letterSpacing: -0.15,
-    color: AppColors.textSecondary,
-    height: 1.42,
-  );
+  /// 13.5 / 800 muted.
+  static TextStyle get callout => LenzText.of(
+        13.5,
+        color: AppColors.textSecondary,
+        height: 1.35,
+      );
 
-  static TextStyle get callout => TextStyle(
-    fontSize: _size(13),
-    fontWeight: FontWeight.w500,
-    letterSpacing: -0.1,
-    color: AppColors.textSecondary,
-    height: 1.35,
-  );
+  /// 12.5 / 700 subtle (prototype `.cap`).
+  static TextStyle get caption => LenzText.of(
+        12.5,
+        weight: FontWeight.w700,
+        color: AppColors.textTertiary,
+        height: 1.3,
+      );
 
-  static TextStyle get caption => TextStyle(
-    fontSize: _size(12),
-    fontWeight: FontWeight.w400,
-    letterSpacing: 0,
-    color: AppColors.textTertiary,
-    height: 1.3,
-  );
+  /// 12.5 / 800 ink.
+  static TextStyle get captionMedium => LenzText.of(
+        12.5,
+        color: AppColors.textPrimary,
+        height: 1.3,
+      );
 
-  static TextStyle get captionMedium => TextStyle(
-    fontSize: _size(12),
-    fontWeight: FontWeight.w600,
-    letterSpacing: 0,
-    color: AppColors.textPrimary,
-    height: 1.3,
-  );
+  /// 12 / 900 (prototype `.pill`).
+  static TextStyle get badge => const TextStyle(
+        fontFamily: LenzText.family,
+        fontSize: 12,
+        fontWeight: FontWeight.w900,
+        height: 1.2,
+      );
 
-  static TextStyle get badge => TextStyle(
-    fontSize: _size(11),
-    fontWeight: FontWeight.w600,
-    letterSpacing: 0.1,
-    height: 1.2,
-  );
-
-  static TextStyle get scoreNumber => TextStyle(
-    fontSize: _size(40),
-    fontWeight: FontWeight.w800,
-    letterSpacing: -1.2,
-    color: AppColors.textPrimary,
-    height: 1.0,
-  );
+  /// 40 / 900 / -.03em for big numbers.
+  static TextStyle get scoreNumber => LenzText.of(
+        40,
+        weight: FontWeight.w900,
+        color: AppColors.textPrimary,
+        height: 1.0,
+        letterSpacingEm: -.03,
+      );
 }
-

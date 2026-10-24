@@ -1,19 +1,23 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
-import '../../core/theme/app_colors.dart';
+
 import '../../models/evidence.dart';
 import '../../viewmodels/scan_flow_viewmodel.dart';
-import '../../widgets/animations/bounce_button.dart';
 import '../../widgets/camera/android_zoom_slider.dart';
+import '../../widgets/camera/capture_guide_captions.dart';
 import '../../widgets/camera/capture_guide_overlay.dart';
+import '../../widgets/camera/lenz_camera_chrome.dart';
+import '../../widgets/lenz/lenz.dart';
+import '../../widgets/ui/ui.dart';
 import 'camera_preview_widget.dart';
 import '../../services/haptics.dart';
 
-/// Camera screen for one requested photo. Shows the part to photograph, why,
-/// a framing overlay, and distance / focus / lighting advice. The overlay is
-/// only a framing aid: capture is always allowed and nothing checks alignment.
+/// Camera screen for one requested photo. The camera shows only the part
+/// title with step dots, the framing guide with one short caption, one coach
+/// line and the controls; the long advice (CaptureTips, example drawing) opens
+/// in a bottom sheet from "Example" or a tip chip. The overlay is only a
+/// framing aid: capture is always allowed and nothing checks alignment.
 class GuidedCaptureView extends StatefulWidget {
   final EvidenceItem currentItem;
   final int currentIndex;
@@ -31,6 +35,11 @@ class GuidedCaptureView extends StatefulWidget {
   final double evidenceProgress;
   final String progressLabel;
 
+  /// Test-only stand-in for the live camera feed (widget tests have no
+  /// camera). Production never sets it.
+  @visibleForTesting
+  final Widget? previewOverride;
+
   const GuidedCaptureView({
     super.key,
     required this.currentItem,
@@ -44,16 +53,31 @@ class GuidedCaptureView extends StatefulWidget {
     this.maxPhotos = 6,
     this.evidenceProgress = 0,
     this.progressLabel = '',
+    this.previewOverride,
   });
 
   @override
   State<GuidedCaptureView> createState() => _GuidedCaptureViewState();
 }
 
-class _GuidedCaptureViewState extends State<GuidedCaptureView> {
+class _GuidedCaptureViewState extends State<GuidedCaptureView> with SingleTickerProviderStateMixin {
+  // White capture flash (presentation only).
+  late final AnimationController _flashController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 380),
+  );
+
+  @override
+  void dispose() {
+    _flashController.dispose();
+    super.dispose();
+  }
+
   final GlobalKey<CameraPreviewWidgetState> _cameraKey = GlobalKey<CameraPreviewWidgetState>();
   bool _isFlashOn = false;
   bool _isCapturing = false;
+  bool _frozen = false;
+  bool _cameraUnavailable = false;
   double _zoomLevel = 1.0;
   double _minZoom = 1.0;
   double _maxZoom = 4.0;
@@ -81,6 +105,7 @@ class _GuidedCaptureViewState extends State<GuidedCaptureView> {
     if (_isCapturing) return;
     Haptics.mediumImpact();
     setState(() => _isCapturing = true);
+    if (!LenzMotion.reduced(context)) _flashController.forward(from: 0);
     String? capturedPath;
     try {
       capturedPath = (await _cameraKey.currentState?.takePicture())?.path;
@@ -108,7 +133,9 @@ class _GuidedCaptureViewState extends State<GuidedCaptureView> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Couldn't open your photos. Check the Photos permission in Settings.")),
+          const SnackBar(
+            content: Text("Couldn't open your photos. Check the Photos permission in Settings."),
+          ),
         );
       }
     }
@@ -116,348 +143,440 @@ class _GuidedCaptureViewState extends State<GuidedCaptureView> {
 
   void _showExample() {
     final item = widget.currentItem;
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: AppColors.warmIvory,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  CaptureGuideIllustration(type: item.guideType, size: 96),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(item.title,
-                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.nearBlack)),
-                        const SizedBox(height: 4),
-                        Text(item.guide, style: const TextStyle(fontSize: 13.5, height: 1.35, color: AppColors.charcoalGray)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              const Text(
-                'This drawing shows what to frame. It is not a reference image of your model; no verified reference photo is available for it yet.',
-                style: TextStyle(fontSize: 12, height: 1.35, color: AppColors.softGray),
-              ),
-              if (item.aiChecks.isNotEmpty) ...[
-                const SizedBox(height: 14),
-                const Text('What we will look at', style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 6),
-                for (final c in item.aiChecks)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text('• $c', style: const TextStyle(fontSize: 13, color: AppColors.charcoalGray)),
-                  ),
-                const Text('Suggested by AI for this model; not independently verified.',
-                    style: TextStyle(fontSize: 11.5, color: AppColors.softGray)),
-              ],
-            ],
-          ),
-        ),
-      ),
+    Haptics.lightImpact();
+    showLenzSheet<void>(
+      context,
+      builder: (context) =>
+          _TipsSheet(item: item, photoNumber: widget.photoNumber, maxPhotos: widget.maxPhotos),
     );
   }
+
+  /// Dim of the screen outside the guide (same colour the overlay paints).
+  static const Color _dim = CaptureGuidePainter.scrimColor;
 
   @override
   Widget build(BuildContext context) {
     final item = widget.currentItem;
+    final mq = MediaQuery.of(context);
+    final compact = mq.size.height < 720;
+    final total = widget.totalCount > 0 ? widget.totalCount : 1;
+    final step = (widget.currentIndex + 1).clamp(1, total);
     return Scaffold(
-      backgroundColor: AppColors.warmIvory,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            _buildTopBar(),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: _buildProgress(),
-            ),
-            const SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 22),
-              child: Column(
-                children: [
-                  Text(
-                    item.title,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        color: AppColors.nearBlack, fontSize: 16, fontWeight: FontWeight.w800, letterSpacing: -0.2),
+      backgroundColor: LenzColors.camera,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          const Positioned.fill(child: LenzCameraBackdrop()),
+          Positioned.fill(child: _buildPreview()),
+          Column(
+            children: [
+              ColoredBox(
+                color: _dim,
+                child: Padding(
+                  padding: EdgeInsets.only(top: mq.padding.top, bottom: 10),
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.3,
+                    child: LenzCaptureTopBar(
+                      title: item.title,
+                      step: step,
+                      total: total,
+                      onClose: widget.onBack,
+                      onFlash: _toggleFlash,
+                      flashOn: _isFlashOn,
+                    ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    item.guide,
-                    textAlign: TextAlign.center,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppColors.charcoalGray, fontSize: 12.5, height: 1.3),
-                  ),
-                ],
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            Expanded(
-              child: LayoutBuilder(builder: (context, constraints) {
-                final w = (constraints.maxWidth * 0.86).clamp(240.0, 380.0);
-                final h = (constraints.maxHeight - 64).clamp(200.0, w * 1.15);
-                return Column(
-                  children: [
-                    Center(
-                      child: Container(
-                        width: w,
-                        height: h,
-                        decoration: BoxDecoration(
-                          color: AppColors.veryLightWarmGray,
-                          borderRadius: BorderRadius.circular(26),
-                          boxShadow: [
-                            BoxShadow(color: AppColors.nearBlack.withOpacity(0.08), blurRadius: 20, offset: const Offset(0, 6)),
-                          ],
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(26),
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              CameraPreviewWidget(
-                                key: _cameraKey,
-                                onZoomChanged: (zoom) {
-                                  if (mounted) setState(() => _zoomLevel = zoom);
-                                },
-                                onControllerReady: (_) {
-                                  if (mounted) {
-                                    setState(() {
-                                      _zoomLevel = _cameraKey.currentState?.currentZoom ?? 1.0;
-                                      _minZoom = _cameraKey.currentState?.minZoom ?? 1.0;
-                                      _maxZoom = _cameraKey.currentState?.maxZoom ?? 4.0;
-                                    });
-                                  }
-                                },
-                              ),
-                              CaptureGuideOverlay(
-                                type: item.guideType,
-                                label: 'Line up the part inside the guide. It is a framing aid only.',
-                              ),
-                            ],
-                          ),
+              // The framing guide for this part: a framing aid only, nothing
+              // checks alignment and capture is always allowed.
+              Expanded(
+                child: _cameraUnavailable
+                    ? const SizedBox.expand()
+                    : MediaQuery.withClampedTextScaling(
+                        maxScaleFactor: compact ? 1.15 : 1.3,
+                        child: CaptureGuideOverlay(
+                          type: item.guideType,
+                          label: captureGuideCaption(item.guideType),
+                          animate: true,
+                          frozen: _frozen || _isCapturing,
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(height: 56, width: w, child: _buildTips(item)),
-                  ],
-                );
-              }),
-            ),
-            _buildBottomControlCard(),
-          ],
-        ),
+              ),
+              ColoredBox(
+                color: _dim,
+                // Capped text scale so the guide keeps room to frame the part.
+                child: MediaQuery.withClampedTextScaling(
+                  maxScaleFactor: compact ? 1.15 : 1.3,
+                  child: _buildBottom(item, compact, mq.padding.bottom),
+                ),
+              ),
+            ],
+          ),
+          Positioned.fill(child: LenzCaptureFlash(animation: _flashController)),
+        ],
       ),
     );
   }
 
-  Widget _buildTips(EvidenceItem item) {
-    Widget tip(IconData icon, String text) => Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon, size: 13, color: AppColors.deepForestGreen),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(text,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 10.5, height: 1.2, color: AppColors.charcoalGray)),
-              ),
-            ],
-          ),
+  Widget _buildPreview() {
+    return widget.previewOverride ??
+        CameraPreviewWidget(
+          key: _cameraKey,
+          onZoomChanged: (zoom) {
+            if (mounted) setState(() => _zoomLevel = zoom);
+          },
+          onUnavailableChanged: (v) {
+            if (mounted) setState(() => _cameraUnavailable = v);
+          },
+          onFrozenChanged: (v) {
+            if (mounted) setState(() => _frozen = v);
+          },
+          onControllerReady: (_) {
+            if (mounted) {
+              setState(() {
+                _zoomLevel = _cameraKey.currentState?.currentZoom ?? 1.0;
+                _minZoom = _cameraKey.currentState?.minZoom ?? 1.0;
+                _maxZoom = _cameraKey.currentState?.maxZoom ?? 4.0;
+              });
+            }
+          },
         );
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        GestureDetector(
-          onTap: _showExample,
-          child: Column(
-            children: [
-              CaptureGuideIllustration(type: item.guideType, size: 40),
-              const SizedBox(height: 2),
-              const Text('Example', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.nearBlack)),
-            ],
-          ),
-        ),
-        const SizedBox(width: 10),
-        tip(CupertinoIcons.arrow_up_left_arrow_down_right, item.tips.distance),
-        const SizedBox(width: 8),
-        tip(CupertinoIcons.scope, item.tips.focus),
-        const SizedBox(width: 8),
-        tip(CupertinoIcons.sun_max, item.tips.lighting),
-      ],
-    );
   }
 
-  Widget _circleButton({required VoidCallback onTap, required Widget child, Color? color}) => BounceButton(
-        onTap: onTap,
-        child: Container(
-          width: 42,
-          height: 42,
-          decoration: BoxDecoration(
-            color: color ?? AppColors.veryLightWarmGray,
-            shape: BoxShape.circle,
-            border: Border.all(color: AppColors.nearBlack.withOpacity(0.06)),
-          ),
-          child: Center(child: child),
-        ),
-      );
-
-  Widget _buildTopBar() {
+  Widget _buildBottom(EvidenceItem item, bool compact, double safeBottom) {
+    Widget chip(Widget icon, String label) => LenzGlassPill(
+      label: label,
+      leading: icon,
+      height: 34,
+      fontSize: 12.5,
+      fontWeight: FontWeight.w800,
+      semanticLabel: '$label tips',
+      onTap: _showExample,
+    );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 6),
-      child: Row(
+      padding: EdgeInsets.fromLTRB(0, compact ? 10 : 14, 0, safeBottom + (compact ? 10 : 16)),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          _circleButton(
-            onTap: widget.onBack,
-            child: const Icon(CupertinoIcons.chevron_back, color: AppColors.nearBlack, size: 18),
-          ),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
+          // One coach line; the long advice is in the sheet.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
               children: [
-                const Text('Capture Evidence',
-                    style: TextStyle(color: AppColors.nearBlack, fontSize: 16.5, fontWeight: FontWeight.w800, letterSpacing: -0.3)),
-                const SizedBox(height: 3),
-                Text(
-                  'Photo ${widget.photoNumber} of up to ${widget.maxPhotos}',
-                  style: const TextStyle(color: AppColors.charcoalGray, fontSize: 11.5, fontWeight: FontWeight.w500),
+                LenzCoachAvatar(mood: _isCapturing ? LenzMood.shocked : LenzMood.idle),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _CoachBubble(key: ValueKey(item.id), text: _coachLine(item.guide)),
+                ),
+                const SizedBox(width: 10),
+                LenzGlassPill(
+                  label: 'Example',
+                  leading: const LenzIcon(
+                    LenzIcons.info,
+                    size: 17,
+                    strokeWidth: 2.2,
+                    color: Colors.white,
+                  ),
+                  onTap: _showExample,
                 ),
               ],
             ),
           ),
-          _circleButton(
-            onTap: _toggleFlash,
-            color: _isFlashOn ? AppColors.deepForestGreen : null,
-            child: Icon(_isFlashOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
-                color: _isFlashOn ? Colors.white : AppColors.nearBlack, size: 18),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Progress of useful evidence, not of photos taken.
-  Widget _buildProgress() {
-    return Column(
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(3),
-          child: LinearProgressIndicator(
-            value: widget.evidenceProgress.clamp(0.0, 1.0),
-            minHeight: 4,
-            backgroundColor: AppColors.nearBlack.withOpacity(0.08),
-            valueColor: const AlwaysStoppedAnimation(AppColors.deepForestGreen),
-          ),
-        ),
-        if (widget.progressLabel.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text(widget.progressLabel,
-              style: const TextStyle(fontSize: 11, color: AppColors.charcoalGray, fontWeight: FontWeight.w500)),
-        ],
-      ],
-    );
-  }
-
-  Widget _labelledButton({required IconData icon, required String label, required VoidCallback onTap}) => BounceButton(
-        onTap: onTap,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: AppColors.pureWhite,
-                shape: BoxShape.circle,
-                border: Border.all(color: AppColors.nearBlack.withOpacity(0.07)),
-              ),
-              child: Center(child: Icon(icon, size: 22, color: AppColors.nearBlack)),
-            ),
-            const SizedBox(height: 5),
-            Text(label, style: const TextStyle(color: AppColors.charcoalGray, fontSize: 11, fontWeight: FontWeight.w500)),
-          ],
-        ),
-      );
-
-  Widget _buildBottomControlCard() {
-    final item = widget.currentItem;
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: AppColors.veryLightWarmGray,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(36)),
-        border: Border(top: BorderSide(color: AppColors.nearBlack.withOpacity(0.05))),
-        boxShadow: [BoxShadow(color: AppColors.nearBlack.withOpacity(0.04), blurRadius: 16, offset: const Offset(0, -4))],
-      ),
-      padding: const EdgeInsets.fromLTRB(28, 14, 28, 30),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+          SizedBox(height: compact ? 8 : 12),
           AndroidCameraZoomSlider(
             currentZoom: _zoomLevel,
             minZoom: _minZoom,
             maxZoom: _maxZoom,
             onZoomChanged: _handleZoomChanged,
+            dark: true,
           ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _labelledButton(
-                icon: item.screenshotOk ? Icons.screenshot_outlined : Icons.image_outlined,
-                label: item.screenshotOk ? 'Screenshot' : 'Gallery',
-                onTap: _pickFromGallery,
+          SizedBox(height: compact ? 8 : 12),
+          // Neutral reminders: the app measures none of these.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  chip(const LenzCamIcon(LenzCamIcons.sun, size: 16), 'Light'),
+                  const SizedBox(width: 8),
+                  chip(const LenzCamIcon(LenzCamIcons.focus, size: 16), 'Focus'),
+                  const SizedBox(width: 8),
+                  chip(const LenzCamIcon(LenzCamIcons.glare, size: 16), 'Glare'),
+                ],
               ),
-              BounceButton(
-                scaleLower: 0.92,
-                onTap: _handleCapture,
-                child: Container(
-                  width: 76,
-                  height: 76,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.pureWhite,
-                    border: Border.all(color: AppColors.deepForestGreen, width: 3.5),
-                    boxShadow: [
-                      BoxShadow(color: AppColors.deepForestGreen.withOpacity(0.18), blurRadius: 14, offset: const Offset(0, 4)),
-                    ],
-                  ),
-                  padding: const EdgeInsets.all(5),
-                  child: Container(
-                    decoration: const BoxDecoration(shape: BoxShape.circle, color: AppColors.deepForestGreen),
-                    child: _isCapturing
-                        ? const Center(child: CupertinoActivityIndicator(color: Colors.white, radius: 12))
-                        : null,
+            ),
+          ),
+          SizedBox(height: compact ? 10 : 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 26),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: LenzIconButton(
+                      icon: LenzIcons.image,
+                      dark: true,
+                      radius: 22,
+                      iconSize: 22,
+                      onTap: _pickFromGallery,
+                      semanticLabel: item.screenshotOk ? 'Screenshot' : 'Gallery',
+                    ),
                   ),
                 ),
-              ),
-              _labelledButton(
-                icon: CupertinoIcons.nosign,
-                label: "Can't take",
-                onTap: () {
-                  Haptics.lightImpact();
-                  (widget.onMarkUnavailable ?? widget.onSkip ?? widget.onBack)();
-                },
-              ),
-            ],
+                LenzShutterButton(onTap: _handleCapture, busy: _isCapturing, size: 78),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: LenzGlassPill(
+                      label: 'Skip',
+                      semanticLabel: "Can't take this photo",
+                      height: 44,
+                      fontSize: 13,
+                      leading: const LenzCamIcon(LenzCamIcons.flip, size: 17),
+                      onTap: () {
+                        Haptics.lightImpact();
+                        (widget.onMarkUnavailable ?? widget.onSkip ?? widget.onBack)();
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// First clause of the part's own photo instruction, so the bubble stays one
+/// short line; the sheet shows the whole instruction.
+String _coachLine(String guide) {
+  final t = guide.trim();
+  final m = RegExp(r'[,;.:]').firstMatch(t);
+  final first = m == null ? t : t.substring(0, m.start).trim();
+  return first.isEmpty ? t : first;
+}
+
+/// The coach's speech bubble (mock `.coach .say`): white, tail bottom-left,
+/// popping in and typing the part's own photo instruction out character by
+/// character (the sheet repeats it in full). Re-types for every part because
+/// the caller keys it by the evidence item.
+class _CoachBubble extends StatelessWidget {
+  const _CoachBubble({super.key, required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, c) => Align(
+        alignment: Alignment.centerLeft,
+        child: LenzBubble(
+          text: text,
+          maxWidth: c.maxWidth,
+          popDelay: const Duration(milliseconds: 120),
+          typeDelay: const Duration(milliseconds: 260),
+          style: LenzText.item.copyWith(
+            fontSize: 14.5,
+            fontWeight: FontWeight.w800,
+            height: 1.2,
+            color: LenzColors.ink,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Bottom sheet with everything the camera no longer shows: the drawn
+/// example, the three CaptureTips lines in full, what we will look at, and
+/// the framing-aid footer. Advice only: none of it is measured.
+class _TipsSheet extends StatelessWidget {
+  const _TipsSheet({required this.item, required this.photoNumber, required this.maxPhotos});
+
+  final EvidenceItem item;
+  final int photoNumber;
+  final int maxPhotos;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget tip(Widget icon, String text) => Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: LenzShadows.sh1,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: LenzColors.mint2,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            alignment: Alignment.center,
+            child: icon,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: LenzText.item.copyWith(
+                fontSize: 14.5,
+                fontWeight: FontWeight.w800,
+                height: 1.3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            const LenzCoachAvatar(size: 56, ring: false),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(item.title, style: LenzText.title.copyWith(fontSize: 20)),
+                  Text(
+                    'Photo $photoNumber of up to $maxPhotos',
+                    style: LenzText.sub.copyWith(fontSize: 13, fontWeight: FontWeight.w700),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        if (item.guide.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text(item.guide, style: LenzText.sub.copyWith(fontSize: 13.5, height: 1.35)),
+        ],
+        Container(
+          margin: const EdgeInsets.fromLTRB(0, 14, 0, 6),
+          height: 120,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF173D2E), Color(0xFF0C2219)],
+            ),
+          ),
+          child: Stack(
+            children: [
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: AspectRatio(
+                    aspectRatio: 1,
+                    child: CustomPaint(
+                      painter: CaptureGuidePainter(type: item.guideType, scrim: false),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                right: 10,
+                top: 10,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: LenzColors.ok,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const LenzIcon(
+                        LenzIcons.check,
+                        size: 13,
+                        strokeWidth: 3,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'What to frame',
+                        style: LenzText.cap.copyWith(
+                          color: Colors.white,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Text(
+            'This drawing shows what to frame. It is not a reference image of your model; no verified reference photo is available for it yet.',
+            style: LenzText.tiny.copyWith(fontSize: 12, height: 1.35),
+          ),
+        ),
+        tip(
+          const LenzIcon(LenzIcons.scan, size: 20, strokeWidth: 2.1, color: LenzColors.forest2),
+          item.tips.distance,
+        ),
+        tip(
+          const LenzCamIcon(
+            LenzCamIcons.focus,
+            size: 20,
+            strokeWidth: 2.1,
+            color: LenzColors.forest2,
+          ),
+          item.tips.focus,
+        ),
+        tip(
+          const LenzCamIcon(
+            LenzCamIcons.sun,
+            size: 20,
+            strokeWidth: 2.1,
+            color: LenzColors.forest2,
+          ),
+          item.tips.lighting,
+        ),
+        if (item.aiChecks.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text('What we will look at', style: LenzText.item.copyWith(fontSize: 14.5)),
+          const SizedBox(height: 6),
+          for (final c in item.aiChecks)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                '• $c',
+                style: LenzText.sub.copyWith(fontSize: 13, color: LenzColors.ink),
+              ),
+            ),
+          Text(
+            'Suggested by AI for this model; not independently verified.',
+            style: LenzText.tiny.copyWith(fontSize: 11.5),
+          ),
+        ],
+        const SizedBox(height: 12),
+        LenzButton(label: 'Got it', onPressed: () => Navigator.of(context).pop()),
+        const SizedBox(height: 10),
+        Text(
+          'The guide is a framing aid only — it does not judge the photo.',
+          textAlign: TextAlign.center,
+          style: LenzText.tiny.copyWith(fontSize: 11.5, fontWeight: FontWeight.w700),
+        ),
+      ],
     );
   }
 }

@@ -3,6 +3,8 @@ const admin = require("firebase-admin");
 
 const gemini = require("./lib/gemini");
 const limits = require("./lib/limits");
+const anonymousCleanup = require("./lib/anonymous_cleanup");
+const deviceGrants = require("./lib/device_grants");
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -110,7 +112,7 @@ exports.generateStructuredContent = functions
 
     let admission;
     try {
-      admission = await limits.admitCall({ db, admin, uid, token: context.auth.token, scanId: req.scanId, imageCount: req.images.length });
+      admission = await limits.admitCall({ db, admin, uid, token: context.auth.token, scanId: req.scanId, imageCount: req.images.length, label: req.label });
     } catch (e) {
       logEvent("ai_call_rejected", { cid, user: limits.logId(uid), label: req.label, reason: e.message }, "WARNING");
       throw httpsErrorFor(e);
@@ -186,9 +188,12 @@ exports.generateStructuredContent = functions
  * Auth onCreate Trigger: onUserCreated
  *
  * Automatically provisions users/{uid} document with default free credits.
- * Anonymous (guest) accounts get 3 scans; real accounts get 5 - matching the
- * client's own _ensureUserDocumentExists so both paths agree on defaults
- * regardless of which one wins the race to create the document first.
+ * Every new user starts with 0 scans. A guest's 3 scans (claimGuestScans) and
+ * a real account's free scans (finalizeAccountUpgrade) are granted ONCE PER
+ * DEVICE by the server (see lib/device_grants.js), so signing out and back in
+ * as a guest, or with a new e-mail, on the same phone gets nothing more.
+ * Matches the client's _ensureUserDocumentExists, so both paths agree on
+ * defaults regardless of which one wins the race to create the document.
  */
 exports.onUserCreated = functions.auth.user().onCreate(async (user) => {
   const userRef = db.collection("users").doc(user.uid);
@@ -202,7 +207,7 @@ exports.onUserCreated = functions.auth.user().onCreate(async (user) => {
       email: user.email || "",
       planName: isAnon ? "Guest Plan" : "Free Plan",
       isPremium: false,
-      scansRemaining: isAnon ? 3 : 5,
+      scansRemaining: 0,
       avatarUrl: user.photoURL || "",
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -212,14 +217,13 @@ exports.onUserCreated = functions.auth.user().onCreate(async (user) => {
 /**
  * Callable Cloud Function: finalizeAccountUpgrade
  *
- * Called right after a guest successfully links a real credential (email,
- * Google, or Apple). Bumps scansRemaining/planName server-side, since
- * clients are never allowed to write those fields directly (see
- * firestore.rules). Idempotent and one-directional: it only ever raises a
- * guest's balance up to the free-account minimum once, and never touches an
- * already-premium account.
+ * Called right after a guest links a real credential (email, Google, or
+ * Apple) or signs in. Moves the account to the Free Plan and grants the free
+ * scans ONCE PER DEVICE (the app sends a device id; only its hash is kept),
+ * server-side, since clients are never allowed to write scansRemaining (see
+ * firestore.rules). Idempotent; never touches a premium account.
  */
-exports.finalizeAccountUpgrade = functions.https.onCall(async (_data, context) => {
+exports.finalizeAccountUpgrade = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
     throw new functions.https.HttpsError(
       "unauthenticated",
@@ -227,44 +231,54 @@ exports.finalizeAccountUpgrade = functions.https.onCall(async (_data, context) =
     );
   }
 
-  const uid = context.auth.uid;
-  const userRef = db.collection("users").doc(uid);
-  const FREE_PLAN_SCANS = 3;
-
-  await db.runTransaction(async (transaction) => {
-    const doc = await transaction.get(userRef);
-
-    if (!doc.exists) {
-      transaction.set(userRef, {
-        name: context.auth.token.name || "Collector",
-        email: context.auth.token.email || "",
-        planName: "Free Plan",
-        isPremium: false,
-        scansRemaining: FREE_PLAN_SCANS,
-        upgradedAt: admin.firestore.FieldValue.serverTimestamp(),
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      });
-      return;
-    }
-
-    const userData = doc.data();
-
-    // Never touch a premium account's balance.
-    if (userData.isPremium) return;
-
-    // Already a finalized free account (not a guest anymore) - nothing to do.
-    // Guarding on planName (rather than just the scan count) keeps this from
-    // re-topping-up a free user's balance every time they simply log back in.
-    if (userData.planName && userData.planName !== "Guest Plan") return;
-
-    transaction.update(userRef, {
-      planName: "Free Plan",
-      scansRemaining: FREE_PLAN_SCANS,
-      upgradedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+  const deviceId = data && typeof data.deviceId === "string" ? data.deviceId : null;
+  const result = await deviceGrants.claimFreeScans({
+    db,
+    admin,
+    uid: context.auth.uid,
+    token: context.auth.token,
+    deviceId,
+  });
+  logEvent("free_scans_claim", {
+    user: limits.logId(context.auth.uid),
+    granted: result.granted,
+    usedOnDevice: result.alreadyUsedOnDevice,
+    invalidDevice: result.invalidDevice,
+    alreadyClaimed: result.alreadyClaimed,
   });
 
-  return { success: true };
+  return { success: true, ...result };
+});
+
+/**
+ * Callable Cloud Function: claimGuestScans
+ *
+ * Called by the app right after "Continue as guest". Grants the 3 guest scans
+ * once per device (the app sends a device id; only its hash is kept).
+ */
+exports.claimGuestScans = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "The function must be called while authenticated."
+    );
+  }
+  const deviceId = data && typeof data.deviceId === "string" ? data.deviceId : null;
+  const result = await deviceGrants.claimGuestScans({
+    db,
+    admin,
+    uid: context.auth.uid,
+    token: context.auth.token,
+    deviceId,
+  });
+  logEvent("guest_scans_claim", {
+    user: limits.logId(context.auth.uid),
+    granted: result.granted,
+    usedOnDevice: result.alreadyUsedOnDevice,
+    invalidDevice: result.invalidDevice,
+    alreadyClaimed: result.alreadyClaimed,
+  });
+  return { success: true, ...result };
 });
 
 /**
@@ -468,6 +482,13 @@ exports.deleteAccount = functions
     await batch.commit();
   }
 
+  // Unused free scans go back to this phone's ledger before the account goes.
+  try {
+    await deviceGrants.releaseOnDelete({ db, uid });
+  } catch (e) {
+    console.error("[deleteAccount] device ledger release error:", e);
+  }
+
   try {
     await deleteSubcollection("reports");
     await deleteSubcollection("collection");
@@ -503,3 +524,70 @@ exports.deleteAccount = functions
   return { success: true };
 });
 
+/**
+ * Scheduled housekeeping: removes guest ("Continue as guest") sign-ins that
+ * have not been used for 30 days.
+ *
+ * Guests keep nothing in the app, so an anonymous Firebase user that nobody
+ * has opened for a month is only clutter. Rules (see lib/anonymous_cleanup.js,
+ * unit tested): only users with no sign-in provider, email or phone; never a
+ * paying user; the user's Firestore data goes first and the Auth user is only
+ * deleted when that worked. A run handles at most 2000 users; the rest waits
+ * for the next night.
+ *
+ * Set ANON_CLEANUP_DRY_RUN=true in functions/.env to only log what it would
+ * delete.
+ */
+exports.cleanupAnonymousUsers = functions
+  .runWith({
+    timeoutSeconds: 540,
+    memory: "256MB",
+    secrets: ["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"],
+  })
+  .pubsub.schedule("every day 03:00")
+  .timeZone("Etc/UTC")
+  .onRun(async () => {
+    const dryRun = process.env.ANON_CLEANUP_DRY_RUN === "true";
+
+    async function deleteSubcollection(userRef, name) {
+      let removed = 0;
+      for (;;) {
+        const snap = await userRef.collection(name).limit(400).get();
+        if (snap.empty) return removed;
+        const batch = db.batch();
+        snap.docs.forEach((d) => batch.delete(d.ref));
+        await batch.commit();
+        removed += snap.size;
+      }
+    }
+
+    const summary = await anonymousCleanup.cleanupAnonymousUsers({
+      dryRun,
+      maxAgeDays: 30,
+      listPage: async (pageToken) => {
+        const page = await admin.auth().listUsers(1000, pageToken);
+        return { users: page.users, pageToken: page.pageToken };
+      },
+      isPremium: async (uid) => {
+        const doc = await db.collection("users").doc(uid).get();
+        return doc.exists && doc.data().isPremium === true;
+      },
+      deleteUserData: async (uid) => {
+        const userRef = db.collection("users").doc(uid);
+        const reports = await deleteSubcollection(userRef, "reports");
+        await deleteSubcollection(userRef, "collection");
+        await deleteSubcollection(userRef, "categories");
+        await userRef.delete();
+        await db.collection("rate_limits").doc(uid).delete();
+        // Only older guests ever saved reports (and so uploaded photos).
+        if (reports > 0) await deleteCloudinaryAssetsByPrefix(`${uid}_`);
+      },
+      deleteAuthUsers: async (uids) => {
+        const res = await admin.auth().deleteUsers(uids);
+        return { successCount: res.successCount, failureCount: res.failureCount };
+      },
+    });
+
+    logEvent("anonymous_cleanup_done", summary, summary.authFailures || summary.dataFailures ? "WARNING" : "INFO");
+    return null;
+  });

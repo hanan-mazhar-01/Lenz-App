@@ -1,11 +1,15 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_typography.dart';
-import '../../widgets/animations/bounce_button.dart';
-import '../../services/haptics.dart';
 
+import '../../services/haptics.dart';
+import '../../widgets/lenz/lenz.dart';
+import '../../widgets/ui/ui.dart';
+import 'profile_sheet_parts.dart';
+
+/// Help and support sheet (prototype `ACT.help`, mood `hello`): support email
+/// row, the real FAQ accordion, and Cancel / Copy email buttons. Paints its
+/// own ivory frame + grabber so it works inside a plain
+/// `showModalBottomSheet(backgroundColor: Colors.transparent, ...)`.
 class HelpSupportSheet extends StatefulWidget {
   const HelpSupportSheet({super.key});
 
@@ -19,18 +23,15 @@ class _HelpSupportSheetState extends State<HelpSupportSheet> {
   final List<Map<String, String>> _faqs = [
     {
       'q': 'How does the authenticity check work?',
-      'a':
-          'Lenz uses Google\'s Gemini AI to visually examine your photos - stitching, hardware, materials, fonts, and construction details - and compares what it sees against known authentic and replica patterns for that product. It\'s an AI-assisted opinion, not an official brand certification.',
+      'a': 'Lenz uses Google\'s Gemini AI to visually examine your photos - stitching, hardware, materials, fonts, and construction details - and compares what it sees against known authentic and replica patterns for that product. It\'s an AI-assisted opinion, not an official brand certification.',
     },
     {
       'q': 'What does "Inconclusive" mean?',
-      'a':
-          'An Inconclusive result means the evidence provided wasn\'t enough for a confident call either way - often because of missing angles, glare, or blur. Recapturing the requested photos in better lighting usually resolves it.',
+      'a': 'An Inconclusive result means the evidence provided wasn\'t enough for a confident call either way - often because of missing angles, glare, or blur. Recapturing the requested photos in better lighting usually resolves it.',
     },
     {
       'q': 'Which categories are supported?',
-      'a':
-          'Sneakers, bags, watches, clothing, and accessories all have their own guided capture checklists tailored to what actually matters for that category.',
+      'a': 'Sneakers, bags, watches, clothing, and accessories all have their own guided capture checklists tailored to what actually matters for that category.',
     },
   ];
 
@@ -47,231 +48,165 @@ class _HelpSupportSheetState extends State<HelpSupportSheet> {
     );
   }
 
-  void _showContactInfoDialog() {
+  Future<void> _showContactInfoDialog() async {
     Haptics.lightImpact();
-    showCupertinoDialog(
-      context: context,
-      builder: (dialogCtx) => CupertinoAlertDialog(
-        title: const Text('Contact Support'),
-        content: Padding(
-          padding: const EdgeInsets.only(top: 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              Text(
-                'Have questions or need help? Reach out directly via email:',
-                style: TextStyle(fontSize: 13),
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: 12),
-              SelectableText(
-                _supportEmail,
-                style: TextStyle(
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.accent,
+    final copy = await showLenzConfirm(
+      context,
+      title: 'Contact support',
+      text:
+          'Have questions or need help? Reach out directly via email:\n$_supportEmail',
+      okLabel: 'Copy email',
+      character: (_) =>
+          const LenzCharacter(mood: LenzMood.hello, view: LenzView.bust),
+    );
+    if (copy && mounted) _copyEmail();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduced = LenzMotion.reduced(context);
+    return LenzSheetFrame(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const LenzSheetHead(
+            title: 'Help and support',
+            subtitle:
+                'Answers to common questions and our contact information.',
+          ),
+          LenzSettingGroup(
+            margin: const EdgeInsets.only(bottom: 12),
+            children: [
+              LenzSettingRow(
+                icon: LenzIcons.mail,
+                title: 'Email support',
+                subtitle: _supportEmail,
+                trailing: LenzIconButton(
+                  icon: LenzIcons.file,
+                  size: 38,
+                  radius: 13,
+                  iconSize: 18,
+                  semanticLabel: 'Copy Email',
+                  onTap: _copyEmail,
                 ),
-                textAlign: TextAlign.center,
+                onTap: _showContactInfoDialog,
               ),
             ],
           ),
-        ),
-        actions: [
-          CupertinoDialogAction(
-            child: const Text('Cancel'),
-            onPressed: () => Navigator.of(dialogCtx).pop(),
+          Text(
+            'Have a question about a result or your subscription? Email us and include the item name.',
+            style: LenzText.sub.copyWith(fontSize: 13.5),
           ),
-          CupertinoDialogAction(
-            isDefaultAction: true,
-            child: const Text('Copy Email'),
-            onPressed: () {
-              Navigator.of(dialogCtx).pop();
-              _copyEmail();
-            },
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              'Common questions',
+              style: LenzText.section.copyWith(fontSize: 17),
+            ),
+          ),
+          LenzSettingGroup(
+            margin: EdgeInsets.zero,
+            children: [
+              for (var i = 0; i < _faqs.length; i++)
+                _FaqRow(
+                  question: _faqs[i]['q']!,
+                  answer: _faqs[i]['a']!,
+                  expanded: _expandedIndex == i,
+                  reduced: reduced,
+                  onTap: () {
+                    Haptics.selectionClick();
+                    setState(() {
+                      _expandedIndex = _expandedIndex == i ? null : i;
+                    });
+                  },
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: LenzButton(
+                  label: 'Cancel',
+                  variant: LenzButtonVariant.ghost,
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: LenzButton(label: 'Copy email', onPressed: _copyEmail),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
+}
+
+class _FaqRow extends StatelessWidget {
+  const _FaqRow({
+    required this.question,
+    required this.answer,
+    required this.expanded,
+    required this.reduced,
+    required this.onTap,
+  });
+
+  final String question;
+  final String answer;
+  final bool expanded;
+  final bool reduced;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.85,
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-      decoration: const BoxDecoration(
-        color: AppColors.background,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 38,
-                height: 4.5,
-                decoration: BoxDecoration(
-                  color: AppColors.neutralPill,
-                  borderRadius: BorderRadius.circular(2.5),
-                ),
-              ),
-            ),
-            const SizedBox(height: 18),
-            Text('Help & Support', style: AppTypography.titleLarge),
-            const SizedBox(height: 4),
-            Text(
-              'Answers to common questions and our contact information.',
-              style: AppTypography.caption,
-            ),
-            const SizedBox(height: 16),
-
-            // FAQs Accordion
-            ...List.generate(_faqs.length, (i) {
-              final isExpanded = _expandedIndex == i;
-              return Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: AppColors.shadow,
-                      blurRadius: 6,
-                      offset: Offset(0, 1),
-                    ),
-                  ],
-                ),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(16),
-                  onTap: () {
-                    Haptics.selectionClick();
-                    setState(() {
-                      _expandedIndex = isExpanded ? null : i;
-                    });
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                _faqs[i]['q']!,
-                                style: AppTypography.titleMedium.copyWith(fontSize: 14),
-                              ),
-                            ),
-                            Icon(
-                              isExpanded ? CupertinoIcons.chevron_up : CupertinoIcons.chevron_down,
-                              size: 16,
-                              color: AppColors.textTertiary,
-                            ),
-                          ],
-                        ),
-                        if (isExpanded) ...[
-                          const SizedBox(height: 10),
-                          Text(
-                            _faqs[i]['a']!,
-                            style: AppTypography.bodyMedium.copyWith(
-                              color: AppColors.textSecondary,
-                              height: 1.35,
-                            ),
-                          ),
-                        ],
-                      ],
+    final duration = Duration(milliseconds: reduced ? 0 : 320);
+    return Semantics(
+      button: true,
+      expanded: expanded,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(child: Text(question, style: LenzText.setting)),
+                  const SizedBox(width: 10),
+                  AnimatedRotation(
+                    turns: expanded ? .5 : 0,
+                    duration: duration,
+                    curve: LenzMotion.spring,
+                    child: const LenzIcon(
+                      LenzIcons.chevD,
+                      size: 18,
+                      color: LenzColors.ink,
                     ),
                   ),
-                ),
-              );
-            }),
-
-            const SizedBox(height: 14),
-
-            // Contact Info Section
-            Text(
-              'CONTACT INFO',
-              style: AppTypography.captionMedium.copyWith(letterSpacing: 0.6),
-            ),
-            const SizedBox(height: 10),
-
-            // Contact Info Card with Copy Email
-            BounceButton(
-              onTap: _showContactInfoDialog,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppColors.border),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: AppColors.shadow,
-                      blurRadius: 6,
-                      offset: Offset(0, 1),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppColors.deepForestGreen.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        CupertinoIcons.mail_solid,
-                        size: 20,
-                        color: AppColors.deepForestGreen,
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Email Support',
-                            style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14.5,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            _supportEmail,
-                            style: const TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(
-                        CupertinoIcons.doc_on_clipboard,
-                        size: 19,
-                        color: AppColors.accent,
-                      ),
-                      tooltip: 'Copy Email',
-                      onPressed: _copyEmail,
-                    ),
-                  ],
-                ),
+                ],
               ),
-            ),
-
-            const SizedBox(height: 16),
-          ],
+              AnimatedSize(
+                duration: duration,
+                curve: LenzMotion.ease,
+                alignment: Alignment.topCenter,
+                child: expanded
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          answer,
+                          style: LenzText.sub.copyWith(fontSize: 13.5),
+                        ),
+                      )
+                    : const SizedBox(width: double.infinity),
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lenz — Analyzing, one screen</title>
+<link rel="stylesheet" href="lenz_mock.css">
+<style>
+  /* Sized from the phone's own width/height (cqw/cqh) so the whole screen always fits: no scroll. */
+  .an{position:absolute;inset:0;display:flex;flex-direction:column;color:#fff;overflow:hidden;
+    padding:max(30px,5cqh) 5.2cqw max(14px,2.6cqh);
+    background:radial-gradient(110% 60% at 50% 22%,#2A5A45 0,#0E1F18 70%)}
+  .an>*{position:relative}
+  .top{flex:none;display:flex;align-items:center;justify-content:space-between;height:clamp(36px,5.2cqh,44px);margin-top:max(6px,2cqh)}
+  .gbtn{height:100%;aspect-ratio:1;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2)}
+  .top b{font-weight:900;font-size:clamp(15px,4.6cqw,18px);letter-spacing:-.01em}
+  .top i{width:100%;max-width:44px;aspect-ratio:1}
+  /* journey stepper */
+  .jour{flex:none;display:flex;align-items:center;margin:clamp(6px,1.4cqh,12px) 2% 0}
+  .jour .d{width:clamp(14px,4cqw,18px);aspect-ratio:1;border-radius:50%;flex:none;border:2.5px solid rgba(255,255,255,.28);background:transparent}
+  .jour .d.done{background:var(--leaf);border-color:var(--leaf)}
+  .jour .d.now{border-color:#6BE08F;box-shadow:0 0 0 4px rgba(107,224,143,.2);background:#0E1F18}
+  .jour .l{flex:1;height:3px;background:rgba(255,255,255,.18);margin:0 4px}
+  .jour .l.done{background:var(--leaf)}
+  .jlab{flex:none;display:flex;justify-content:space-between;margin:5px 0 0;font-weight:800;font-size:clamp(9.5px,2.7cqw,11px);color:rgba(214,232,222,.6)}
+  .jlab span:nth-child(4){color:#fff}
+
+  /* hero: Lenz is smaller and shrinks first */
+  .hero{flex:1 1 0;min-height:70px;max-height:78cqw;position:relative;margin-top:clamp(2px,1cqh,10px)}
+  .hero .ring{position:absolute;left:50%;top:50%;height:min(96%,52cqw);aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;
+    border:2px dashed rgba(255,255,255,.22);animation:spin 18s linear infinite}
+  .hero .glow{position:absolute;left:50%;top:50%;height:min(80%,44cqw);aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;
+    background:radial-gradient(circle,rgba(46,164,79,.38),rgba(46,164,79,0) 70%);animation:float 4s ease-in-out infinite}
+  .hero .m{position:absolute;left:50%;top:50%;height:min(100%,56cqw);aspect-ratio:900/860;transform:translate(-50%,-50%)}
+  .hero .m .lenz{-webkit-mask-image:linear-gradient(#000 84%,transparent);mask-image:linear-gradient(#000 84%,transparent)}
+  .bub{position:absolute;left:0;top:6%;max-width:44%;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);backdrop-filter:blur(10px);
+    border-radius:16px 16px 16px 5px;padding:8px 11px;font-weight:800;font-size:clamp(11px,3.2cqw,12.5px);line-height:1.2;color:#fff}
+  @keyframes spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
+  @keyframes float{50%{transform:translate(-50%,-58%)}}
+
+  /* photos strip + stage pill, on one row */
+  .mid{flex:none;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:clamp(6px,1.4cqh,12px)}
+  .ph{display:flex;gap:6px}
+  .ph i{width:clamp(34px,10.4cqw,42px);aspect-ratio:1;border-radius:12px;background:var(--c) center/cover;border:2px solid rgba(255,255,255,.2);position:relative;flex:none}
+  .ph i.on{border-color:#6BE08F;box-shadow:0 0 0 3px rgba(107,224,143,.25)}
+  .pill{display:inline-flex;align-items:center;gap:7px;font-weight:900;font-size:clamp(11px,3.2cqw,12.5px);padding:7px 12px;border-radius:99px;background:rgba(46,164,79,.2);border:1px solid rgba(107,224,143,.45);white-space:nowrap}
+  .pill b{width:8px;height:8px;border-radius:50%;background:#6BE08F;animation:pulse 1s ease-in-out infinite alternate}
+  @keyframes pulse{to{transform:scale(.6);opacity:.6}}
+
+  /* 4 steps as a compact 2x2 grid (was 4 tall rows) */
+  .steps{flex:none;display:grid;grid-template-columns:1fr 1fr;gap:clamp(6px,1.4cqh,12px);margin-top:clamp(8px,2cqh,18px)}
+  .st{display:flex;align-items:center;gap:9px;padding:clamp(8px,1.8cqh,16px) 11px;border-radius:16px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);opacity:.5;transition:.4s}
+  .st .c{width:clamp(22px,6.6cqw,26px);aspect-ratio:1;border-radius:50%;border:3px solid rgba(255,255,255,.25);flex:none;display:grid;place-items:center}
+  .st b{display:block;font-weight:900;font-size:clamp(11.5px,3.4cqw,13.5px);line-height:1.1}
+  .st small{display:block;font-weight:700;font-size:clamp(9.5px,2.7cqw,11px);color:rgba(214,232,222,.7);margin-top:2px;line-height:1.15}
+  .st.done{opacity:1} .st.done .c{background:var(--leaf);border-color:var(--leaf)}
+  .st.on{opacity:1;background:rgba(46,164,79,.18);border-color:rgba(107,224,143,.5)} .st.on .c{border-color:#6BE08F}
+  .st.on .c::after{content:"";width:9px;height:9px;border-radius:50%;background:#6BE08F;animation:pulse .8s ease-in-out infinite alternate}
+  .priv{flex:none;display:flex;justify-content:center;align-items:center;gap:5px;margin-top:clamp(8px,1.6cqh,14px);font-weight:700;font-size:clamp(10px,2.9cqw,11.5px);color:#7E9A8C}
+  .cap{max-width:760px;margin:44px auto 0}
+</style>
+</head>
+<body>
+<div class="page-head">
+  <a class="back" href="redesign_index.html">← All mock-ups</a>
+  <h1>Analyzing — one screen, no scrolling</h1>
+  <p>The current screen stacks hero (286 px), photos, label, paragraph and four tall step rows, so it scrolls on most phones. Here everything fits at
+     <b>320×568</b> up to <b>430×932</b>: Lenz is about 40% smaller and is the element that shrinks first, the photos and the stage pill share one row,
+     and the four steps become a compact 2×2 grid. The sentence under the pill is dropped (the speech bubble already says it).</p>
+</div>
+<div class="row" id="row"></div>
+<div class="note cap">
+  <b>What stays:</b> the journey stepper at “Analyze”, Lenz cycling inspect / think / focus with his bubble, the user’s own photos ticked off, the four real steps
+  (they advance on a timer because the analysis reports no real progress — no percentage is shown), the privacy line and the back button.
+  <b>What changes:</b> hero 286 → about 130–190 px, steps 4 rows → 2×2, the long paragraph is removed.
+</div>
+
+<script src="lenz_mock.js"></script>
+<script>
+const SIZES = [[320, 568, 'Small · 320×568'], [375, 667, 'Medium · 375×667'], [390, 844, 'Standard · 390×844'], [430, 932, 'Large · 430×932']];
+const PH = ["../assets/lenz/categories/cat_watches.png", "../assets/lenz/categories/cat_bags.png", "../assets/lenz/categories/cat_sneakers.png", "../assets/lenz/categories/cat_accessories.png"];
+const STEPS = [['Photo inspection', 'Checking 4 photos'], ['AI analysis', 'Flaws & materials'], ['Authenticity check', 'Known patterns'], ['Generating result', 'Almost there']];
+const MOODS = ['Studying every stitch…', 'Comparing with known patterns…', 'Zooming in on the details…', 'Almost done, hold on…'];
+const row = document.getElementById('row');
+SIZES.forEach(([w, h, label], n) => {
+  const fig = document.createElement('figure'); fig.className = 'fig';
+  fig.innerHTML = `<div class="phone" style="--w:${w}px;--h:${h}px"><div class="status light"><span>9:41</span><i>●●● ▮</i></div>
+  <div class="an">
+    <div class="top"><button class="gbtn">${LM.ic('chevron', 18, 2.6).replace('<svg', '<svg style="transform:rotate(90deg)"')}</button><b>Analyzing</b><i></i></div>
+    <div class="jour"><span class="d done"></span><span class="l done"></span><span class="d done"></span><span class="l done"></span><span class="d done"></span><span class="l done"></span><span class="d now"></span><span class="l"></span><span class="d"></span></div>
+    <div class="jlab"><span>Photo</span><span>Identify</span><span>Evidence</span><span>Analyze</span><span>Result</span></div>
+    <div class="hero"><div class="ring"></div><div class="glow"></div><div class="m" data-lenz="bust"></div><div class="bub">${MOODS[1]}</div></div>
+    <div class="mid"><div class="ph">${PH.map((p, i) => `<i class="${i === 1 ? 'on' : ''}" style="--c:url('${p}')"></i>`).join('')}</div>
+      <span class="pill"><b></b>AI analysis</span></div>
+    <div class="steps">${STEPS.map((s, i) => `<div class="st ${i < 1 ? 'done' : i === 1 ? 'on' : ''}"><span class="c">${i < 1 ? LM.ic('check', 13, 3.4) : ''}</span><div><b>${s[0]}</b><small>${s[1]}</small></div></div>`).join('')}</div>
+    <div class="priv">${LM.ic('shield', 12, 2.4)}Your privacy is our priority</div>
+  </div></div><figcaption><span class="tag">${label}</span></figcaption>`;
+  row.appendChild(fig);
+});
+LM.mount();
+// advance the steps so the motion can be judged
+setInterval(() => document.querySelectorAll('.phone').forEach((ph) => {
+  const st = [...ph.querySelectorAll('.st')]; let i = st.findIndex((s) => s.classList.contains('on'));
+  st.forEach((s, k) => { s.classList.toggle('done', k <= i); s.classList.remove('on'); });
+  const next = (i + 1) % 5; st.forEach((s) => s.classList.remove('done'));
+  st.forEach((s, k) => { if (k < next) s.classList.add('done'); if (k === next) s.classList.add('on'); });
+  ph.querySelector('.bub').textContent = MOODS[Math.min(next, 3)];
+}), 1800);
+</script>
+</body>
+</html>

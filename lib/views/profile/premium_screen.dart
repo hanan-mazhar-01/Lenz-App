@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../paywall/premium_paywall_screen.dart';
 
 /// Fullscreen Lenz Premium paywall powered by RevenueCat.

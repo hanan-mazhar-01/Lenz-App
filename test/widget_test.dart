@@ -41,9 +41,15 @@ void main() {
             ),
           ),
         ),
-        ChangeNotifierProvider<HomeViewModel>(create: (_) => HomeViewModel(historyRepo: history, categoryRepo: CategoryRepository())),
-        ChangeNotifierProvider<HistoryViewModel>(create: (_) => HistoryViewModel(historyRepo: history)),
-        ChangeNotifierProvider<FavoritesViewModel>(create: (_) => FavoritesViewModel(historyRepo: history)),
+        ChangeNotifierProvider<HomeViewModel>(
+          create: (_) => HomeViewModel(historyRepo: history, categoryRepo: CategoryRepository()),
+        ),
+        ChangeNotifierProvider<HistoryViewModel>(
+          create: (_) => HistoryViewModel(historyRepo: history),
+        ),
+        ChangeNotifierProvider<FavoritesViewModel>(
+          create: (_) => FavoritesViewModel(historyRepo: history),
+        ),
       ],
       child: MaterialApp(home: child),
     );
@@ -55,7 +61,7 @@ void main() {
       await tester.pump();
 
       expect(find.text('No scans yet'), findsOneWidget);
-      expect(find.text('Scan an Item'), findsOneWidget);
+      expect(find.text('Scan an item'), findsOneWidget);
       expect(find.textContaining('Rolex'), findsNothing);
       expect(find.textContaining('Louis Vuitton'), findsNothing);
       expect(find.textContaining('Nike'), findsNothing);
@@ -65,20 +71,24 @@ void main() {
       await tester.pumpWidget(wrap(FavoritesScreen(onOpenReport: (_) {})));
       await tester.pump();
 
-      expect(find.text('No favourites yet'), findsOneWidget);
+      expect(find.text('Nothing saved yet'), findsOneWidget);
       expect(find.textContaining('Gucci'), findsNothing);
     });
 
     testWidgets('a category with no scans says so', (tester) async {
-      await tester.pumpWidget(wrap(CategoryBrowseScreen(
-        category: CategoryItem.fromProductCategory(ProductCategory.watches),
-        onOpenReport: (_) {},
-        onBack: () {},
-      )));
+      await tester.pumpWidget(
+        wrap(
+          CategoryBrowseScreen(
+            category: CategoryItem.fromProductCategory(ProductCategory.watches),
+            onOpenReport: (_) {},
+            onBack: () {},
+          ),
+        ),
+      );
       await tester.pump();
 
-      expect(find.text('No Watches Scans Yet'), findsOneWidget);
-      expect(find.text('0 verified items'), findsOneWidget);
+      expect(find.text('No Watches scans yet'), findsOneWidget);
+      expect(find.text('0 checks so far'), findsOneWidget);
       expect(find.textContaining('Submariner'), findsNothing);
     });
   });

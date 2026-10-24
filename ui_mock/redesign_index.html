@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lenz — redesign mock-ups</title>
+<link rel="stylesheet" href="lenz_mock.css">
+<style>
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;max-width:980px;margin:0 auto}
+  .card{display:block;text-decoration:none;color:inherit;background:#fff;border-radius:28px;padding:26px;box-shadow:var(--sh1);transition:transform .35s var(--spring),box-shadow .3s}
+  .card:hover{transform:translateY(-4px);box-shadow:0 22px 44px -18px rgba(18,47,36,.4)}
+  .card .n{display:inline-grid;place-items:center;width:38px;height:38px;border-radius:13px;background:var(--forest);color:#fff;font-weight:900;margin-bottom:14px}
+  .card h3{font-weight:900;font-size:21px;letter-spacing:-.02em}
+  .card p{margin-top:8px;color:var(--muted);font-weight:600;font-size:14px;line-height:1.5}
+  .card span{display:inline-block;margin-top:14px;font-weight:900;font-size:13px;color:var(--forest2)}
+</style>
+</head>
+<body>
+<div class="page-head">
+  <h1>Lenz — redesign mock-ups</h1>
+  <p>Open in any browser (needs the sibling <b>assets/</b> folder for the mascot and font). Nothing here changes the app yet — pick a direction and it gets built in Flutter.</p>
+</div>
+<div class="cards">
+  <a class="card" href="bottom_nav_variations.html"><div class="n">1</div><h3>Bottom navigation</h3><p>Three variations: liquid dock, notch bar and forest capsule. Interactive.</p><span>Open →</span></a>
+  <a class="card" href="evidence_capture_redesign.html"><div class="n">2</div><h3>Evidence capture</h3><p>The text-heavy camera screen reduced to one instruction, with tips on demand. Guide shapes kept.</p><span>Open →</span></a>
+  <a class="card" href="paywall_redesign.html"><div class="n">3</div><h3>Paywall</h3><p>One screen with no scrolling, shown on four phone sizes from 320×568 to 430×932.</p><span>Open →</span></a>
+  <a class="card" href="bottom_nav_redesign_v2.html"><div class="n">4</div><h3>Bottom nav — 2 new concepts</h3><p>Lens dock (magnifier ring + aperture scan button) and Mascot rider (Lenz hops between tabs). Shown on 390 and 320 px phones.</p><span>Open →</span></a>
+  <a class="card" href="analyzing_redesign.html"><div class="n">5</div><h3>Analyzing (all evidence)</h3><p>The long analyzing screen fitted to one portrait page with a smaller Lenz and a compact 2×2 step grid, shown on four phone sizes.</p><span>Open →</span></a>
+</div>
+</body>
+</html>

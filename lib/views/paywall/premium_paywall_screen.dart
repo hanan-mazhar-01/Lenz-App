@@ -1,32 +1,45 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_typography.dart';
+
 import '../../services/haptics.dart';
 import '../../services/revenue_cat_service.dart';
 import '../../viewmodels/profile_viewmodel.dart';
-import '../../widgets/animations/bounce_button.dart';
-import '../../widgets/mascot/detective_mascot_widget.dart';
+import '../../widgets/lenz/lenz.dart';
+import '../../widgets/ui/ui.dart';
 import '../profile/privacy_sheet.dart';
 import '../profile/terms_sheet.dart';
 
 class PremiumPaywallScreen extends StatefulWidget {
   final VoidCallback? onClose;
 
-  const PremiumPaywallScreen({super.key, this.onClose});
+  /// Test seam: replaces `RevenueCatService.getOfferings` (null in
+  /// production, so the real RevenueCat offerings are always used).
+  @visibleForTesting
+  final Future<Offerings?> Function()? offeringsLoader;
+
+  /// Test seam: replaces `RevenueCatService.isEligibleForIntroOffer` (null in
+  /// production).
+  @visibleForTesting
+  final Future<bool> Function(String productId)? introEligibilityChecker;
+
+  const PremiumPaywallScreen({
+    super.key,
+    this.onClose,
+    this.offeringsLoader,
+    this.introEligibilityChecker,
+  });
 
   /// Opens the paywall as a fullscreen modal with Cupertino transition.
   static Future<bool?> show(BuildContext context) {
     Haptics.mediumImpact();
     return Navigator.of(context).push<bool>(
-      CupertinoPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => const PremiumPaywallScreen(),
-      ),
+      CupertinoPageRoute(fullscreenDialog: true, builder: (_) => const PremiumPaywallScreen()),
     );
   }
 
@@ -47,6 +60,8 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
   /// `true` for (and that actually has an `introductoryPrice`) shows trial
   /// copy anywhere on this screen.
   Map<String, bool> _introEligibility = {};
+
+  final LenzController _lenz = LenzController();
 
   @override
   void initState() {
@@ -78,14 +93,16 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
   Future<void> _loadOfferings() async {
     setState(() => _isLoadingOfferings = true);
     try {
-      final offerings = await RevenueCatService.getOfferings();
+      final offerings = await (widget.offeringsLoader ?? RevenueCatService.getOfferings)();
       final current = offerings?.current;
       final packages = current?.availablePackages ?? <Package>[];
 
       final eligibility = <String, bool>{};
       for (final pkg in packages) {
         eligibility[pkg.storeProduct.identifier] =
-            await RevenueCatService.isEligibleForIntroOffer(pkg.storeProduct.identifier);
+            await (widget.introEligibilityChecker ?? RevenueCatService.isEligibleForIntroOffer)(
+              pkg.storeProduct.identifier,
+            );
       }
 
       if (!mounted) return;
@@ -103,7 +120,9 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
         _isLoadingOfferings = false;
       });
     } catch (e) {
-      if (kDebugMode) debugPrint('[PremiumPaywall] Error loading offerings: $e');
+      if (kDebugMode) {
+        debugPrint('[PremiumPaywall] Error loading offerings: $e');
+      }
       if (mounted) setState(() => _isLoadingOfferings = false);
     }
   }
@@ -117,7 +136,9 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
   }
 
   Future<void> _handlePurchase() async {
-    if (_isProcessingPurchase || _isRestoring || _selectedPackage == null) return;
+    if (_isProcessingPurchase || _isRestoring || _selectedPackage == null) {
+      return;
+    }
 
     setState(() => _isProcessingPurchase = true);
     Haptics.mediumImpact();
@@ -128,7 +149,8 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
 
       final isProNow = success || RevenueCatService.isPremiumNotifier.value;
       if (isProNow) {
-        final chosenPlan = RevenueCatService.activePlanNotifier.value ??
+        final chosenPlan =
+            RevenueCatService.activePlanNotifier.value ??
             (_selectedPackage!.packageType == PackageType.annual ? 'Yearly Pro' : 'Monthly Pro');
         try {
           final profileVm = context.read<ProfileViewModel>();
@@ -139,7 +161,7 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Welcome to $chosenPlan! Unlimited authentications unlocked.'),
-            backgroundColor: AppColors.deepForestGreen,
+            backgroundColor: LenzColors.forest,
           ),
         );
         _dismiss(true);
@@ -149,13 +171,34 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(RevenueCatService.friendlyErrorMessage(e)),
-            backgroundColor: Colors.redAccent,
+            backgroundColor: LenzColors.bad,
           ),
         );
       }
     } finally {
       if (mounted) setState(() => _isProcessingPurchase = false);
     }
+  }
+
+  /// The annual package of the current offering, if the store offers one.
+  Package? get _annualPackage {
+    final current = _offerings?.current;
+    if (current == null) return null;
+    if (current.annual != null) return current.annual;
+    for (final p in current.availablePackages) {
+      if (p.packageType == PackageType.annual) return p;
+    }
+    return null;
+  }
+
+  /// A monthly subscriber moving to the yearly plan. Both plans are in one
+  /// subscription group in the store, so the store treats this as an upgrade
+  /// and replaces the monthly plan.
+  Future<void> _handleSwitchToYearly() async {
+    final annual = _annualPackage;
+    if (annual == null || _isProcessingPurchase || _isRestoring) return;
+    setState(() => _selectedPackage = annual);
+    await _handlePurchase();
   }
 
   Future<void> _handleRestore() async {
@@ -181,15 +224,13 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Purchases restored successfully! $chosenPlan active.'),
-            backgroundColor: AppColors.deepForestGreen,
+            backgroundColor: LenzColors.forest,
           ),
         );
         _dismiss(true);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No active subscriptions found for this Apple ID.'),
-          ),
+          const SnackBar(content: Text('No active subscriptions found for this Apple ID.')),
         );
       }
     } catch (e) {
@@ -197,7 +238,7 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(RevenueCatService.friendlyErrorMessage(e)),
-            backgroundColor: Colors.redAccent,
+            backgroundColor: LenzColors.bad,
           ),
         );
       }
@@ -215,7 +256,9 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
         await launchUrl(uri, mode: LaunchMode.platformDefault);
       }
     } catch (e) {
-      if (kDebugMode) debugPrint('[PremiumPaywall] Could not open manage subscription: $e');
+      if (kDebugMode) {
+        debugPrint('[PremiumPaywall] Could not open manage subscription: $e');
+      }
     }
   }
 
@@ -239,70 +282,160 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
     );
   }
 
+  void _openBillingDetails() {
+    Haptics.lightImpact();
+    showLenzSheet<void>(
+      context,
+      builder: (sheetContext) {
+        const body = TextStyle(
+          fontFamily: LenzText.family,
+          color: Color(0xFF46544C),
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          height: 1.5,
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Billing details',
+              style: TextStyle(
+                fontFamily: LenzText.family,
+                color: LenzColors.ink,
+                fontSize: 19,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Cancel anytime in App Store settings at least 24 hours before '
+              'your renewal date. Subscriptions automatically renew.',
+              style: body,
+            ),
+            const SizedBox(height: 9),
+            const Text(
+              'Any unused portion of a free trial is forfeited when you '
+              'purchase a subscription.',
+              style: body,
+            ),
+            const SizedBox(height: 9),
+            const Text('Questions? support@veradostudio.com', style: body),
+            const SizedBox(height: 14),
+            LenzButton(label: 'Got it', onPressed: () => Navigator.of(sheetContext).pop()),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Display form of a [_trialLabelFor] label: "3-Days" reads as "3-Day"
+  /// when used as an adjective ("3-Day Free Trial"). Copy only.
+  static String? _trialCopy(String? label) => label?.replaceFirstMapped(
+    RegExp(r'^(\d+)-(Day|Week|Month|Year)s$'),
+    (m) => '${m[1]}-${m[2]}',
+  );
+
+  static (String, String) _titleAndPeriod(Package pkg) => switch (pkg.packageType) {
+    PackageType.annual => ('Yearly', 'per year'),
+    PackageType.weekly => ('Weekly', 'per week'),
+    _ => ('Monthly', 'per month'),
+  };
+
+  // ---------------------------------------------------------------- build
+
   @override
   Widget build(BuildContext context) {
     final profileVm = context.watch<ProfileViewModel>();
-    if (profileVm.isPremium) {
-      // Never show the purchase flow to someone who already has an active
-      // plan — that's how a tap on your own plan ends up offering to sell
-      // it to you again. Show the current plan + a way to manage it instead.
-      return _buildCurrentPlanView(profileVm);
-    }
+    final isPro = profileVm.isPremium;
+    final mq = MediaQuery.of(context);
+    // The page never scrolls, so very large accessibility text sizes are
+    // capped by how much room the phone has (the mascot shrinks first).
+    final cap = mq.size.height < 640
+        ? 1.0
+        : mq.size.height < 760
+        ? 1.1
+        : 1.25;
+    final userScale = mq.textScaler.scale(10) / 10;
+    return MediaQuery(
+      data: mq.copyWith(textScaler: TextScaler.linear(userScale.clamp(1.0, cap))),
+      child: _PaywallBackdrop(
+        child: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, c) {
+              final d = _Dims(c.maxWidth, mq.size.height);
+              return Padding(
+                padding: EdgeInsets.fromLTRB(d.cqw(5.2), 4, d.cqw(5.2), math.max(8, d.cqh(1.6))),
+                child: isPro ? _buildCurrentPlanView(d, profileVm) : _buildPurchaseView(d),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
 
-    final currentOffering = _offerings?.current;
-    final availablePackages = currentOffering?.availablePackages ?? [];
+  Widget _closeButton(_Dims d) {
+    return _GlassCircle(
+      size: d.barHeight,
+      onTap: () {
+        Haptics.lightImpact();
+        _dismiss(false);
+      },
+      child: const LenzIcon(LenzIcons.x, size: 18, strokeWidth: 2.4, color: Colors.white),
+    );
+  }
 
-    return Scaffold(
-      backgroundColor: AppColors.warmIvory,
-      body: SafeArea(
-        child: Column(
+  Widget _buildHero(_Dims d, LenzMood mood) {
+    return Expanded(
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: d.cqw(1)),
+        child: ShaderMask(
+          blendMode: BlendMode.dstIn,
+          shaderCallback: (r) => const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Colors.black, Colors.black, Colors.transparent],
+            stops: [0, .82, 1],
+          ).createShader(r),
+          child: FittedBox(
+            fit: BoxFit.contain,
+            alignment: Alignment.bottomCenter,
+            child: SizedBox(
+              width: 300,
+              child: LenzCharacter(
+                mood: mood,
+                view: LenzView.bust,
+                fx: false,
+                interactive: false,
+                controller: _lenz,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _proBadge(_Dims d, String label) {
+    return Align(
+      alignment: Alignment.center,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+        decoration: BoxDecoration(
+          gradient: LenzGradients.gold,
+          borderRadius: BorderRadius.circular(99),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // Top Bar: Dismiss (X) + Restore
-            _buildTopBar(),
-
-            // Scrollable Content
-            Expanded(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 18),
-                child: Column(
-                  children: [
-                    const SizedBox(height: 4),
-                    // Character Mascot & Conversational Speech
-                    _buildHeroHeader(),
-
-                    const SizedBox(height: 12),
-                    // Premium Feature Cards (Character Voiced)
-                    _buildFeaturesList(),
-
-                    const SizedBox(height: 14),
-                    // Plan Selection Cards with 3-Day Free Trial
-                    if (_isLoadingOfferings)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 20),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            color: AppColors.deepForestGreen,
-                          ),
-                        ),
-                      )
-                    else if (availablePackages.isNotEmpty)
-                      _buildDynamicPlanSelector(availablePackages)
-                    else
-                      _buildFallbackPlanSelector(),
-
-                    const SizedBox(height: 14),
-                    // Main CTA Button
-                    _buildActionButton(),
-
-                    const SizedBox(height: 12),
-                    // Legal Disclaimer & Terms / Privacy Links
-                    _buildLegalFooter(),
-
-                    const SizedBox(height: 12),
-                  ],
-                ),
+            const LenzIcon(LenzIcons.crown, size: 13, strokeWidth: 2.4, color: LenzColors.goldInk),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: _t(d.cl(10.5, d.cqw(3), 12), FontWeight.w900, LenzColors.goldInk),
               ),
             ),
           ],
@@ -311,658 +444,748 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
     );
   }
 
-  Widget _buildCurrentPlanView(ProfileViewModel profileVm) {
-    final planName = profileVm.user.planName.isNotEmpty ? profileVm.user.planName : 'Lenz Pro';
-
-    return Scaffold(
-      backgroundColor: AppColors.warmIvory,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  IconButton(
-                    icon: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.05),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.close_rounded, size: 20, color: AppColors.nearBlack),
-                    ),
-                    onPressed: () {
-                      Haptics.lightImpact();
-                      _dismiss(false);
-                    },
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 18),
-                child: Column(
-                  children: [
-                    const SizedBox(height: 12),
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.deepForestGreen.withOpacity(0.1),
-                      ),
-                      child: const Icon(
-                        Icons.workspace_premium_rounded,
-                        color: AppColors.deepForestGreen,
-                        size: 40,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      planName,
-                      style: AppTypography.titleLarge.copyWith(fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Active • Unlimited scans unlocked',
-                      style: AppTypography.bodyMedium.copyWith(color: AppColors.charcoalGray),
-                    ),
-                    const SizedBox(height: 28),
-                    BounceButton(
-                      onTap: _openManageSubscription,
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 15),
-                        decoration: BoxDecoration(
-                          color: AppColors.deepForestGreen,
-                          borderRadius: BorderRadius.circular(15),
-                        ),
-                        child: const Center(
-                          child: Text(
-                            'Manage Subscription',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextButton(
-                      onPressed: _isRestoring ? null : _handleRestore,
-                      child: _isRestoring
-                          ? const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(
-                              'Restore Purchases',
-                              style: AppTypography.bodyMedium.copyWith(
-                                color: AppColors.nearBlack.withOpacity(0.7),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                    ),
-                    const SizedBox(height: 20),
-                    _buildLegalFooter(),
-                    const SizedBox(height: 12),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTopBar() {
+  Widget _title(_Dims d, String text) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: EdgeInsets.fromLTRB(0, d.cl(4, d.cqh(1.2), 12), 0, d.cl(6, d.cqh(1.5), 14)),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          text,
+          maxLines: 1,
+          textAlign: TextAlign.center,
+          style: _t(
+            d.cl(22, d.cqw(7.6), 32),
+            FontWeight.w900,
+            Colors.white,
+            height: 1.04,
+            spacing: -.035,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPurchaseView(_Dims d) {
+    final packages = _offerings?.current?.availablePackages ?? <Package>[];
+    final pkg = _selectedPackage;
+    final isAnnual = pkg?.packageType == PackageType.annual;
+    final trialLabel = _trialCopy(pkg != null ? _trialLabelFor(pkg) : null);
+
+    final (title, period) = pkg != null ? _titleAndPeriod(pkg) : ('', '');
+    final buttonText = pkg == null
+        ? (_isLoadingOfferings ? 'Loading plans…' : 'Plans unavailable')
+        : trialLabel != null
+        ? 'Start $trialLabel Free Trial'
+        : (isAnnual ? 'Continue with Yearly' : 'Continue with $title');
+    final fineText = pkg == null
+        ? ' '
+        : trialLabel != null
+        ? '$trialLabel free, then ${pkg.storeProduct.priceString} $period. Renews automatically; cancel anytime.'
+        : '${pkg.storeProduct.priceString} $period. Renews automatically; cancel anytime.';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(height: math.max(0, d.cqh(1.2))),
+        _buildTopBar(d),
+        _buildHero(d, LenzMood.pleased),
+        _proBadge(d, 'Lenz Pro'),
+        _title(d, 'Check everything you own'),
+        _buildBenefits(d),
+        SizedBox(height: d.cl(8, d.cqh(1.8), 16)),
+        if (_isLoadingOfferings)
+          _buildLoadingPlans(d)
+        else if (packages.isNotEmpty)
+          _buildPlans(d, packages)
+        else
+          _buildFallbackPlans(d),
+        _buildCta(d, buttonText, enabled: !(_isProcessingPurchase || _isRestoring || pkg == null)),
+        _fine(d, fineText),
+        _buildLinks(d, showRestore: true),
+      ],
+    );
+  }
+
+  Widget _buildTopBar(_Dims d) {
+    return SizedBox(
+      height: d.barHeight,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          IconButton(
-            icon: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.05),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.close_rounded, size: 20, color: AppColors.nearBlack),
-            ),
-            onPressed: () {
-              Haptics.lightImpact();
-              _dismiss(false);
-            },
-          ),
-          TextButton(
-            onPressed: _isRestoring ? null : _handleRestore,
-            child: _isRestoring
-                ? const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.nearBlack),
-                  )
-                : Text(
-                    'Restore',
-                    style: AppTypography.bodyMedium.copyWith(
-                      color: AppColors.nearBlack.withOpacity(0.7),
-                      fontWeight: FontWeight.w600,
+          _closeButton(d),
+          LenzPressable(
+            onTap: _isRestoring ? null : _handleRestore,
+            semanticLabel: 'Restore',
+            child: Container(
+              height: d.barHeight,
+              padding: EdgeInsets.symmetric(horizontal: d.cl(12, d.cqw(4), 16)),
+              decoration: _glassDecoration(radius: 99),
+              alignment: Alignment.center,
+              child: _isRestoring
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : Text(
+                      'Restore',
+                      style: _t(d.cl(12, d.cqw(3.6), 14), FontWeight.w800, Colors.white),
                     ),
-                  ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildHeroHeader() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.pureWhite,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: AppColors.nearBlack.withOpacity(0.06),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.nearBlack.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
+  Widget _buildBenefits(_Dims d) {
+    const items = [
+      (LenzIcons.sparkles, 'Unlimited checks'),
+      (LenzIcons.shieldOk, 'Clear verdicts'),
+      (LenzIcons.layers, 'Saved vault'),
+    ];
+    final gap = d.cl(6, d.cqw(2), 10);
+    final iconBox = d.cl(28, d.cqw(8.4), 34);
+    return IntrinsicHeight(
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Detective Mascot
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              Container(
-                width: 74,
-                height: 74,
+          for (var i = 0; i < items.length; i++) ...[
+            if (i > 0) SizedBox(width: gap),
+            Expanded(
+              child: Container(
+                padding: EdgeInsets.symmetric(vertical: d.cl(6, d.cqh(1.2), 12), horizontal: 4),
                 decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AppColors.veryLightWarmGray,
-                  border: Border.all(
-                    color: const Color(0xFFD4AF37).withOpacity(0.4),
-                    width: 1.5,
-                  ),
+                  color: const Color.fromRGBO(255, 255, 255, .08),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color.fromRGBO(255, 255, 255, .1)),
                 ),
-              ),
-              const DetectiveMascotWidget(
-                size: 68,
-                state: MascotState.curious,
-                showHalo: true,
-              ),
-            ],
-          ),
-          const SizedBox(width: 12),
-          // Conversational speech by Detective Lenz
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text(
-                      'Detective Lenz',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.deepForestGreen,
-                        letterSpacing: -0.2,
+                    Container(
+                      width: iconBox,
+                      height: iconBox,
+                      decoration: BoxDecoration(
+                        color: const Color.fromRGBO(244, 217, 123, .16),
+                        borderRadius: BorderRadius.circular(11),
+                      ),
+                      alignment: Alignment.center,
+                      child: LenzIcon(
+                        items[i].$1,
+                        size: 18,
+                        strokeWidth: 2.2,
+                        color: LenzColors.gold2,
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFD4AF37),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: const Text(
-                        'PRO',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w900,
-                          color: Color(0xFF14241B),
-                          letterSpacing: 0.4,
-                        ),
+                    const SizedBox(height: 6),
+                    Text(
+                      items[i].$2,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: _t(
+                        d.cl(11, d.cqw(3.2), 13),
+                        FontWeight.w800,
+                        Colors.white,
+                        height: 1.15,
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  '"Don\'t let super-clones fool you! Hand me all your luxury items for unlimited authenticity checks so you always buy 100% genuine."',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.charcoalGray,
-                    height: 1.35,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildFeaturesList() {
-    const features = [
-      (
-        CupertinoIcons.infinite,
-        'Unlimited AI Authentications',
-        'Bring me as many designer bags, sneakers, watches & apparel as you want.',
-      ),
-      (
-        CupertinoIcons.shield_lefthalf_fill,
-        'Instant Real vs. Fake Verdict',
-        'I spot replica flaws, counterfeit stitching & fake hardware hallmarks in seconds.',
-      ),
-      (
-        CupertinoIcons.square_stack_3d_up_fill,
-        'Full Forensic Reports & Vault',
-        'I\'ll save detailed flaw analysis, confidence scores & history to your collection.',
-      ),
-    ];
-
+  Widget _buildLoadingPlans(_Dims d) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.veryLightWarmGray.withOpacity(0.55),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.black.withOpacity(0.04)),
-      ),
+      padding: EdgeInsets.symmetric(vertical: d.cl(14, d.cqh(3), 28)),
+      decoration: _glassDecoration(radius: 18),
       child: Column(
-        children: features.map((f) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 5),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: AppColors.deepForestGreen.withOpacity(0.08),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(f.$1, size: 16, color: AppColors.deepForestGreen),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        f.$2,
-                        style: AppTypography.titleMedium.copyWith(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.nearBlack,
-                        ),
-                      ),
-                      const SizedBox(height: 1.5),
-                      Text(
-                        f.$3,
-                        style: AppTypography.bodyMedium.copyWith(
-                          fontSize: 11.5,
-                          color: AppColors.charcoalGray,
-                          height: 1.3,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        }).toList(),
+        children: [
+          const SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(strokeWidth: 3, color: LenzColors.gold2),
+          ),
+          const SizedBox(height: 10),
+          Text('Loading plans…', style: _t(13, FontWeight.w700, _muted)),
+        ],
       ),
-    );
-  }
-
-  Widget _buildDynamicPlanSelector(List<Package> packages) {
-    return Column(
-      children: packages.map((pkg) {
-        final isSelected = _selectedPackage == pkg;
-        final isAnnual = pkg.packageType == PackageType.annual;
-
-        final title = isAnnual ? 'Yearly Membership' : 'Monthly Membership';
-        final price = pkg.storeProduct.priceString;
-        final period = isAnnual ? '/ year' : '/ month';
-        final trialLabel = _trialLabelFor(pkg);
-        final subtitle = trialLabel != null
-            ? '$trialLabel Free Trial, then $price$period • Cancel anytime'
-            : (isAnnual ? 'Best value • Cancel anytime' : 'Flexible • Cancel anytime');
-
-        return _buildPlanCard(
-          isSelected: isSelected,
-          title: title,
-          priceText: '$price $period',
-          subtitle: subtitle,
-          badgeText: trialLabel != null
-              ? '$trialLabel FREE TRIAL'
-              : (isAnnual ? 'BEST VALUE' : null),
-          onTap: () {
-            Haptics.lightImpact();
-            setState(() => _selectedPackage = pkg);
-          },
-        );
-      }).toList(),
     );
   }
 
   /// Shown only when offerings genuinely failed to load (e.g. no network) —
   /// never a guessed/hardcoded price, since that price could differ from
   /// what StoreKit actually charges (App Store Guideline 3.1.1).
-  Widget _buildFallbackPlanSelector() {
+  Widget _buildFallbackPlans(_Dims d) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 22),
-      decoration: BoxDecoration(
-        color: AppColors.veryLightWarmGray.withOpacity(0.55),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.black.withOpacity(0.04)),
-      ),
+      padding: EdgeInsets.symmetric(vertical: d.cl(8, d.cqh(1.8), 14), horizontal: 14),
+      decoration: _glassDecoration(radius: 18),
       child: Column(
         children: [
-          Icon(
-            CupertinoIcons.exclamationmark_triangle,
-            size: 26,
-            color: AppColors.charcoalGray.withOpacity(0.6),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            "Couldn't load subscription plans",
-            textAlign: TextAlign.center,
-            style: AppTypography.titleMedium.copyWith(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: AppColors.nearBlack,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Check your connection and try again.',
-            textAlign: TextAlign.center,
-            style: AppTypography.bodyMedium.copyWith(
-              fontSize: 12,
-              color: AppColors.charcoalGray,
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextButton(
-            onPressed: _loadOfferings,
-            child: Text(
-              'Retry',
-              style: AppTypography.bodyMedium.copyWith(
-                color: AppColors.deepForestGreen,
-                fontWeight: FontWeight.w700,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const LenzIcon(LenzIcons.warn, size: 20, color: LenzColors.gold2),
+              const SizedBox(width: 8),
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    "Couldn't load subscription plans",
+                    maxLines: 1,
+                    style: _t(15.5, FontWeight.w900, Colors.white),
+                  ),
+                ),
               ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              'Check your connection and try again.',
+              maxLines: 1,
+              style: _t(12.5, FontWeight.w700, _muted),
             ),
+          ),
+          SizedBox(height: d.cl(6, d.cqh(1.4), 12)),
+          _GlassButton(
+            label: 'Retry',
+            icon: LenzIcons.refresh,
+            small: true,
+            onPressed: _loadOfferings,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildPlanCard({
-    required bool isSelected,
-    required String title,
-    required String priceText,
-    required String subtitle,
-    String? badgeText,
-    required VoidCallback onTap,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? AppColors.pureWhite
-                : AppColors.veryLightWarmGray.withOpacity(0.45),
-            borderRadius: BorderRadius.circular(15),
-            border: Border.all(
-              color: isSelected
-                  ? AppColors.deepForestGreen
-                  : Colors.black.withOpacity(0.06),
-              width: isSelected ? 2 : 1,
+  Widget _buildPlans(_Dims d, List<Package> packages) {
+    final annual = packages.where((p) => p.packageType == PackageType.annual).toList();
+    final Package? wide = annual.isNotEmpty
+        ? annual.first
+        : (packages.length == 1 ? packages.first : null);
+    final rest = packages.where((p) => p != wide).toList();
+    final gap = d.cl(6, d.cqw(2), 10);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (wide != null) _buildPlanCard(d, wide, wide: true),
+        if (wide != null && rest.isNotEmpty) SizedBox(height: gap + 2),
+        if (rest.isNotEmpty)
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < rest.length; i++) ...[
+                  if (i > 0) SizedBox(width: gap),
+                  Expanded(child: _buildPlanCard(d, rest[i], wide: false)),
+                ],
+              ],
             ),
-            boxShadow: isSelected
-                ? [
-                    BoxShadow(
-                      color: AppColors.deepForestGreen.withOpacity(0.08),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
-                  ]
-                : [],
           ),
-          child: Row(
-            children: [
-              // Radio Indicator
-              Container(
-                width: 20,
-                height: 20,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isSelected ? AppColors.deepForestGreen : Colors.grey.shade400,
-                    width: 2,
-                  ),
-                  color: isSelected ? AppColors.deepForestGreen : Colors.transparent,
-                ),
-                child: isSelected
-                    ? const Icon(Icons.check, size: 12, color: Colors.white)
-                    : null,
-              ),
-              const SizedBox(width: 12),
+      ],
+    );
+  }
 
-              // Title & Subtitle
+  Widget _buildPlanCard(_Dims d, Package pkg, {required bool wide}) {
+    final selected = _selectedPackage == pkg;
+    final isAnnual = pkg.packageType == PackageType.annual;
+    final (title, period) = _titleAndPeriod(pkg);
+    final price = pkg.storeProduct.priceString;
+    final trialLabel = _trialCopy(_trialLabelFor(pkg));
+    final sub = trialLabel != null ? '$trialLabel free trial' : 'Cancel anytime';
+    final reduced = LenzMotion.reduced(context);
+    final dur = Duration(milliseconds: reduced ? 0 : 250);
+    final nameStyle = _t(d.cl(14, d.cqw(4.2), 16), FontWeight.w900, Colors.white, height: 1.15);
+    final priceStyle = _t(
+      wide ? d.cl(17, d.cqw(5.2), 20) : d.cl(14, d.cqw(4.2), 16),
+      FontWeight.w900,
+      Colors.white,
+      height: 1.15,
+    );
+    final perStyle = _t(d.cl(9.5, d.cqw(2.8), 12), FontWeight.w700, _muted);
+    final subStyle = _t(d.cl(10.5, d.cqw(3), 12), FontWeight.w700, _muted, height: 1.2);
+
+    final radio = AnimatedContainer(
+      duration: dur,
+      width: 20,
+      height: 20,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: selected ? LenzColors.gold2 : Colors.transparent,
+        border: Border.all(
+          color: selected ? LenzColors.gold2 : const Color.fromRGBO(255, 255, 255, .4),
+          width: 2,
+        ),
+      ),
+      alignment: Alignment.center,
+      child: selected
+          ? const LenzIcon(LenzIcons.check, size: 12, strokeWidth: 3.4, color: LenzColors.goldInk)
+          : null,
+    );
+
+    final Widget content = wide
+        ? Row(
+            children: [
+              radio,
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (badgeText != null) ...[
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 4),
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFD4AF37).withOpacity(0.22),
-                          borderRadius: BorderRadius.circular(5),
-                        ),
-                        child: Text(
-                          badgeText,
-                          style: const TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF8A6D1F),
-                            letterSpacing: 0.2,
-                          ),
-                        ),
-                      ),
-                    ],
-                    Text(
-                      title,
-                      style: AppTypography.titleMedium.copyWith(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 14,
-                        color: AppColors.nearBlack,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: AppTypography.bodyMedium.copyWith(
-                        fontSize: 11.5,
-                        color: AppColors.charcoalGray,
-                      ),
-                    ),
+                    Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: nameStyle),
+                    Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: subStyle),
                   ],
                 ),
               ),
-
               const SizedBox(width: 8),
-
-              // Price
-              Text(
-                priceText,
-                style: AppTypography.titleMedium.copyWith(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 14,
-                  color: isSelected ? AppColors.deepForestGreen : AppColors.nearBlack,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(price, maxLines: 1, style: priceStyle),
+                  Text(period, maxLines: 1, style: perStyle),
+                ],
+              ),
+            ],
+          )
+        : Row(
+            children: [
+              radio,
+              const SizedBox(width: 10),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, maxLines: 1, style: nameStyle),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Text(price, maxLines: 1, style: priceStyle),
+                          const SizedBox(width: 4),
+                          Text(period, maxLines: 1, style: perStyle),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
+          );
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          Haptics.lightImpact();
+          if (!selected) _lenz.hop();
+          setState(() => _selectedPackage = pkg);
+        },
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            AnimatedContainer(
+              duration: dur,
+              curve: LenzMotion.ease,
+              padding: EdgeInsets.symmetric(
+                vertical: d.cl(8, d.cqh(1.4), 13),
+                horizontal: d.cl(11, d.cqw(3.4), 14),
+              ),
+              decoration: BoxDecoration(
+                color: selected
+                    ? const Color.fromRGBO(244, 217, 123, .12)
+                    : const Color.fromRGBO(255, 255, 255, .07),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: selected ? LenzColors.gold2 : const Color.fromRGBO(255, 255, 255, .14),
+                  width: 1.5,
+                ),
+                boxShadow: selected
+                    ? const [BoxShadow(color: Color.fromRGBO(244, 217, 123, .14), spreadRadius: 3)]
+                    : null,
+              ),
+              child: content,
+            ),
+            if (wide && isAnnual)
+              Positioned(
+                left: 44,
+                top: -9,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                  decoration: BoxDecoration(
+                    gradient: LenzGradients.gold,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                  child: Text(
+                    'BEST VALUE',
+                    style: _t(10, FontWeight.w900, LenzColors.goldInk, spacing: .06),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCta(_Dims d, String label, {required bool enabled, VoidCallback? onTap}) {
+    return Padding(
+      padding: EdgeInsets.only(top: d.cl(10, d.cqh(2), 16)),
+      child: Opacity(
+        opacity: enabled || _isProcessingPurchase ? 1 : .45,
+        child: LenzPressable(
+          onTap: enabled ? (onTap ?? _handlePurchase) : null,
+          semanticLabel: label,
+          child: Container(
+            height: d.cl(48, d.cqh(7), 58),
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFFF8E394), Color(0xFFD4AF37)],
+              ),
+              borderRadius: BorderRadius.circular(99),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color.fromRGBO(212, 175, 55, .5),
+                  blurRadius: 24,
+                  offset: Offset(0, 10),
+                  spreadRadius: -8,
+                ),
+              ],
+            ),
+            alignment: Alignment.center,
+            child: _isProcessingPurchase
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.4, color: LenzColors.goldInk),
+                  )
+                : FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      style: _t(d.cl(15.5, d.cqw(4.6), 18), FontWeight.w900, LenzColors.goldInk),
+                    ),
+                  ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildActionButton() {
-    final pkg = _selectedPackage;
-    final isAnnual = pkg?.packageType == PackageType.annual;
-    final trialLabel = pkg != null ? _trialLabelFor(pkg) : null;
-
-    final buttonText = pkg == null
-        ? 'Plans unavailable'
-        : trialLabel != null
-            ? 'Start $trialLabel Free Trial'
-            : (isAnnual ? 'Continue with Yearly' : 'Continue with Monthly');
-    final guaranteeText = pkg == null
-        ? 'Reload the page and try again'
-        : trialLabel != null
-            ? '$trialLabel free • Then auto-renews • Cancel anytime in Settings'
-            : 'Cancel anytime in App Store settings';
-
-    return Column(
-      children: [
-        BounceButton(
-          onTap: (_isProcessingPurchase || _isRestoring || pkg == null) ? null : _handlePurchase,
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 15),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [
-                  AppColors.deepForestGreen,
-                  Color(0xFF14241B),
-                ],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
-              borderRadius: BorderRadius.circular(15),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.deepForestGreen.withOpacity(0.3),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Center(
-              child: _isProcessingPurchase
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Text(
-                      buttonText,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: -0.2,
-                      ),
-                    ),
-            ),
+  Widget _fine(_Dims d, String text) {
+    return Padding(
+      padding: EdgeInsets.only(top: d.cl(6, d.cqh(1.2), 10)),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          text,
+          maxLines: 1,
+          textAlign: TextAlign.center,
+          style: _t(
+            d.cl(10.5, d.cqw(3), 12),
+            FontWeight.w700,
+            const Color.fromRGBO(255, 255, 255, .7),
+            height: 1.25,
           ),
         ),
-        const SizedBox(height: 6),
-        Text(
-          guaranteeText,
-          style: TextStyle(
-            fontSize: 11,
-            color: AppColors.charcoalGray.withOpacity(0.85),
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
+      ),
     );
   }
 
-  Widget _buildLegalFooter() {
-    return Column(
-      children: [
-        Text(
-          'Cancel anytime in App Store settings at least 24 hours before your renewal date. Subscriptions automatically renew.',
-          style: TextStyle(
-            fontSize: 11,
-            color: AppColors.softGray.withOpacity(0.9),
-            height: 1.35,
-          ),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 10),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+  Widget _buildLinks(_Dims d, {required bool showRestore}) {
+    final style = _t(
+      d.cl(10.5, d.cqw(3), 12),
+      FontWeight.w800,
+      const Color.fromRGBO(255, 255, 255, .62),
+    );
+    final gap = d.cl(8, d.cqw(3), 14);
+    final items = <(String, VoidCallback?)>[
+      if (showRestore) ('Restore', _isRestoring ? null : _handleRestore),
+      ('Terms', _openTermsSheet),
+      ('Privacy', _openPrivacySheet),
+      ('Billing details', _openBillingDetails),
+    ];
+    return Padding(
+      padding: EdgeInsets.only(top: d.cl(2, d.cqh(.6), 6)),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            GestureDetector(
-              onTap: _openTermsSheet,
-              child: Text(
-                'Terms of Service',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  color: AppColors.nearBlack.withOpacity(0.75),
-                  decoration: TextDecoration.underline,
-                  fontWeight: FontWeight.w500,
+            for (var i = 0; i < items.length; i++) ...[
+              if (i > 0)
+                Container(
+                  width: 3,
+                  height: 3,
+                  margin: EdgeInsets.symmetric(horizontal: gap),
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color.fromRGBO(255, 255, 255, .35),
+                  ),
+                ),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: items[i].$2,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+                  child: Text(
+                    items[i].$1,
+                    maxLines: 1,
+                    style: style.copyWith(
+                      decoration: TextDecoration.underline,
+                      decorationColor: const Color.fromRGBO(255, 255, 255, .3),
+                    ),
+                  ),
                 ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(
-                '•',
-                style: TextStyle(color: AppColors.softGray.withOpacity(0.6)),
-              ),
-            ),
-            GestureDetector(
-              onTap: _openPrivacySheet,
-              child: Text(
-                'Privacy Policy',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  color: AppColors.nearBlack.withOpacity(0.75),
-                  decoration: TextDecoration.underline,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCurrentPlanView(_Dims d, ProfileViewModel profileVm) {
+    final planName = profileVm.user.planName.isNotEmpty ? profileVm.user.planName : 'Lenz Pro';
+    // Monthly subscribers can move to the yearly plan from here; yearly
+    // subscribers only manage or restore.
+    final annual = _annualPackage;
+    final canSwitch = annual != null && planName.toLowerCase().contains('monthly');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(height: math.max(0, d.cqh(1.2))),
+        SizedBox(
+          height: d.barHeight,
+          child: Align(alignment: Alignment.centerRight, child: _closeButton(d)),
+        ),
+        _buildHero(d, LenzMood.joy),
+        _proBadge(d, planName),
+        _title(d, 'You are all set'),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            'Active • Unlimited scans unlocked',
+            maxLines: 1,
+            textAlign: TextAlign.center,
+            style: _t(15, FontWeight.w700, const Color(0xFFB9D0C3)),
+          ),
+        ),
+        SizedBox(height: d.cl(10, d.cqh(2.4), 22)),
+        if (canSwitch) ...[
+          _buildCta(
+            d,
+            'Switch to Yearly · ${annual.storeProduct.priceString}/year',
+            enabled: !_isProcessingPurchase,
+            onTap: _handleSwitchToYearly,
+          ),
+          const SizedBox(height: 10),
+          _GlassButton(label: 'Manage Subscription', onPressed: _openManageSubscription),
+        ] else
+          _buildCta(d, 'Manage Subscription', enabled: true, onTap: _openManageSubscription),
+        const SizedBox(height: 10),
+        _GlassButton(
+          label: 'Restore Purchases',
+          loading: _isRestoring,
+          onPressed: _isRestoring ? null : _handleRestore,
+        ),
+        _buildLinks(d, showRestore: false),
       ],
+    );
+  }
+}
+
+const Color _muted = Color.fromRGBO(255, 255, 255, .62);
+
+TextStyle _t(double size, FontWeight weight, Color color, {double? height, double? spacing}) =>
+    TextStyle(
+      fontFamily: LenzText.family,
+      fontSize: size,
+      fontWeight: weight,
+      color: color,
+      height: height,
+      letterSpacing: spacing == null ? null : size * spacing,
+    );
+
+BoxDecoration _glassDecoration({required double radius}) => BoxDecoration(
+  color: const Color.fromRGBO(255, 255, 255, .07),
+  borderRadius: BorderRadius.circular(radius),
+  border: Border.all(color: const Color.fromRGBO(255, 255, 255, .14), width: 1.5),
+);
+
+/// The phone's own size, used like the mock's `cqw` / `cqh` container units.
+class _Dims {
+  const _Dims(this.w, this.h);
+  final double w;
+  final double h;
+
+  double cqw(double v) => w * v / 100;
+  double cqh(double v) => h * v / 100;
+  double cl(double lo, double v, double hi) => v.clamp(lo, hi).toDouble();
+  double get barHeight => cl(36, cqh(5.2), 44);
+}
+
+class _GlassCircle extends StatelessWidget {
+  const _GlassCircle({required this.size, required this.onTap, required this.child});
+
+  final double size;
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return LenzPressable(
+      onTap: onTap,
+      semanticLabel: 'Close',
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: const Color.fromRGBO(255, 255, 255, .12),
+          border: Border.all(color: const Color.fromRGBO(255, 255, 255, .2)),
+        ),
+        alignment: Alignment.center,
+        child: child,
+      ),
+    );
+  }
+}
+
+/// Dark paywall surface (mock: linear #173F31 to #0B241A plus an elliptical
+/// top glow `radial-gradient(120% 60% at 50% 0, #2A6A50, transparent 62%)`).
+class _PaywallBackdrop extends StatelessWidget {
+  const _PaywallBackdrop({required this.child});
+
+  final Widget child;
+
+  static const Color glow = Color(0xFF2A6A50);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0B241A),
+      body: Stack(
+        children: [
+          const Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFF173F31), Color(0xFF0B241A)],
+                ),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: LayoutBuilder(
+              builder: (context, c) {
+                final w = c.maxWidth, h = c.maxHeight;
+                final rx = 1.2 * w, ry = .6 * h;
+                return DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      center: Alignment.topCenter,
+                      radius: rx / w.clamp(1, double.infinity),
+                      colors: const [glow, Color(0x002A6A50)],
+                      stops: const [0, .62],
+                      transform: _EllipseY(ry / rx, Offset(w / 2, 0)),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+class _EllipseY extends GradientTransform {
+  const _EllipseY(this.scaleY, this.center);
+  final double scaleY;
+  final Offset center;
+
+  @override
+  Matrix4 transform(Rect bounds, {TextDirection? textDirection}) {
+    return Matrix4.identity()
+      ..translate(center.dx, center.dy)
+      ..scale(1.0, scaleY)
+      ..translate(-center.dx, -center.dy);
+  }
+}
+
+/// Translucent white button for the dark paywall (`rgba(255,255,255,.1)`).
+class _GlassButton extends StatelessWidget {
+  const _GlassButton({
+    required this.label,
+    required this.onPressed,
+    this.loading = false,
+    this.icon,
+    this.small = false,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final bool loading;
+  final String? icon;
+  final bool small;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = small ? LenzText.buttonSm : LenzText.button;
+    return LenzPressable(
+      onTap: onPressed,
+      semanticLabel: label,
+      child: Container(
+        height: small ? 38 : 50,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        decoration: BoxDecoration(
+          color: const Color.fromRGBO(255, 255, 255, .1),
+          borderRadius: BorderRadius.circular(small ? LenzRadii.buttonSm : LenzRadii.button),
+        ),
+        alignment: Alignment.center,
+        child: loading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white),
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (icon != null) ...[
+                    LenzIcon(icon!, size: 18, color: Colors.white),
+                    const SizedBox(width: 8),
+                  ],
+                  Flexible(
+                    child: Text(label, style: style, overflow: TextOverflow.ellipsis),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 }

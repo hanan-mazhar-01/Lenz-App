@@ -1,16 +1,23 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'package:flutter/cupertino.dart';
+
 import 'package:flutter/material.dart';
-import '../../core/theme/app_colors.dart';
+
 import '../../models/evidence.dart';
 import '../../models/product.dart';
-import '../../widgets/animations/bounce_button.dart';
 import '../../widgets/common/app_image.dart';
+import '../../widgets/lenz/lenz.dart';
+import '../../widgets/ui/ui.dart';
 
-/// Screen displayed while authenticity analysis is in flight.
-/// Matches the reference layout with animated circular scanner visualizer,
-/// multi-step progress checklist, and privacy assurance footer.
+/// Screen displayed while authenticity analysis is in flight: ivory
+/// light screen on ONE portrait page (no scrolling), journey at "Analyze", a small
+/// Lenz cycling inspect / think / focus with his bubble, the user's photos
+/// being ticked off next to the current stage, and the 4 steps as a 2x2 grid.
+/// No ring or glow around the character.
+///
+/// The analysis reports no real progress, so (as before the redesign) the
+/// steps advance on a timer (1.8s) and the photos cycle every 2.4s; no
+/// percentage is shown.
 class AnalyzingView extends StatefulWidget {
   final List<EvidenceItem> items;
   final Map<String, String> capturedImages;
@@ -29,37 +36,29 @@ class AnalyzingView extends StatefulWidget {
   State<AnalyzingView> createState() => _AnalyzingViewState();
 }
 
-class _AnalyzingViewState extends State<AnalyzingView> with TickerProviderStateMixin {
-  late final AnimationController _rotationController;
-  late final AnimationController _scanLineController;
-  late final AnimationController _pulseController;
+/// Lenz's mood and line per stage (prototype `moods`).
+const List<(LenzMood, String)> _stageMoods = [
+  (LenzMood.inspect, 'Studying every stitch…'),
+  (LenzMood.think, 'Comparing with known patterns…'),
+  (LenzMood.focus, 'Zooming in on the details…'),
+  (LenzMood.inspect, 'Almost done, hold on…'),
+];
 
-  int _currentStage = 0; // 0: Photo Inspection, 1: AI Analysis, 2: Authenticity Check, 3: Generating Result
+class _AnalyzingViewState extends State<AnalyzingView> with TickerProviderStateMixin {
+  late final AnimationController _pulse; // active step dot
+
+  int _currentStage =
+      0; // 0: Photo Inspection, 1: AI Analysis, 2: Authenticity Check, 3: Generating Result
   int _currentPhotoIndex = 0;
+  final Set<int> _seenPhotos = {}; // presentation only: photos already "ticked"
   Timer? _stageTimer;
   Timer? _photoCycleTimer;
+  bool _motionStarted = false;
 
   @override
   void initState() {
     super.initState();
-
-    // 1. Spinning outer arc controller
-    _rotationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2600),
-    )..repeat();
-
-    // 2. Vertical scan sweep line controller
-    _scanLineController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    )..repeat(reverse: true);
-
-    // 3. Pulse dot controller
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..repeat(reverse: true);
+    _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
 
     // Step progression animation timer
     _stageTimer = Timer.periodic(const Duration(milliseconds: 1800), (timer) {
@@ -75,6 +74,7 @@ class _AnalyzingViewState extends State<AnalyzingView> with TickerProviderStateM
       _photoCycleTimer = Timer.periodic(const Duration(milliseconds: 2400), (timer) {
         if (!mounted) return;
         setState(() {
+          _seenPhotos.add(_currentPhotoIndex % imageList.length);
           _currentPhotoIndex = (_currentPhotoIndex + 1) % imageList.length;
         });
       });
@@ -82,579 +82,410 @@ class _AnalyzingViewState extends State<AnalyzingView> with TickerProviderStateM
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_motionStarted && !LenzMotion.reduced(context)) {
+      _motionStarted = true;
+      _pulse.repeat(reverse: true);
+    }
+  }
+
+  @override
   void dispose() {
-    _rotationController.dispose();
-    _scanLineController.dispose();
-    _pulseController.dispose();
+    _pulse.dispose();
     _stageTimer?.cancel();
     _photoCycleTimer?.cancel();
     super.dispose();
   }
 
-  String _getStagePillText() {
-    switch (_currentStage) {
-      case 0:
-        return 'Analyzing image...';
-      case 1:
-        return 'Analyzing features & materials...';
-      case 2:
-        return 'Checking authenticity benchmarks...';
-      case 3:
-      default:
-        return 'Generating final report...';
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final imageList = widget.capturedImages.values.where((p) => p.isNotEmpty).toList();
-    final activePhotoPath = imageList.isNotEmpty ? imageList[_currentPhotoIndex % imageList.length] : '';
-    final submittedCount = widget.items.where((i) => widget.capturedImages.containsKey(i.id)).length;
+    final submittedCount = widget.items
+        .where((i) => widget.capturedImages.containsKey(i.id))
+        .length;
+    final pad = MediaQuery.paddingOf(context);
+    final stage = _stageMoods[_currentStage.clamp(0, 3)];
+
+    // The first (identification) photo is analysed too; it is not in [items].
+    final photoCount = submittedCount + 1;
+    final steps = <(String, String)>[
+      ('Photo inspection', 'Checking $photoCount photo${photoCount == 1 ? '' : 's'}'),
+      ('AI analysis', 'Flaws & materials'),
+      ('Authenticity check', 'Known patterns'),
+      ('Generating result', 'Almost there'),
+    ];
 
     return Scaffold(
-      backgroundColor: AppColors.warmIvory,
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Column(
-            children: [
-              const SizedBox(height: 8),
-
-              // ─── 1. Top Bar: Back button, Title & Subtitle
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
+      backgroundColor: LenzColors.ivory,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          const LenzBlob(color: LenzColors.mint),
+          // One portrait page, never scrolls: only Lenz flexes, everything
+          // else is compact (photos + stage on one row, steps as a 2x2 grid).
+          Padding(
+            padding: EdgeInsets.fromLTRB(20, pad.top + 14, 20, 16 + pad.bottom),
+            child: MediaQuery.withClampedTextScaling(
+              maxScaleFactor: 1.1,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (widget.onBack != null)
-                    BounceButton(
-                      onTap: widget.onBack!,
-                      child: Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          color: AppColors.veryLightWarmGray,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: AppColors.nearBlack.withOpacity(0.06),
-                          ),
-                        ),
-                        child: const Center(
-                          child: Icon(
-                            CupertinoIcons.chevron_back,
-                            color: AppColors.nearBlack,
-                            size: 18,
-                          ),
-                        ),
-                      ),
-                    )
-                  else
-                    const SizedBox(width: 40),
-                  const Expanded(
-                    child: Text(
-                      'Analyzing',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: AppColors.nearBlack,
-                        fontSize: 21,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.4,
-                      ),
-                    ),
+                  const SizedBox(height: 4),
+                  LenzTopBar(
+                    title: 'Analyzing',
+                    noBack: widget.onBack == null,
+                    onBack: widget.onBack,
                   ),
-                  const SizedBox(width: 40),
+                  const LenzJourneyStepper(
+                    step: 3,
+                    bottomMargin: 6,
+                    rider: LenzCharacter(view: LenzView.peek, fx: false, interactive: false),
+                  ),
+                  Expanded(child: _hero(stage)),
+                  const SizedBox(height: 8),
+                  _photosAndStage(imageList),
+                  const SizedBox(height: 12),
+                  _stepsGrid(steps),
+                  const SizedBox(height: 12),
+                  const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      LenzIcon(
+                        LenzIcons.lock,
+                        size: 12,
+                        strokeWidth: 2.4,
+                        color: LenzColors.subtle,
+                      ),
+                      SizedBox(width: 5),
+                      Flexible(
+                        child: Text(
+                          'Your privacy is our priority',
+                          style: TextStyle(
+                            fontFamily: LenzText.family,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: LenzColors.subtle,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-              const SizedBox(height: 10),
-
-              // Subtitle
-              Text(
-                widget.product != null
-                    ? "Our AI is checking your ${widget.product!.name} for authenticity,\nit will only take a moment..."
-                    : "Our AI is checking the image for authenticity,\nit will only take a moment...",
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppColors.charcoalGray,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w400,
-                  height: 1.35,
-                ),
+  Widget _hero((LenzMood, String) stage) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        // Lenz is the only flexible element: at most ~74% of the width (bust crop, so about 58% in visible width), and
+        // never taller than the room that is left.
+        final h = math.min(c.maxHeight, c.maxWidth * .74);
+        final w = h * LenzView.bust.aspectRatio;
+        return Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            SizedBox(
+              width: w,
+              height: h,
+              child: LenzCharacter(mood: stage.$1, view: LenzView.bust, shadow: false),
+            ),
+            Positioned(
+              left: 0,
+              top: 4,
+              width: c.maxWidth * .46,
+              child: LenzBubble(
+                key: ValueKey(stage.$2),
+                text: stage.$2,
+                maxWidth: c.maxWidth * .46,
               ),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
-              const SizedBox(height: 24),
-
-              // ─── 2. Circular Scanner Visualizer
-              Center(
-                child: SizedBox(
-                  width: 190,
-                  height: 190,
-                  child: AnimatedBuilder(
-                    animation: Listenable.merge([_rotationController, _scanLineController]),
-                    builder: (context, _) {
-                      return CustomPaint(
-                        painter: _AnalyzingScannerPainter(
-                          rotation: _rotationController.value,
-                          trackColor: const Color(0xFFDCE9E1),
-                          arcColor: AppColors.deepForestGreen,
-                        ),
-                        child: Center(
-                          child: Container(
-                            width: 134,
-                            height: 134,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: AppColors.veryLightWarmGray,
-                              border: Border.all(
-                                color: const Color(0xFFE2ECE5),
-                                width: 2,
-                              ),
-                            ),
-                            child: ClipOval(
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  // Photo being analyzed
-                                  if (activePhotoPath.isNotEmpty)
-                                    AnimatedSwitcher(
-                                      duration: const Duration(milliseconds: 500),
-                                      child: AppImage(
-                                        key: ValueKey(activePhotoPath),
-                                        imagePath: activePhotoPath,
-                                        width: 134,
-                                        height: 134,
-                                        fit: BoxFit.cover,
-                                      ),
-                                    )
-                                  else
-                                    Container(
-                                      color: AppColors.softWarmGray,
-                                      child: const Icon(
-                                        CupertinoIcons.photo,
-                                        size: 44,
-                                        color: AppColors.softGray,
-                                      ),
-                                    ),
-
-                                  // Semi-transparent dark wash for high tech scan contrast
-                                  Container(
-                                    color: Colors.black.withOpacity(0.12),
-                                  ),
-
-                                  // Subtle scanning grid overlay
-                                  CustomPaint(
-                                    painter: _ScannerGridPainter(),
-                                  ),
-
-                                  // Reticle corner brackets
-                                  CustomPaint(
-                                    painter: _ReticleCornersPainter(
-                                      color: AppColors.deepForestGreen,
-                                    ),
-                                  ),
-
-                                  // Sweeping laser scan line
-                                  Positioned(
-                                    top: _scanLineController.value * 134,
-                                    left: 0,
-                                    right: 0,
-                                    child: Container(
-                                      height: 2,
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          colors: [
-                                            AppColors.deepForestGreen.withOpacity(0.0),
-                                            AppColors.deepForestGreen.withOpacity(0.85),
-                                            AppColors.deepForestGreen.withOpacity(0.0),
-                                          ],
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: AppColors.deepForestGreen.withOpacity(0.6),
-                                            blurRadius: 6,
-                                            spreadRadius: 1,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // ─── 3. Dynamic Status Pill
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7.5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8F2EC),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: const Color(0xFFD2E6DB),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
+  Widget _photosAndStage(List<String> imageList) {
+    final n = imageList.length;
+    return LayoutBuilder(
+      builder: (context, c) {
+        final size = (c.maxWidth * .105).clamp(32.0, 42.0);
+        return Row(
+          children: [
+            if (n > 0)
+              Flexible(
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
                   children: [
-                    FadeTransition(
-                      opacity: _pulseController,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                          color: AppColors.deepForestGreen,
-                          shape: BoxShape.circle,
-                        ),
+                    for (var i = 0; i < n && i < 5; i++)
+                      _PhotoTick(
+                        path: imageList[i],
+                        size: size,
+                        active: n > 1 && i == _currentPhotoIndex % n || n == 1,
+                        done: _seenPhotos.contains(i) && i != _currentPhotoIndex % n,
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      _getStagePillText(),
-                      style: const TextStyle(
-                        color: AppColors.deepForestGreen,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: -0.2,
-                      ),
-                    ),
                   ],
                 ),
               ),
+            if (n > 0) const SizedBox(width: 10),
+            Flexible(
+              child: Align(alignment: Alignment.centerRight, child: _stagePill()),
+            ),
+          ],
+        );
+      },
+    );
+  }
 
-              const SizedBox(height: 22),
-
-              // ─── 4. Step-by-Step Status Card
-              Expanded(
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-                  decoration: BoxDecoration(
-                    color: AppColors.veryLightWarmGray,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: AppColors.nearBlack.withOpacity(0.06),
-                      width: 1,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.nearBlack.withOpacity(0.03),
-                        blurRadius: 12,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _buildStepRow(
-                        stepIndex: 0,
-                        icon: Icons.crop_free_rounded,
-                        title: 'Photo Inspection',
-                        subtitle: 'Checking $submittedCount submitted photo angles...',
-                        isFirst: true,
-                        isLast: false,
-                      ),
-                      _buildStepRow(
-                        stepIndex: 1,
-                        icon: Icons.psychology_outlined,
-                        title: 'AI Analysis',
-                        subtitle: 'Checking for replica flaws & materials...',
-                        isFirst: false,
-                        isLast: false,
-                      ),
-                      _buildStepRow(
-                        stepIndex: 2,
-                        icon: CupertinoIcons.shield_lefthalf_fill,
-                        title: 'Authenticity Check',
-                        subtitle: 'Scoring evidence against known construction patterns...',
-                        isFirst: false,
-                        isLast: false,
-                      ),
-                      _buildStepRow(
-                        stepIndex: 3,
-                        icon: Icons.article_outlined,
-                        title: 'Generating Result',
-                        subtitle: 'Almost there...',
-                        isFirst: false,
-                        isLast: true,
-                      ),
-                    ],
+  Widget _stagePill() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: LenzColors.mint2,
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: LenzColors.line),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FadeTransition(
+            opacity: Tween(begin: .35, end: 1.0).animate(_pulse),
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: const BoxDecoration(color: LenzColors.leaf, shape: BoxShape.circle),
+            ),
+          ),
+          const SizedBox(width: 7),
+          Flexible(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 350),
+              child: FittedBox(
+                key: ValueKey(_currentStage),
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  _stagePillShort(),
+                  maxLines: 1,
+                  style: const TextStyle(
+                    fontFamily: LenzText.family,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w900,
+                    color: LenzColors.forest,
                   ),
                 ),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-              const SizedBox(height: 16),
+  /// Short form of the stage for the compact pill.
+  String _stagePillShort() {
+    switch (_currentStage) {
+      case 0:
+        return 'Inspecting photos';
+      case 1:
+        return 'AI analysis';
+      case 2:
+        return 'Authenticity check';
+      case 3:
+      default:
+        return 'Finishing report';
+    }
+  }
 
-              // ─── 5. Privacy Footer
-              Row(
+  Widget _stepsGrid(List<(String, String)> steps) {
+    Widget cell(int i) => Expanded(child: _stepCard(i, steps[i].$1, steps[i].$2));
+    return Column(
+      children: [
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [cell(0), const SizedBox(width: 8), cell(1)],
+          ),
+        ),
+        const SizedBox(height: 8),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [cell(2), const SizedBox(width: 8), cell(3)],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _stepCard(int i, String title, String subtitle) {
+    final done = i < _currentStage;
+    final on = i == _currentStage;
+    const dur = Duration(milliseconds: 500);
+    return AnimatedOpacity(
+      duration: dur,
+      curve: LenzMotion.ease,
+      opacity: on || done ? 1 : .5,
+      child: AnimatedContainer(
+        duration: dur,
+        curve: LenzMotion.ease,
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+        decoration: BoxDecoration(
+          color: on ? LenzColors.mint2 : LenzColors.paper,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: on ? LenzColors.leaf : LenzColors.line),
+          boxShadow: on ? LenzShadows.sh1 : null,
+        ),
+        child: Row(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 400),
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: done ? LenzColors.leaf : Colors.transparent,
+                border: Border.all(
+                  width: 3,
+                  color: done
+                      ? LenzColors.leaf
+                      : on
+                      ? LenzColors.leaf
+                      : const Color.fromRGBO(18, 47, 36, .18),
+                ),
+              ),
+              child: Center(
+                child: done
+                    ? const LenzIcon(
+                        LenzIcons.check,
+                        size: 13,
+                        strokeWidth: 3.4,
+                        color: Colors.white,
+                      )
+                    : on
+                    ? ScaleTransition(
+                        scale: Tween(begin: .7, end: 1.0).animate(_pulse),
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: LenzColors.leaf,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      )
+                    : null,
+              ),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Container(
-                    width: 44,
-                    height: 1,
-                    color: AppColors.nearBlack.withOpacity(0.12),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: Icon(
-                      Icons.lock_outline_rounded,
-                      size: 15,
-                      color: AppColors.deepForestGreen.withOpacity(0.85),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      style: const TextStyle(
+                        fontFamily: LenzText.family,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        color: LenzColors.ink,
+                      ),
                     ),
                   ),
-                  Container(
-                    width: 44,
-                    height: 1,
-                    color: AppColors.nearBlack.withOpacity(0.12),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: LenzText.family,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: LenzColors.muted,
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 5),
-              const Text(
-                'Your privacy is our priority',
-                style: TextStyle(
-                  color: AppColors.charcoalGray,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w500,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One of the user's photos: active (lifted, light-green border) or ticked.
+class _PhotoTick extends StatelessWidget {
+  const _PhotoTick({
+    required this.path,
+    required this.size,
+    required this.active,
+    required this.done,
+  });
+
+  final String path;
+  final double size;
+  final bool active;
+  final bool done;
+
+  @override
+  Widget build(BuildContext context) {
+    const dur = Duration(milliseconds: 400);
+    return AnimatedScale(
+      duration: dur,
+      curve: LenzMotion.spring,
+      scale: active ? 1.12 : 1,
+      child: AnimatedContainer(
+        duration: dur,
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [LenzColors.mint2, LenzColors.mint],
+          ),
+          border: Border.all(
+            width: 2,
+            color: done
+                ? LenzColors.leaf
+                : active
+                ? LenzColors.leaf
+                : LenzColors.line,
+          ),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              AppImage(imagePath: path, width: size, height: size, fit: BoxFit.cover),
+              AnimatedOpacity(
+                duration: const Duration(milliseconds: 350),
+                opacity: done ? 1 : 0,
+                child: const ColoredBox(
+                  color: Color.fromRGBO(46, 164, 79, .78),
+                  child: Center(
+                    child: LenzIcon(LenzIcons.check, size: 22, strokeWidth: 3, color: Colors.white),
+                  ),
                 ),
               ),
-
-              const SizedBox(height: 12),
             ],
           ),
         ),
       ),
     );
   }
-
-  /// Single step row in the timeline card
-  Widget _buildStepRow({
-    required int stepIndex,
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required bool isFirst,
-    required bool isLast,
-  }) {
-    final bool isCompleted = stepIndex < _currentStage;
-    final bool isActive = stepIndex == _currentStage;
-
-    final Color iconBg = isCompleted || isActive
-        ? const Color(0xFFE2EDE6)
-        : AppColors.softWarmGray;
-
-    final Color iconColor = isCompleted || isActive
-        ? AppColors.deepForestGreen
-        : AppColors.softGray;
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        // Icon circular badge
-        Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: iconBg,
-            shape: BoxShape.circle,
-          ),
-          child: Center(
-            child: Icon(icon, size: 21, color: iconColor),
-          ),
-        ),
-
-        const SizedBox(width: 14),
-
-        // Title and subtitle
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  color: isCompleted || isActive ? AppColors.nearBlack : AppColors.charcoalGray,
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.2,
-                ),
-              ),
-              const SizedBox(height: 2.5),
-              Text(
-                subtitle,
-                style: TextStyle(
-                  color: isCompleted || isActive ? AppColors.charcoalGray : AppColors.softGray,
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w400,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(width: 12),
-
-        // Status indicator: Green check / spinner / empty circle
-        if (isCompleted)
-          Container(
-            width: 22,
-            height: 22,
-            decoration: const BoxDecoration(
-              color: AppColors.deepForestGreen,
-              shape: BoxShape.circle,
-            ),
-            child: const Center(
-              child: Icon(
-                Icons.check,
-                color: Colors.white,
-                size: 14,
-              ),
-            ),
-          )
-        else if (isActive)
-          const SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2.4,
-              valueColor: AlwaysStoppedAnimation<Color>(AppColors.deepForestGreen),
-            ),
-          )
-        else
-          Container(
-            width: 20,
-            height: 20,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: AppColors.nearBlack.withOpacity(0.18),
-                width: 1.8,
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-/// Custom painter for the outer spinning scanner arc
-class _AnalyzingScannerPainter extends CustomPainter {
-  final double rotation;
-  final Color trackColor;
-  final Color arcColor;
-
-  const _AnalyzingScannerPainter({
-    required this.rotation,
-    required this.trackColor,
-    required this.arcColor,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-
-    // Track circle
-    final trackPaint = Paint()
-      ..color = trackColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 6.0;
-    canvas.drawCircle(center, radius - 4, trackPaint);
-
-    // Rotating active arc (~120 degrees)
-    final arcPaint = Paint()
-      ..color = arcColor
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 6.5
-      ..strokeCap = StrokeCap.round;
-
-    final startAngle = rotation * 2 * math.pi;
-    const sweepAngle = math.pi * 0.7; // ~126 degrees
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius - 4),
-      startAngle,
-      sweepAngle,
-      false,
-      arcPaint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _AnalyzingScannerPainter oldDelegate) {
-    return oldDelegate.rotation != rotation;
-  }
-}
-
-/// Painter for the subtle grid overlay inside the circular image
-class _ScannerGridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white.withOpacity(0.15)
-      ..strokeWidth = 0.8;
-
-    const step = 16.0;
-    for (double x = 0; x <= size.width; x += step) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-    for (double y = 0; y <= size.height; y += step) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-/// Painter for the 4 corner reticles ([ ])
-class _ReticleCornersPainter extends CustomPainter {
-  final Color color;
-
-  const _ReticleCornersPainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color.withOpacity(0.85)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.2
-      ..strokeCap = StrokeCap.round;
-
-    final inset = size.width * 0.22;
-    const len = 14.0;
-
-    final l = inset;
-    final r = size.width - inset;
-    final t = inset;
-    final b = size.height - inset;
-
-    // Top-Left ┌
-    canvas.drawLine(Offset(l, t + len), Offset(l, t), paint);
-    canvas.drawLine(Offset(l, t), Offset(l + len, t), paint);
-
-    // Top-Right ┐
-    canvas.drawLine(Offset(r - len, t), Offset(r, t), paint);
-    canvas.drawLine(Offset(r, t), Offset(r, t + len), paint);
-
-    // Bottom-Left └
-    canvas.drawLine(Offset(l, b - len), Offset(l, b), paint);
-    canvas.drawLine(Offset(l, b), Offset(l + len, b), paint);
-
-    // Bottom-Right ┘
-    canvas.drawLine(Offset(r - len, b), Offset(r, b), paint);
-    canvas.drawLine(Offset(r, b), Offset(r, b - len), paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

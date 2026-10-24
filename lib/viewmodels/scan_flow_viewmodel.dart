@@ -86,6 +86,11 @@ class ScanFlowViewModel extends ChangeNotifier {
   /// Optional callback invoked when a scan is successfully completed and recorded.
   VoidCallback? onScanComplete;
 
+  /// Whether a finished report is saved to History / Favorites and synced.
+  /// Guests (no account yet) see their report but nothing is kept: reports
+  /// are only saved for a signed-in account. Set by the shell before a scan.
+  bool saveReports = true;
+
   Future<void> Function()? _failedAction;
 
   ScanStep _currentStep = ScanStep.directScan;
@@ -113,6 +118,7 @@ class ScanFlowViewModel extends ChangeNotifier {
   AuthenticationReport? _currentReport;
   EvidenceItem? _selectedPart;
   String? _initialImagePath;
+  String? _pendingImagePath;
   String? _initialSourcePath;
 
   String? _pendingPhotoPath;
@@ -191,7 +197,10 @@ class ScanFlowViewModel extends ChangeNotifier {
 
   AuthenticationReport? get currentReport => _currentReport;
   EvidenceItem? get selectedPart => _selectedPart;
-  String? get initialImagePath => _initialImagePath;
+  /// The first photo, for display. While it is still being stored (the
+  /// first seconds of identification) this is the captured file itself, so
+  /// the identifying screen shows the user's photo from the first frame.
+  String? get initialImagePath => _initialImagePath ?? _pendingImagePath;
   String? get pendingPhotoPath => _pendingPhotoPath;
   EvidenceValidationResult? get pendingValidation => _pendingCheck?.validation;
   PhotoEvidence? get pendingEvidence => _pendingEvidence;
@@ -242,6 +251,7 @@ class ScanFlowViewModel extends ChangeNotifier {
     _currentReport = null;
     _selectedPart = null;
     _initialImagePath = null;
+    _pendingImagePath = null;
     _initialSourcePath = null;
     _clearPending();
     _appError = null;
@@ -327,6 +337,7 @@ class ScanFlowViewModel extends ChangeNotifier {
       return;
     }
 
+    _pendingImagePath = imagePath;
     _currentStep = ScanStep.identifying;
     _scanState = ScanLifecycleState.identifying;
     _appError = null;
@@ -648,9 +659,11 @@ class ScanFlowViewModel extends ChangeNotifier {
       final report = ScanConsistencyService.reconcile(report: scored, history: _historyRepo.allReports);
 
       _currentReport = report;
-      _historyRepo.addReport(report);
+      if (saveReports) {
+        _historyRepo.addReport(report);
+        _categoryRepo?.registerCategory(report.product.categoryLabel);
+      }
       onScanComplete?.call();
-      _categoryRepo?.registerCategory(report.product.categoryLabel);
 
       AnalyticsService.instance.logScanCompleted(
         reportId: report.id,
@@ -658,7 +671,7 @@ class ScanFlowViewModel extends ChangeNotifier {
         confidence: report.overallScore,
       );
 
-      _triggerBackgroundPhotoUpload(report, _photoPathsById);
+      if (saveReports) _triggerBackgroundPhotoUpload(report, _photoPathsById);
 
       _scanState = ScanLifecycleState.resultReady;
       _currentStep = ScanStep.authenticationReport;
@@ -726,7 +739,7 @@ class ScanFlowViewModel extends ChangeNotifier {
 
   void toggleFavoriteCurrentReport() {
     final report = _currentReport;
-    if (report == null) return;
+    if (report == null || !saveReports) return;
     _historyRepo.toggleFavorite(report.id);
     _currentReport = report.copyWith(isFavorite: !report.isFavorite);
     notifyListeners();
