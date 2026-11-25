@@ -34,9 +34,10 @@ const IMAGE_MIME = new Set(["image/jpeg", "image/png", "image/webp"]);
 const THINKING = new Set(["minimal", "low", "medium", "high"]);
 
 class RequestError extends Error {
-  constructor(code, message) {
+  constructor(code, message, reason) {
     super(message);
     this.code = code; // invalid-argument | resource-exhausted
+    this.reason = reason || null; // e.g. "no_credits", to tell it apart from rate limits
   }
 }
 
@@ -132,6 +133,19 @@ function sessionChargeDue(session, { imageCount, label }) {
 }
 
 /**
+ * Whether users/{uid} currently has Pro. `isPremium` alone isn't enough:
+ * it is only ever cleared by a webhook, so a missed EXPIRATION would leave
+ * it true forever. `premiumExpiresAtMs` (from RevenueCat, via the webhook
+ * or the direct lookup) bounds it; no expiry recorded means lifetime or a
+ * legacy grant, which is trusted until a webhook revokes it.
+ */
+function premiumActive(data, nowMs = Date.now()) {
+  if (!data || !data.isPremium) return false;
+  const exp = data.premiumExpiresAtMs;
+  return typeof exp !== "number" || exp > nowMs;
+}
+
+/**
  * One transaction: rate limit, session bookkeeping and (for guests) the
  * scan-credit check/decrement. Returns { charged, sessionRef }.
  */
@@ -158,10 +172,13 @@ async function admitCall({ db, admin, uid, token, scanId, imageCount, label, now
       charged = true;
       // Credits apply to non-premium accounts (both guests and free registered users).
       const data = userDoc.exists ? userDoc.data() : {};
-      const isPremium = Boolean(data.isPremium);
-      const remaining = typeof data.scansRemaining === "number" ? data.scansRemaining : 3;
+      const isPremium = premiumActive(data, nowMs);
+      // A lapsed subscriber goes back to an empty free balance: older grants
+      // wrote scansRemaining: 9999, which must not become free scans.
+      const lapsed = Boolean(data.isPremium) && !isPremium;
+      const remaining = lapsed ? 0 : typeof data.scansRemaining === "number" ? data.scansRemaining : 3;
       if (!isPremium) {
-        if (remaining <= 0) throw new RequestError("resource-exhausted", "No scan credits remaining. Please upgrade to premium.");
+        if (remaining <= 0) throw new RequestError("resource-exhausted", "No scan credits remaining. Please upgrade to premium.", "no_credits");
         userUpdate = { scansRemaining: remaining - 1, lastScanAt: admin.firestore.FieldValue.serverTimestamp() };
         if (!userDoc.exists) {
           userUpdate = {
@@ -216,6 +233,7 @@ module.exports = {
   sessionChargeDue,
   FINAL_REPORT_LABEL,
   admitCall,
+  premiumActive,
   refundCall,
   logId,
 };

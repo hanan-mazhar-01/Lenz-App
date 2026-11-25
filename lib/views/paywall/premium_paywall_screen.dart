@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
@@ -63,6 +64,10 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
 
   final LenzController _lenz = LenzController();
 
+  static const _offeringsTimeout = Duration(seconds: 12);
+  static const _eligibilityTimeout = Duration(seconds: 5);
+  static const _minPageHeight = 540.0;
+
   @override
   void initState() {
     super.initState();
@@ -93,17 +98,33 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
   Future<void> _loadOfferings() async {
     setState(() => _isLoadingOfferings = true);
     try {
-      final offerings = await (widget.offeringsLoader ?? RevenueCatService.getOfferings)();
+      // Hard timeouts so a slow or stalled store connection (App Review's
+      // sandbox on iPad in particular) can never leave an endless spinner:
+      // on timeout we fall through to the existing empty/Retry state.
+      // If RevenueCat couldn't start at launch (offline, slow store), try
+      // again here so Retry can actually recover.
+      if (widget.offeringsLoader == null && !RevenueCatService.isInitialized) {
+        await RevenueCatService.init().timeout(_offeringsTimeout, onTimeout: () {});
+      }
+      Offerings? offerings;
+      try {
+        offerings = await (widget.offeringsLoader ?? RevenueCatService.getOfferings)()
+            .timeout(_offeringsTimeout);
+      } on TimeoutException {
+        offerings = null;
+      }
       final current = offerings?.current;
       final packages = current?.availablePackages ?? <Package>[];
 
-      final eligibility = <String, bool>{};
-      for (final pkg in packages) {
-        eligibility[pkg.storeProduct.identifier] =
-            await (widget.introEligibilityChecker ?? RevenueCatService.isEligibleForIntroOffer)(
-              pkg.storeProduct.identifier,
-            );
-      }
+      // Checked in parallel, each bounded; an unknown answer means "no trial
+      // copy", which is always the safe default.
+      final checker = widget.introEligibilityChecker ?? RevenueCatService.isEligibleForIntroOffer;
+      final results = await Future.wait(packages.map((pkg) => checker(pkg.storeProduct.identifier)
+          .timeout(_eligibilityTimeout, onTimeout: () => false)
+          .catchError((_) => false)));
+      final eligibility = <String, bool>{
+        for (var i = 0; i < packages.length; i++) packages[i].storeProduct.identifier: results[i],
+      };
 
       if (!mounted) return;
       setState(() {
@@ -144,11 +165,14 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
     Haptics.mediumImpact();
 
     try {
-      final success = await RevenueCatService.purchasePackage(_selectedPackage!);
+      final outcome = await RevenueCatService.purchasePackage(_selectedPackage!);
       if (!mounted) return;
 
-      final isProNow = success || RevenueCatService.isPremiumNotifier.value;
-      if (isProNow) {
+      // Decide only from what this transaction did. Checking the existing
+      // premium flag here would treat a cancelled "switch to yearly" by a
+      // current subscriber as a successful purchase.
+      if (outcome == PurchaseOutcome.cancelled) return;
+      if (outcome == PurchaseOutcome.unlocked) {
         final chosenPlan =
             RevenueCatService.activePlanNotifier.value ??
             (_selectedPackage!.packageType == PackageType.annual ? 'Yearly Pro' : 'Monthly Pro');
@@ -165,6 +189,21 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
           ),
         );
         _dismiss(true);
+      } else {
+        // The store took the payment but the `pro` entitlement isn't active
+        // yet (slow propagation, or a RevenueCat config gap). Never leave the
+        // user staring at an unchanged paywall: say what happened, and
+        // re-check in the background - the customer-info listener unlocks
+        // the app the moment the entitlement arrives.
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              "Purchase received. Unlocking Pro may take a moment - if it doesn't, tap Restore.",
+            ),
+            duration: Duration(seconds: 6),
+          ),
+        );
+        unawaited(RevenueCatService.checkPremiumStatus());
       }
     } catch (e) {
       if (mounted) {
@@ -363,9 +402,16 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
           child: LayoutBuilder(
             builder: (context, c) {
               final d = _Dims(c.maxWidth, mq.size.height);
-              return Padding(
+              final page = Padding(
                 padding: EdgeInsets.fromLTRB(d.cqw(5.2), 4, d.cqw(5.2), math.max(8, d.cqh(1.6))),
                 child: isPro ? _buildCurrentPlanView(d, profileVm) : _buildPurchaseView(d),
+              );
+              // Designed as a single page down to a 568pt-tall phone. Only a
+              // window shorter than that (iPad Slide Over / Stage Manager)
+              // scrolls, instead of overflowing.
+              if (c.maxHeight >= _minPageHeight) return page;
+              return SingleChildScrollView(
+                child: SizedBox(height: _minPageHeight, child: page),
               );
             },
           ),

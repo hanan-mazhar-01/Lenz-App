@@ -76,8 +76,42 @@ abstract final class LenzRoutes {
 /// `MaterialApp.builder` that puts the ivory canvas behind every route so
 /// cross-fades never expose the window background:
 /// `MaterialApp(builder: lenzAppBuilder, ...)`.
-Widget lenzAppBuilder(BuildContext context, Widget? child) =>
-    ColoredBox(color: LenzColors.ivory, child: child);
+///
+/// Every screen is designed for phone widths. On wider windows (iPad in
+/// either orientation, Split View, Stage Manager) the whole app, sheets and
+/// dialogs included, renders in a centred phone-width column, and the
+/// column's MediaQuery reports that width so layouts that size themselves
+/// from the screen stay at phone proportions instead of stretching.
+Widget lenzAppBuilder(BuildContext context, Widget? child) {
+  final content = child ?? const SizedBox.shrink();
+  final mq = MediaQuery.of(context);
+  if (mq.size.width <= kLenzMaxContentWidth) {
+    return ColoredBox(color: LenzColors.ivory, child: content);
+  }
+  return ColoredBox(
+    color: LenzColors.ivory,
+    child: Center(
+      child: SizedBox(
+        width: kLenzMaxContentWidth,
+        child: ClipRect(
+          child: MediaQuery(
+            data: mq.copyWith(
+              size: Size(kLenzMaxContentWidth, mq.size.height),
+              // Side insets belong to the window edges, not the column.
+              padding: mq.padding.copyWith(left: 0, right: 0),
+              viewPadding: mq.viewPadding.copyWith(left: 0, right: 0),
+              viewInsets: mq.viewInsets.copyWith(left: 0, right: 0),
+            ),
+            child: content,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// Widest the app content ever gets; wider windows get a centred column.
+const double kLenzMaxContentWidth = 520;
 
 /// A [PageRoute] that plays one of the [LenzRouteKind] transitions and, for
 /// `forward` routes on iOS, supports the edge swipe-back gesture.

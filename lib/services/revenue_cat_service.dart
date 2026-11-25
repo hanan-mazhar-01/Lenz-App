@@ -1,8 +1,22 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import '../core/config/revenue_cat_config.dart';
+
+/// What happened when the user tried to buy a package.
+enum PurchaseOutcome {
+  /// The store transaction completed and the `pro` entitlement is active.
+  unlocked,
+
+  /// The store transaction completed, but RevenueCat doesn't report the
+  /// `pro` entitlement yet (slow propagation or a dashboard config gap).
+  completedWithoutEntitlement,
+
+  /// The user closed the Apple payment sheet. Not an error: show nothing.
+  cancelled,
+}
 
 class RevenueCatService {
   RevenueCatService._();
@@ -10,6 +24,11 @@ class RevenueCatService {
   static final ValueNotifier<bool> isPremiumNotifier = ValueNotifier<bool>(false);
   static final ValueNotifier<String?> activePlanNotifier = ValueNotifier<String?>(null);
   static bool _initialized = false;
+  static bool _listenerAdded = false;
+
+  /// Whether the SDK is configured. The paywall uses this to retry [init]
+  /// when the first attempt at launch failed.
+  static bool get isInitialized => _initialized;
 
   /// Whether RevenueCat is actually wired up on this platform. Callers that
   /// want to treat RC as the authoritative premium signal need to know when
@@ -41,16 +60,18 @@ class RevenueCatService {
       final configuration = PurchasesConfiguration(apiKey);
       await Purchases.configure(configuration);
 
-      // Listen for background subscription updates
-      Purchases.addCustomerInfoUpdateListener((customerInfo) {
-        _updatePremiumStatus(customerInfo);
-      });
+      // Listen for background subscription updates (once, even if init is
+      // retried).
+      if (!_listenerAdded) {
+        Purchases.addCustomerInfoUpdateListener(_updatePremiumStatus);
+        _listenerAdded = true;
+      }
 
-      // Initial entitlement check
-      final customerInfo = await Purchases.getCustomerInfo();
-      _updatePremiumStatus(customerInfo);
-
+      // Usable as soon as the SDK is configured. The first entitlement
+      // fetch needs the network, so it must not decide whether the store
+      // works for the rest of the session, nor hold up app launch.
       _initialized = true;
+      unawaited(_refreshCustomerInfo());
       if (kDebugMode) {
         debugPrint('[RevenueCatService] Initialized successfully');
       }
@@ -58,6 +79,15 @@ class RevenueCatService {
       if (kDebugMode) {
         debugPrint('[RevenueCatService] Init failed: $e');
       }
+    }
+  }
+
+  static Future<void> _refreshCustomerInfo() async {
+    try {
+      _updatePremiumStatus(await Purchases.getCustomerInfo());
+    } catch (e) {
+      // Offline at launch: the listener and later calls catch up.
+      if (kDebugMode) debugPrint('[RevenueCatService] Initial customer info failed: $e');
     }
   }
 
@@ -107,25 +137,28 @@ class RevenueCatService {
   }
 
   /// Purchases a selected package (e.g. Monthly or Annual).
-  /// Returns `true` if purchase completed and user has active premium.
-  static Future<bool> purchasePackage(Package package) async {
-    if (!_initialized) return false;
+  ///
+  /// Throws on real failures (map them with [friendlyErrorMessage]); a
+  /// cancelled payment sheet is [PurchaseOutcome.cancelled], never an error.
+  static Future<PurchaseOutcome> purchasePackage(Package package) async {
+    if (!_initialized) {
+      throw StateError('RevenueCat is not initialized');
+    }
     try {
       final purchaseResult = await Purchases.purchasePackage(package);
       final hasPremium = _hasActiveEntitlement(purchaseResult.customerInfo);
       final planName = package.packageType == PackageType.annual ? 'Yearly Pro' : 'Monthly Pro';
       if (hasPremium) activePlanNotifier.value = planName;
       isPremiumNotifier.value = hasPremium;
-      return hasPremium;
+      return hasPremium ? PurchaseOutcome.unlocked : PurchaseOutcome.completedWithoutEntitlement;
     } on PlatformException catch (e) {
       final errorCode = PurchasesErrorHelper.getErrorCode(e);
       if (errorCode == PurchasesErrorCode.purchaseCancelledError) {
         if (kDebugMode) debugPrint('[RevenueCatService] Purchase was cancelled by user');
-      } else {
-        if (kDebugMode) debugPrint('[RevenueCatService] Purchase failed: $e');
-        rethrow;
+        return PurchaseOutcome.cancelled;
       }
-      return false;
+      if (kDebugMode) debugPrint('[RevenueCatService] Purchase failed: $e');
+      rethrow;
     } catch (e) {
       if (kDebugMode) debugPrint('[RevenueCatService] Unexpected purchase error: $e');
       rethrow;

@@ -19,6 +19,7 @@ import 'package:replica_detector/services/revenue_cat_service.dart';
 import 'package:replica_detector/viewmodels/profile_viewmodel.dart';
 import 'package:replica_detector/views/paywall/premium_paywall_screen.dart';
 import 'package:replica_detector/widgets/lenz/lenz.dart';
+import 'package:replica_detector/widgets/ui/lenz_routes.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 final String? _dir = Platform.environment['LENZ_SCREEN_DUMP_DIR'];
@@ -77,6 +78,12 @@ const _sizes = [
   _Size(390, 844, 1, '_390x844'),
   _Size(430, 932, 1, '_430x932'),
   _Size(320, 568, 1.3, '_320x568_x13'),
+  // iPad (Apple's last IAP review ran on an iPad Air 11"): portrait,
+  // landscape, Split View third, and a short Stage Manager window.
+  _Size(820, 1180, 1, '_ipad_820x1180'),
+  _Size(1180, 820, 1, '_ipad_1180x820'),
+  _Size(320, 1180, 1, '_ipad_split_320x1180'),
+  _Size(700, 480, 1, '_ipad_stage_700x480'),
 ];
 
 Future<GlobalKey> _pump(
@@ -104,9 +111,12 @@ Future<GlobalKey> _pump(
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
-        builder: (context, c) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(s.scale)),
-          child: RepaintBoundary(key: key, child: c!),
+        builder: (context, c) => lenzAppBuilder(
+          context,
+          MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(s.scale)),
+            child: RepaintBoundary(key: key, child: c!),
+          ),
         ),
         home: PremiumPaywallScreen(
           onClose: () {},
@@ -140,6 +150,8 @@ Future<void> _shot(WidgetTester tester, GlobalKey key, String name) async {
 
 void _expectSinglePage(WidgetTester tester) {
   expect(tester.takeException(), isNull);
+  // A window shorter than the designed page scrolls instead of overflowing.
+  if (tester.view.physicalSize.height / tester.view.devicePixelRatio < 540) return;
   // The page itself never scrolls (the legal sheet does, but it is closed).
   expect(find.byType(Scrollable), findsNothing);
 }
@@ -174,7 +186,10 @@ void main() {
       expect(find.textContaining('Free Trial'), findsNothing);
       _expectSinglePage(tester);
 
-      // Billing details opens a sheet (scrolls inside only).
+      // Billing details opens a sheet (scrolls inside only). In a short
+      // window the page scrolls, so bring the link on screen first.
+      await tester.ensureVisible(find.text('Billing details'));
+      await tester.pump();
       await tester.tap(find.text('Billing details'));
       for (var i = 0; i < 8; i++) {
         await tester.pump(const Duration(milliseconds: 100));
@@ -228,6 +243,14 @@ void main() {
       expect(find.text('Loading plans…'), findsWidgets);
       _expectSinglePage(tester);
       await _shot(tester, key, 'paywall_loading${s.tag}');
+
+      // A store that never answers must not spin forever: after the
+      // offerings timeout the paywall falls back to the Retry state.
+      await tester.pump(const Duration(seconds: 13));
+      await tester.pump();
+      expect(find.text('Loading plans…'), findsNothing);
+      expect(find.text("Couldn't load subscription plans"), findsOneWidget);
+      expect(find.text('Retry'), findsOneWidget);
     });
 
     testWidgets('paywall offerings failed${s.tag}', (tester) async {

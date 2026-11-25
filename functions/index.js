@@ -1,8 +1,11 @@
+const crypto = require("crypto");
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 
 const gemini = require("./lib/gemini");
 const limits = require("./lib/limits");
+const revenuecat = require("./lib/revenuecat");
+const cloudinary = require("./lib/cloudinary");
 const anonymousCleanup = require("./lib/anonymous_cleanup");
 const deviceGrants = require("./lib/device_grants");
 
@@ -66,13 +69,65 @@ function geminiKey() {
   return key;
 }
 
+/**
+ * limits.admitCall, but before refusing a user for "no credits" ask
+ * RevenueCat directly whether they hold an active `pro` entitlement. The
+ * webhook is what normally sets users/{uid}.isPremium; if it hasn't arrived
+ * (or isn't configured), someone who just paid would otherwise be blocked
+ * on their very next scan. On a hit, persist isPremium and admit the call.
+ */
+const RC_LOOKUP_MIN_INTERVAL_MS = 60 * 1000;
+
+async function admitWithEntitlementFallback(args) {
+  try {
+    return await limits.admitCall(args);
+  } catch (e) {
+    if (!(e instanceof limits.RequestError) || e.reason !== "no_credits") throw e;
+
+    // At most one RevenueCat lookup per user per minute: a user with no
+    // credits must not be able to turn scan attempts into unbounded calls
+    // to RevenueCat (the refused call's rate-limit counters roll back).
+    const userRef = args.db.collection("users").doc(args.uid);
+    const nowMs = Date.now();
+    const snap = await userRef.get();
+    const last = snap.exists ? snap.data().rcCheckedAtMs : null;
+    if (typeof last === "number" && nowMs - last < RC_LOOKUP_MIN_INTERVAL_MS) throw e;
+    await userRef.set({ rcCheckedAtMs: nowMs }, { merge: true });
+
+    const ent = await revenuecat.getActiveEntitlement(args.uid, {
+      apiKey: process.env.REVENUECAT_SECRET_API_KEY,
+      nowMs,
+    });
+    if (!ent.active) throw e;
+    await userRef.set(
+      {
+        ...revenuecat.proFields(ent.expiresAtMs),
+        updatedAt: args.admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    logEvent("premium_synced_from_revenuecat", { user: limits.logId(args.uid) });
+    return await limits.admitCall(args);
+  }
+}
+
+/** Constant-time string comparison for shared secrets. */
+function secretsMatch(provided, expected) {
+  const a = Buffer.from(String(provided));
+  const b = Buffer.from(String(expected));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 const AI_RUNTIME = {
   timeoutSeconds: 120,
   memory: "512MB",
   // Bound to Secret Manager. Set/update with:
   //   firebase functions:secrets:set GEMINI_API_KEY
   // then redeploy. Never hardcode a fallback key here.
-  secrets: ["GEMINI_API_KEY"],
+  // REVENUECAT_SECRET_API_KEY backs the "just paid, webhook not in yet"
+  // fallback in admitWithEntitlementFallback. Set it before deploying:
+  //   firebase functions:secrets:set REVENUECAT_SECRET_API_KEY
+  secrets: ["GEMINI_API_KEY", "REVENUECAT_SECRET_API_KEY"],
   enforceAppCheck: ENFORCE_APP_CHECK,
 };
 
@@ -112,7 +167,7 @@ exports.generateStructuredContent = functions
 
     let admission;
     try {
-      admission = await limits.admitCall({ db, admin, uid, token: context.auth.token, scanId: req.scanId, imageCount: req.images.length, label: req.label });
+      admission = await admitWithEntitlementFallback({ db, admin, uid, token: context.auth.token, scanId: req.scanId, imageCount: req.images.length, label: req.label });
     } catch (e) {
       logEvent("ai_call_rejected", { cid, user: limits.logId(uid), label: req.label, reason: e.message }, "WARNING");
       throw httpsErrorFor(e);
@@ -311,7 +366,7 @@ exports.revenueCatWebhook = functions
 
     const authHeader = req.get("Authorization") || "";
     const providedSecret = authHeader.replace(/^Bearer\s+/i, "").trim();
-    if (providedSecret !== expectedSecret) {
+    if (!secretsMatch(providedSecret, expectedSecret)) {
       console.error("[revenueCatWebhook] Rejected request with invalid/missing Authorization header.");
       return res.status(401).send("Unauthorized");
     }
@@ -321,63 +376,18 @@ exports.revenueCatWebhook = functions
       return res.status(400).send("Missing event data");
     }
 
-    const eventType = event.type;
-    const grantPremium = (uid) =>
-      db.collection("users").doc(uid).set(
-        {
-          isPremium: true,
-          planName: "VeriCheck Premium",
-          scansRemaining: 9999,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-    const revokePremium = (uid) =>
-      db.collection("users").doc(uid).set(
-        {
-          isPremium: false,
-          planName: "Free Plan",
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-
-    // TRANSFER moves an entitlement between RevenueCat app user ids and has
-    // no single app_user_id of its own - handle it before the generic
-    // appUserId check below.
-    if (eventType === "TRANSFER") {
-      const toIds = Array.isArray(event.transferred_to) ? event.transferred_to : [];
-      const fromIds = Array.isArray(event.transferred_from) ? event.transferred_from : [];
-      await Promise.all([...toIds.map(grantPremium), ...fromIds.map(revokePremium)]);
-      return res.status(200).json({ received: true });
+    const { writes, note } = revenuecat.planWebhookUpdates(event);
+    if (note) {
+      logEvent(`revenuecat_webhook_${note}`, { eventType: event.type }, note === "unhandled" ? "WARNING" : "INFO");
     }
-
-    const appUserId = event.app_user_id;
-    if (!appUserId) {
-      return res.status(400).send("Missing app_user_id");
-    }
-
-    if (
-      eventType === "INITIAL_PURCHASE" ||
-      eventType === "RENEWAL" ||
-      eventType === "PRODUCT_CHANGE" ||
-      eventType === "UNCANCELLATION"
-    ) {
-      await grantPremium(appUserId);
-    } else if (
-      eventType === "CANCELLATION" ||
-      eventType === "EXPIRATION" ||
-      eventType === "REFUND"
-    ) {
-      await revokePremium(appUserId);
-    } else if (eventType === "BILLING_ISSUE" || eventType === "SUBSCRIPTION_PAUSED") {
-      // Apple/RevenueCat still consider the subscription active during a
-      // billing grace period or pause - don't revoke access pre-emptively.
-      // An EXPIRATION event will arrive if it isn't resolved.
-      logEvent("revenuecat_webhook_grace_period", { appUserId, eventType }, "WARNING");
-    } else {
-      logEvent("revenuecat_webhook_unhandled", { appUserId, eventType }, "WARNING");
-    }
+    await Promise.all(
+      writes.map(([uid, fields]) =>
+        db.collection("users").doc(uid).set(
+          { ...fields, updatedAt: admin.firestore.FieldValue.serverTimestamp() },
+          { merge: true }
+        )
+      )
+    );
 
     return res.status(200).json({ received: true });
   } catch (err) {
@@ -386,7 +396,46 @@ exports.revenueCatWebhook = functions
   }
 });
 
-const CLOUDINARY_ROOT_FOLDER = "lenz_replica_detector";
+const CLOUDINARY_ROOT_FOLDER = cloudinary.ROOT_FOLDER;
+
+/**
+ * Callable Cloud Function: signCloudinaryUploads
+ *
+ * Returns one upload signature per evidence photo of a scan, so the app
+ * uploads with signed requests instead of an unsigned preset shipped in the
+ * binary (Guideline 1.6). The server picks the folder and public_id
+ * (`{uid}_{scanId}_{evidenceId}`), so the caller can only ever write under
+ * its own uid - the same prefix deleteScanAssets/deleteAccount remove.
+ *
+ * Request:  { scanId, evidenceIds: [string] }
+ * Response: { cloudName, apiKey, folder, timestamp, uploads: { id: { publicId, signature } } }
+ */
+exports.signCloudinaryUploads = functions
+  .runWith({
+    secrets: ["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"],
+    enforceAppCheck: ENFORCE_APP_CHECK,
+  })
+  .https.onCall(async (data, context) => {
+    requireAuth(context);
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+    const apiKey = process.env.CLOUDINARY_API_KEY;
+    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+    if (!cloudName || !apiKey || !apiSecret) {
+      logEvent("cloudinary_sign_unconfigured", {}, "ERROR");
+      throw new functions.https.HttpsError("unavailable", "Photo storage is not available right now.");
+    }
+    try {
+      const plan = cloudinary.planSignedUploads({
+        uid: context.auth.uid,
+        scanId: data && data.scanId,
+        evidenceIds: data && data.evidenceIds,
+        apiSecret,
+      });
+      return { cloudName, apiKey, ...plan };
+    } catch (e) {
+      throw httpsErrorFor(e);
+    }
+  });
 
 /**
  * Deletes every Cloudinary asset whose public_id starts with [prefix]

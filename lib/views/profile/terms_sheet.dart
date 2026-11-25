@@ -36,7 +36,9 @@ class TermsOfServiceSheet extends StatelessWidget {
       'Subscriptions automatically renew unless auto-renew is turned off at least 24 hours before the end of the current billing period. Payment will be charged to your Apple ID account at confirmation of purchase.',
     ),
     (
-      '3-day free trial',
+      // Never name a trial length here: this sheet is static, while trials
+      // come from App Store Connect and may not exist (Guideline 3.1.2(c)).
+      'Free trials',
       'Any unused portion of a free trial period, if offered, will be forfeited when purchasing a subscription. You can cancel your free trial anytime in your Apple ID account settings without being charged.',
     ),
     (

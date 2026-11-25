@@ -95,8 +95,10 @@ void main() async {
   // already hydrated.
   final prefs = await SharedPreferences.getInstance();
 
-  // Initialize RevenueCat In-App Purchases
-  await RevenueCatService.init();
+  // Initialize RevenueCat In-App Purchases. Bounded so a stalled store
+  // connection can never hold the app on the launch screen; the paywall
+  // retries init if this didn't finish.
+  await RevenueCatService.init().timeout(const Duration(seconds: 5), onTimeout: () {});
 
   // Decode the mascot layers while the splash is starting so the character
   // never pops in. Safe to fire-and-forget: widgets render an empty box

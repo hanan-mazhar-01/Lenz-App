@@ -1,27 +1,16 @@
+/// Cloudinary storage for scan evidence photos.
+///
+/// Uploads are *signed*: the app asks the `signCloudinaryUploads` Cloud
+/// Function for a per-photo signature, and the cloud name, API key, folder
+/// and public_id all come back from the server with it. Nothing that grants
+/// upload access (no unsigned preset, no secret) ships in the app binary.
 class CloudinaryConfig {
-  /// Cloudinary Cloud Name.
-  /// Override with: --dart-define=CLOUDINARY_CLOUD_NAME=your_cloud_name
-  static const String cloudName = String.fromEnvironment(
-    'CLOUDINARY_CLOUD_NAME',
-    defaultValue: 'vz6euzlq',
-  );
+  CloudinaryConfig._();
 
-  /// Unsigned upload preset configured in Cloudinary console.
-  /// Override with: --dart-define=CLOUDINARY_UPLOAD_PRESET=your_preset
-  static const String uploadPreset = String.fromEnvironment(
-    'CLOUDINARY_UPLOAD_PRESET',
-    defaultValue: 'vericheck_scans',
-  );
+  /// Callable Cloud Function that signs uploads (functions/index.js).
+  static const String signFunctionName = 'signCloudinaryUploads';
 
-  /// Root folder all uploads are nested under in the Cloudinary media library.
-  static const String rootFolder = 'lenz_replica_detector';
-
-  /// Base API URL for image uploads.
-  static String get uploadUrl =>
+  /// Image upload endpoint for [cloudName].
+  static String uploadUrl(String cloudName) =>
       'https://api.cloudinary.com/v1_1/$cloudName/image/upload';
-
-  /// Whether Cloudinary is configured with non-empty values.
-  static bool get isConfigured =>
-      cloudName.trim().isNotEmpty && uploadPreset.trim().isNotEmpty;
 }
-

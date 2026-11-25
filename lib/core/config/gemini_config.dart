@@ -1,7 +1,3 @@
-import 'package:replica_detector/core/config/env_secrets.example.dart';
-
-// import 'env_secrets.dart';
-
 class GeminiConfig {
   /// Centralized Gemini model identifier.
   /// Change here to swap the model application-wide without rewriting any other files.
@@ -26,9 +22,6 @@ class GeminiConfig {
 
   /// Maximum retries for transient errors.
   static int retryCount = 2;
-
-  /// Retrieves the configured API key without logging or exposing it.
-  static String get apiKey => EnvSecrets.geminiApiKey;
 
   /// Whether the backend service is configured. Since Gemini calls are routed
   /// through Firebase Cloud Functions, the backend proxies all requests securely.

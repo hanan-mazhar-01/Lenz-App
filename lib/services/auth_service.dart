@@ -584,11 +584,18 @@ class AuthService extends ChangeNotifier {
       }
 
       return result;
+    } on SignInWithAppleAuthorizationException catch (e) {
+      // The user just closed the Apple sheet - not an error, show nothing.
+      if (e.code != AuthorizationErrorCode.canceled) {
+        _authError = 'Apple Sign-In failed. Please try again.';
+      }
+      return null;
     } on FirebaseAuthException catch (e) {
       _authError = _mapAuthException(e);
       return null;
     } catch (e) {
-      _authError = 'Apple Sign-In failed: $e';
+      if (kDebugMode) debugPrint('[AuthService] Apple Sign-In error: $e');
+      _authError = 'Apple Sign-In failed. Please try again.';
       return null;
     } finally {
       _isLoading = false;
@@ -666,6 +673,25 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Sign in with Apple accounts must have their Apple tokens revoked on
+      // deletion (Guideline 5.1.1(v)). Revocation needs a fresh
+      // authorization code, so Apple asks the user to confirm once more.
+      final usesApple = currentUser!.providerData.any((p) => p.providerId == 'apple.com');
+      if (usesApple) {
+        try {
+          final appleCredential = await SignInWithApple.getAppleIDCredential(scopes: const []);
+          await _auth.revokeTokenWithAuthorizationCode(appleCredential.authorizationCode);
+        } on SignInWithAppleAuthorizationException catch (e) {
+          if (e.code == AuthorizationErrorCode.canceled) {
+            return 'Account deletion cancelled. Confirm with Apple to delete your account.';
+          }
+          // Any other Apple failure must not block deleting the user's data.
+          if (kDebugMode) debugPrint('[AuthService] Apple token revoke failed: $e');
+        } catch (e) {
+          if (kDebugMode) debugPrint('[AuthService] Apple token revoke failed: $e');
+        }
+      }
+
       await _functions.httpsCallable('deleteAccount').call();
       // The Auth user no longer exists server-side; sign out locally to
       // clear the (now-invalid) cached session and route back to sign-in.

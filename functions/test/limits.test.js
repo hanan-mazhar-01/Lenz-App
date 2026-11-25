@@ -112,3 +112,32 @@ test("sessionChargeDue: the final report label charges; other labels with one im
   assert.equal(limits.sessionChargeDue({ calls: 1, charged: false }, { imageCount: 1, label: "photo_analysis:overview" }), false);
   assert.equal(limits.sessionChargeDue({ calls: 1, charged: true }, { imageCount: 1, label: limits.FINAL_REPORT_LABEL }), false);
 });
+
+test("premiumActive honours the recorded expiry", () => {
+  const now = Date.UTC(2026, 10, 25);
+  assert.equal(limits.premiumActive({ isPremium: true }, now), true, "legacy / lifetime grant");
+  assert.equal(limits.premiumActive({ isPremium: true, premiumExpiresAtMs: now + 1000 }, now), true);
+  assert.equal(limits.premiumActive({ isPremium: true, premiumExpiresAtMs: now - 1000 }, now), false);
+  assert.equal(limits.premiumActive({ isPremium: false, premiumExpiresAtMs: now + 1000 }, now), false);
+});
+
+test("a lapsed subscriber is refused, even with a legacy 9999 balance", async () => {
+  const { db, admin } = makeFake();
+  const now = Date.UTC(2026, 10, 25, 12);
+  db.store.set("users/l1", { isPremium: true, planName: "Lenz Pro", scansRemaining: 9999, premiumExpiresAtMs: now - 1000 });
+  const token = { firebase: { sign_in_provider: "apple.com" } };
+  await assert.rejects(
+    limits.admitCall({ db, admin, uid: "l1", token, scanId: "scan_lapsed", imageCount: 7, nowMs: now }),
+    (e) => e.reason === "no_credits"
+  );
+  assert.equal(db.store.get("users/l1").scansRemaining, 9999, "the refused call wrote nothing");
+});
+
+test("an active subscriber with an expiry is not charged", async () => {
+  const { db, admin } = makeFake();
+  const now = Date.UTC(2026, 10, 25, 12);
+  db.store.set("users/a1", { isPremium: true, scansRemaining: 0, premiumExpiresAtMs: now + 86400000 });
+  const token = { firebase: { sign_in_provider: "apple.com" } };
+  const r = await limits.admitCall({ db, admin, uid: "a1", token, scanId: "scan_active", imageCount: 7, nowMs: now });
+  assert.equal(r.charged, false);
+});
