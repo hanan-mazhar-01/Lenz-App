@@ -1,4 +1,6 @@
-import 'env_secrets.dart';
+import 'package:replica_detector/core/config/env_secrets.example.dart';
+
+// import 'env_secrets.dart';
 
 class GeminiConfig {
   /// Centralized Gemini model identifier.
