@@ -434,8 +434,8 @@ class _UiGalleryScreenState extends State<UiGalleryScreen> {
         ),
         LenzSettingRow(
           icon: LenzIcons.face,
-          title: 'Face ID lock',
-          subtitle: 'Unlock reports with biometrics',
+          title: 'Haptic feedback',
+          subtitle: 'Vibrate on taps and results',
           trailing: LenzSwitch(value: _switch, onChanged: (v) => setState(() => _switch = v)),
         ),
         LenzSettingRow(

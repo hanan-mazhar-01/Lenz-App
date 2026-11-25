@@ -194,7 +194,7 @@ void main() {
       for (var i = 0; i < 8; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
-      expect(find.text('Questions? support@veradostudio.com'), findsOneWidget);
+      expect(find.text('Questions? ryan@thesidequestlabs.com'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await _shot(tester, key, 'paywall_billing${s.tag}');
     });

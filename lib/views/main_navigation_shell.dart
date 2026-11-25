@@ -8,7 +8,6 @@ import '../models/authentication_result.dart';
 import '../models/category_item.dart';
 import '../repositories/history_repository.dart';
 import '../services/auth_service.dart';
-import '../services/biometric_service.dart';
 import '../services/home_tour_service.dart';
 import '../services/storage_service.dart';
 import '../widgets/tour/home_tour_card.dart';
@@ -28,6 +27,7 @@ import 'profile/terms_sheet.dart';
 import 'profile/scan_credits_sheet.dart';
 import 'report/authentication_report_view.dart';
 import 'report/part_detail_view.dart';
+import 'scan/ai_consent_sheet.dart';
 import 'scan/analyzing_view.dart';
 import '../models/product_identification.dart';
 import 'scan/scan_validation_result_view.dart';
@@ -55,14 +55,13 @@ class MainNavigationShell extends StatefulWidget {
   State<MainNavigationShell> createState() => _MainNavigationShellState();
 }
 
-class _MainNavigationShellState extends State<MainNavigationShell> {
+class _MainNavigationShellState extends State<MainNavigationShell> with WidgetsBindingObserver {
   int _currentTab = _Tab.home;
   bool _isScanFlowActive = false;
   AuthenticationReport? _inspectedReport;
   CategoryItem? _inspectedCategory;
   bool _isPremiumModalActive = false;
-
-  final BiometricService _biometricService = BiometricService();
+  bool _consentSheetOpen = false;
 
   // Home-tour coach-mark targets, in step order (see HomeScreen.tourSteps).
   final GlobalKey _tourHeroKey = GlobalKey();
@@ -106,11 +105,24 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
         _handleTourEnded();
       },
     );
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybeAutoShowHomeTour());
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Apple requires reacting to "Stop Using Apple ID" from Settings: check
+    // the credential whenever the app comes back to the foreground.
+    if (state == AppLifecycleState.resumed) {
+      try {
+        context.read<AuthService>().checkAppleCredentialRevoked();
+      } catch (_) {}
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     ShowcaseView.get().unregister();
     _activeTourTarget.dispose();
     super.dispose();
@@ -154,7 +166,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     HomeTourService.markTourSeen(uid);
   }
 
-  void _openScanFlow() {
+  Future<void> _openScanFlow() async {
     final authService = context.read<AuthService>();
     final profileVm = context.read<ProfileViewModel>();
 
@@ -171,6 +183,16 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
         profileVm.user.scansRemaining <= 0) {
       setState(() => _isPremiumModalActive = true);
       return;
+    }
+
+    // 3. One-time permission before any photo leaves the device (5.1.2(i)).
+    final storage = context.read<StorageService>();
+    if (!AiConsent.isGiven(storage)) {
+      if (_consentSheetOpen) return;
+      _consentSheetOpen = true;
+      final allowed = await AiConsent.ensure(context, storage);
+      _consentSheetOpen = false;
+      if (!allowed || !mounted) return;
     }
 
     final scanVm = context.read<ScanFlowViewModel>();
@@ -198,20 +220,7 @@ class _MainNavigationShellState extends State<MainNavigationShell> {
     });
   }
 
-  Future<void> _openReport(AuthenticationReport report) async {
-    final biometricRequired = context.read<StorageService>().getBool(
-      'biometric_enabled',
-      defaultValue: false,
-    );
-
-    if (biometricRequired) {
-      final authenticated = await _biometricService.authenticate(
-        reason: 'Unlock to view this authentication report',
-      );
-      if (!authenticated) return;
-    }
-
-    if (!mounted) return;
+  void _openReport(AuthenticationReport report) {
     setState(() {
       _inspectedReport = report;
     });

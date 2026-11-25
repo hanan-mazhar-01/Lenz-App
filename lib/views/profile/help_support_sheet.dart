@@ -18,7 +18,7 @@ class HelpSupportSheet extends StatefulWidget {
 }
 
 class _HelpSupportSheetState extends State<HelpSupportSheet> {
-  static const String _supportEmail = 'support@veradostudio.com';
+  static const String _supportEmail = 'ryan@thesidequestlabs.com';
 
   final List<Map<String, String>> _faqs = [
     {

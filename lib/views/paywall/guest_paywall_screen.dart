@@ -8,6 +8,7 @@ import '../../services/auth_service.dart';
 import '../../services/haptics.dart';
 import '../../viewmodels/profile_viewmodel.dart';
 import '../../widgets/common/google_icon.dart';
+import '../../widgets/common/legal_links.dart';
 import '../../widgets/lenz/lenz.dart';
 import '../../widgets/ui/ui.dart';
 
@@ -135,7 +136,7 @@ class _GuestPaywallScreenState extends State<GuestPaywallScreen> {
     final mq = MediaQuery.of(context);
 
     final google = LenzSocialButton(
-      label: 'Google',
+      label: 'Continue with Google',
       leading: const GoogleGIcon(size: 22),
       onPressed: busy ? null : () => _handleGoogleSignIn(authService),
     );
@@ -253,22 +254,14 @@ class _GuestPaywallScreenState extends State<GuestPaywallScreen> {
                               style: LenzText.cap.copyWith(color: LenzColors.bad, height: 1.35),
                             ),
                           ),
+                        // Apple first and full width, with Apple's wording (HIG).
                         if (showApple)
-                          Row(
-                            children: [
-                              Expanded(
-                                child: LenzSocialButton(
-                                  label: 'Apple',
-                                  icon: LenzIcons.apple,
-                                  onPressed: busy ? null : () => _handleAppleSignIn(authService),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(child: google),
-                            ],
-                          )
-                        else
-                          google,
+                          LenzSocialButton(
+                            label: 'Continue with Apple',
+                            icon: LenzIcons.apple,
+                            onPressed: busy ? null : () => _handleAppleSignIn(authService),
+                          ),
+                        google,
                         AnimatedSize(
                           duration: const Duration(milliseconds: 320),
                           curve: LenzMotion.ease,
@@ -283,6 +276,10 @@ class _GuestPaywallScreenState extends State<GuestPaywallScreen> {
                                     setState(() => _showEmailForm = true);
                                   },
                                 ),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 10),
+                          child: LegalLinksText(),
                         ),
                       ],
                     ),

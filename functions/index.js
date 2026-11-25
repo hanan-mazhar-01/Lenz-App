@@ -8,6 +8,7 @@ const revenuecat = require("./lib/revenuecat");
 const cloudinary = require("./lib/cloudinary");
 const anonymousCleanup = require("./lib/anonymous_cleanup");
 const deviceGrants = require("./lib/device_grants");
+const accountData = require("./lib/account_data");
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -521,15 +522,6 @@ exports.deleteAccount = functions
   }
 
   const uid = context.auth.uid;
-  const userRef = db.collection("users").doc(uid);
-
-  async function deleteSubcollection(name) {
-    const snap = await userRef.collection(name).get();
-    if (snap.empty) return;
-    const batch = db.batch();
-    snap.docs.forEach((d) => batch.delete(d.ref));
-    await batch.commit();
-  }
 
   // Unused free scans go back to this phone's ledger before the account goes.
   try {
@@ -538,11 +530,9 @@ exports.deleteAccount = functions
     console.error("[deleteAccount] device ledger release error:", e);
   }
 
+  // users/{uid} with all subcollections (any size), rate_limits and scan_sessions.
   try {
-    await deleteSubcollection("reports");
-    await deleteSubcollection("collection");
-    await deleteSubcollection("categories");
-    await userRef.delete();
+    await accountData.deleteAccountData({ db, uid });
   } catch (e) {
     console.error("[deleteAccount] Firestore cleanup error:", e);
     throw new functions.https.HttpsError("internal", "Failed to delete account data. Please try again.");
@@ -628,6 +618,7 @@ exports.cleanupAnonymousUsers = functions
         await deleteSubcollection(userRef, "categories");
         await userRef.delete();
         await db.collection("rate_limits").doc(uid).delete();
+        await accountData.deleteQueryInPages(db, db.collection("scan_sessions").where("uid", "==", uid));
         // Only older guests ever saved reports (and so uploaded photos).
         if (reports > 0) await deleteCloudinaryAssetsByPrefix(`${uid}_`);
       },

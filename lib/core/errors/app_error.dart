@@ -73,6 +73,19 @@ class AppError implements Exception {
         originalException: original,
       );
 
+  /// The server's per-account daily fair-use cap (also applies to Pro).
+  /// Retrying the same day cannot succeed, and "upgrade" would be wrong.
+  factory AppError.dailyLimit({Object? original}) => AppError(
+        type: AppErrorType.quotaLimit,
+        title: 'Daily limit reached',
+        message: "You've reached today's fair-use limit for AI checks. It resets tomorrow.",
+        recoveryAction: 'Please try again tomorrow.',
+        originalException: original,
+      );
+
+  /// True for [AppError.dailyLimit]: retrying today won't help.
+  bool get isDailyLimit => type == AppErrorType.quotaLimit && title == 'Daily limit reached';
+
   /// The AI provider itself is out of prepaid credit/billing quota (HTTP
   /// 402 from Gemini). Distinct from [quotaLimit] (a per-user rate limit,
   /// where retrying shortly usually works): this is a backend-wide billing

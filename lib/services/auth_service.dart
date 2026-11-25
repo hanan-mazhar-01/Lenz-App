@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:crypto/crypto.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -54,6 +57,7 @@ class AuthService extends ChangeNotifier {
     _authStateSubscription = _auth.authStateChanges().listen((user) async {
       _isInitialized = true;
       if (user != null) {
+        if (await checkAppleCredentialRevoked()) return;
         await _ensureUserDocumentExists(user);
         await RevenueCatService.logIn(user.uid);
       } else {
@@ -547,16 +551,21 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // Replay protection: Apple embeds sha256(rawNonce) in the identity
+      // token and Firebase checks it against the raw nonce we pass along.
+      final rawNonce = generateNonce();
       final appleCredential = await SignInWithApple.getAppleIDCredential(
         scopes: [
           AppleIDAuthorizationScopes.email,
           AppleIDAuthorizationScopes.fullName,
         ],
+        nonce: sha256ofString(rawNonce),
       );
 
       final OAuthProvider oAuthProvider = OAuthProvider('apple.com');
       final AuthCredential credential = oAuthProvider.credential(
         idToken: appleCredential.identityToken,
+        rawNonce: rawNonce,
         accessToken: appleCredential.authorizationCode,
       );
 
@@ -602,6 +611,47 @@ class AuthService extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// Apple user id of the signed-in account, if it uses Sign in with Apple.
+  /// Firebase stores Apple's stable `userIdentifier` as the provider uid.
+  String? get _appleUserId {
+    for (final p in currentUser?.providerData ?? const <UserInfo>[]) {
+      if (p.providerId == 'apple.com' && p.uid != null && p.uid!.isNotEmpty) return p.uid;
+    }
+    return null;
+  }
+
+  /// Signs the user out if they revoked this app's Apple credential
+  /// (Settings → Apple ID → Sign in with Apple → Stop Using), as Apple
+  /// requires. Returns true when it signed the user out. Called on every
+  /// auth state change and when the app returns to the foreground. Any
+  /// error (no network, not iOS) leaves the session alone.
+  Future<bool> checkAppleCredentialRevoked() async {
+    final appleId = _appleUserId;
+    if (appleId == null || kIsWeb || defaultTargetPlatform != TargetPlatform.iOS) return false;
+    try {
+      final state = await SignInWithApple.getCredentialState(appleId);
+      if (state == CredentialState.revoked || state == CredentialState.notFound) {
+        if (kDebugMode) debugPrint('[AuthService] Apple credential $state - signing out');
+        await signOut();
+        return true;
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('[AuthService] Apple credential state check failed (ignored): $e');
+    }
+    return false;
+  }
+
+  /// Random nonce for Sign in with Apple (sent to Apple hashed, to Firebase raw).
+  @visibleForTesting
+  static String generateNonce([int length = 32]) {
+    const charset = '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
+    final random = Random.secure();
+    return List.generate(length, (_) => charset[random.nextInt(charset.length)]).join();
+  }
+
+  @visibleForTesting
+  static String sha256ofString(String input) => sha256.convert(utf8.encode(input)).toString();
 
   /// Sends a password-reset email. Returns true on success.
   Future<bool> sendPasswordResetEmail(String email) async {

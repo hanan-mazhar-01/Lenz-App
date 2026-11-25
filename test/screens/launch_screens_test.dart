@@ -255,8 +255,8 @@ void main() {
         );
         await _settle(tester);
         expect(tester.takeException(), isNull);
-        expect(find.text('Apple'), ios ? findsOneWidget : findsNothing);
-        expect(find.text('Google'), findsOneWidget);
+        expect(find.text('Continue with Apple'), ios ? findsOneWidget : findsNothing);
+        expect(find.text('Continue with Google'), findsOneWidget);
         expect(find.text('Continue as guest'), findsOneWidget);
         await _shot(tester, 'auth_signin_$tag');
 
@@ -343,7 +343,7 @@ void main() {
         expect(tester.takeException(), isNull);
         expect(find.text('3 of 3 guest scans used'), findsOneWidget);
         expect(find.text('Free scans with your account'), findsOneWidget);
-        expect(find.text('Apple'), ios ? findsOneWidget : findsNothing);
+        expect(find.text('Continue with Apple'), ios ? findsOneWidget : findsNothing);
         await _shot(tester, 'guest_paywall_${ios ? 'ios' : 'android'}_${v.$1}');
         if (!ios) {
           await tester.ensureVisible(find.text('Continue with email'));

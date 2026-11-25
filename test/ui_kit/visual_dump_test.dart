@@ -102,7 +102,7 @@ void main() {
             const SizedBox(height: 10),
             const Center(child: Text('Alex Morgan', style: LenzText.title)),
             const SizedBox(height: 4),
-            const Center(child: Text('alex@veradostudio.com', style: LenzText.sub)),
+            const Center(child: Text('alex@thesidequestlabs.com', style: LenzText.sub)),
             const SizedBox(height: 8),
             const Center(
               child: LenzPill(

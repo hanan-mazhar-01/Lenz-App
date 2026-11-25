@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
 import '../../services/haptics.dart';
 import '../../widgets/common/google_icon.dart';
+import '../../widgets/common/legal_links.dart';
 import '../../widgets/lenz/lenz.dart';
 import '../../widgets/ui/ui.dart';
 
@@ -260,11 +261,7 @@ class _AuthScreenState extends State<AuthScreen>
                       index: 3,
                       child: Padding(
                         padding: EdgeInsets.symmetric(horizontal: 10),
-                        child: Text(
-                          'By continuing you agree to the Terms of Service and Privacy Policy.',
-                          textAlign: TextAlign.center,
-                          style: LenzText.tiny,
-                        ),
+                        child: LegalLinksText(),
                       ),
                     ),
                   ],
@@ -319,7 +316,7 @@ class _AuthScreenState extends State<AuthScreen>
   Widget _buildCard(BuildContext context, AuthService authService, bool busy) {
     final isIOS = Theme.of(context).platform == TargetPlatform.iOS;
     final google = LenzSocialButton(
-      label: 'Google',
+      label: 'Continue with Google',
       leading: const GoogleGIcon(size: 22),
       onPressed: busy
           ? null
@@ -452,28 +449,22 @@ class _AuthScreenState extends State<AuthScreen>
               padding: EdgeInsets.symmetric(vertical: 16),
               child: LenzDivider(label: 'or continue with'),
             ),
-            if (isIOS)
-              Row(
-                children: [
-                  Expanded(
-                    child: LenzSocialButton(
-                      label: 'Apple',
-                      icon: LenzIcons.apple,
-                      onPressed: busy
-                          ? null
-                          : () async {
-                              final result = await authService
-                                  .signInWithApple();
-                              if (mounted && result != null) _dismissIfPushed();
-                            },
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(child: google),
-                ],
-              )
-            else
-              google,
+            // Apple's HIG: the Apple button uses Apple's wording and is at
+            // least as prominent as other sign-in options, so it goes first.
+            if (isIOS) ...[
+              LenzSocialButton(
+                label: 'Continue with Apple',
+                icon: LenzIcons.apple,
+                onPressed: busy
+                    ? null
+                    : () async {
+                        final result = await authService.signInWithApple();
+                        if (mounted && result != null) _dismissIfPushed();
+                      },
+              ),
+              const SizedBox(height: 10),
+            ],
+            google,
           ],
         ),
       ),

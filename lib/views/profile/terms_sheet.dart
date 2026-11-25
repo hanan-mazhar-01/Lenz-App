@@ -46,6 +46,10 @@ class TermsOfServiceSheet extends StatelessWidget {
       'You can manage or cancel your subscription anytime in your iPhone Settings > Apple ID > Subscriptions. All refunds are handled directly by Apple according to App Store policy.',
     ),
     (
+      'Fair use',
+      'Lenz Pro includes unlimited checks for personal use. To keep the service available for everyone, each account has a daily fair-use limit on AI analyses that normal use does not reach; it resets every day.',
+    ),
+    (
       'Authentication disclaimer',
       'Lenz gives an AI-assisted opinion on product authenticity, not an official brand authentication or a guarantee. A result that an item "looks authentic" does not guarantee that it is genuine, and a result that it "looks fake" does not prove that it is counterfeit. Results are intended for advisory purposes and do not replace certified manufacturer appraisals.',
     ),

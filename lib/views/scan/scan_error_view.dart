@@ -49,7 +49,7 @@ class ScanErrorView extends StatelessWidget {
         LenzIcons.clock,
         LenzColors.warn,
         LenzMood.unsure,
-        'Busy right now',
+        effectiveError.isDailyLimit ? 'Daily limit reached' : 'Busy right now',
       ),
       AppErrorType.aiBillingUnavailable => (
         LenzIcons.clock,

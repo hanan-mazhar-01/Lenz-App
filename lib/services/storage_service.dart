@@ -8,8 +8,9 @@ class StorageService extends ChangeNotifier {
     'haptics_enabled': true,
     'camera_sound': true,
     'hd_quality': true,
-    'biometric_enabled': false,
     'anonymous_scanning': false,
+    // One-time "Allow photo analysis" answer (views/scan/ai_consent_sheet.dart).
+    'ai_photo_consent_v1': false,
     'onboarding_completed': false,
     'onboarding_goal': '',
     'onboarding_focus': '',

@@ -281,6 +281,19 @@ class RevenueCatService {
     return 'https://apps.apple.com/account/subscriptions';
   }
 
+  /// Label for a Pro subscriber's plan badge. Prefers what the store says
+  /// right now; otherwise reads the stored plan name. The server stores the
+  /// neutral "Lenz Pro", which must never be shown as "Monthly Pro" to a
+  /// yearly subscriber, so an unknown period shows "Lenz Pro".
+  static String proPlanLabel(String storedPlanName) {
+    final live = activePlanNotifier.value;
+    if (live != null && live.isNotEmpty) return live;
+    final s = storedPlanName.toUpperCase();
+    if (s.contains('YEARLY') || s.contains('ANNUAL')) return 'Yearly Pro';
+    if (s.contains('MONTHLY')) return 'Monthly Pro';
+    return 'Lenz Pro';
+  }
+
   static String? _resolvePlanName(CustomerInfo customerInfo) {
     if (!_hasActiveEntitlement(customerInfo)) return null;
 

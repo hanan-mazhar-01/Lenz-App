@@ -11,6 +11,7 @@ import '../../models/authentication_result.dart';
 import '../../models/user_profile.dart';
 import '../../repositories/history_repository.dart';
 import '../../services/auth_service.dart';
+import '../../services/revenue_cat_service.dart';
 import '../../viewmodels/profile_viewmodel.dart';
 import '../../widgets/common/app_image.dart';
 import '../../widgets/lenz/lenz.dart';
@@ -412,7 +413,7 @@ class ProfileScreen extends StatelessWidget {
     final remainingGuestScans = user.scansRemaining.clamp(0, kGuestScanAllowance);
     final name = _displayName(user, authService.currentUser, isGuest);
 
-    final proLabel = user.planName.toUpperCase().contains('YEARLY') ? 'Yearly Pro' : 'Monthly Pro';
+    final proLabel = RevenueCatService.proPlanLabel(user.planName);
 
     return Scaffold(
       backgroundColor: LenzColors.ivory,
@@ -591,7 +592,7 @@ class ProfileScreen extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.only(top: 14),
                         child: Text(
-                          'Lenz · Verado Studio',
+                          'Lenz · The Side Quest Labs',
                           textAlign: TextAlign.center,
                           style: LenzText.tiny,
                         ),

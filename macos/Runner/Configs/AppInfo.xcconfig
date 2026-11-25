@@ -11,4 +11,4 @@ PRODUCT_NAME = replica_detector
 PRODUCT_BUNDLE_IDENTIFIER = com.veradostudio.lenz
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.veradostudio. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 The Side Quest Labs. All rights reserved.

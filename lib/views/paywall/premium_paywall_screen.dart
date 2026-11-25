@@ -253,7 +253,7 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
       final isProNow = restored || RevenueCatService.isPremiumNotifier.value;
 
       if (isProNow) {
-        final chosenPlan = RevenueCatService.activePlanNotifier.value ?? 'Monthly Pro';
+        final chosenPlan = RevenueCatService.activePlanNotifier.value ?? 'Lenz Pro';
         try {
           final profileVm = context.read<ProfileViewModel>();
           profileVm.setPremiumStatus(true, planName: chosenPlan);
@@ -323,6 +323,10 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
 
   void _openBillingDetails() {
     Haptics.lightImpact();
+    // Trial wording only when a plan really offers one to this Apple ID;
+    // otherwise App Review reads it as advertising a trial that isn't there.
+    final hasTrial = (_offerings?.current?.availablePackages ?? const <Package>[])
+        .any((p) => _trialLabelFor(p) != null);
     showLenzSheet<void>(
       context,
       builder: (sheetContext) {
@@ -353,12 +357,20 @@ class _PremiumPaywallScreenState extends State<PremiumPaywallScreen> {
             ),
             const SizedBox(height: 9),
             const Text(
-              'Any unused portion of a free trial is forfeited when you '
-              'purchase a subscription.',
+              'Unlimited checks are subject to a daily fair-use limit that '
+              'normal use does not reach. It resets every day.',
               style: body,
             ),
             const SizedBox(height: 9),
-            const Text('Questions? support@veradostudio.com', style: body),
+            if (hasTrial) ...[
+              const Text(
+                'Any unused portion of a free trial is forfeited when you '
+                'purchase a subscription.',
+                style: body,
+              ),
+              const SizedBox(height: 9),
+            ],
+            const Text('Questions? ryan@thesidequestlabs.com', style: body),
             const SizedBox(height: 14),
             LenzButton(label: 'Got it', onPressed: () => Navigator.of(sheetContext).pop()),
           ],

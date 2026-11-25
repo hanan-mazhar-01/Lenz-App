@@ -59,6 +59,7 @@ class GeminiService {
       } on AppError catch (e) {
         if (e.type == AppErrorType.apiUnauthorized ||
             e.type == AppErrorType.aiBillingUnavailable ||
+            e.isDailyLimit ||
             attempts >= maxAttempts) {
           // Billing/quota-exhausted won't resolve by retrying immediately —
           // surface it right away instead of burning retries on it.
@@ -176,6 +177,9 @@ class GeminiService {
       }
       switch (e.code) {
         case 'resource-exhausted':
+          if ((e.message ?? '').toLowerCase().contains('daily')) {
+            throw AppError.dailyLimit(original: e);
+          }
           throw AppError.quotaLimit();
         case 'unauthenticated':
         case 'permission-denied':
